@@ -1,23 +1,24 @@
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use gpui::{
-    App, Bounds, ClipboardItem, Context, Element, ElementId, ElementInputHandler, Entity,
-    EntityInputHandler, FocusHandle, Focusable, GlobalElementId, InspectorElementId, KeyBinding,
-    KeyDownEvent, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad,
-    Pixels, Point, Render, ScrollWheelEvent, ShapedLine, SharedString, StrikethroughStyle, Style,
-    TextRun, UnderlineStyle, WeakEntity, Window, WindowAppearance, actions, div, fill, point,
-    prelude::*, px, relative, rgb, size,
+    AnyElement, App, Bounds, ClipboardItem, Context, Element, ElementId, ElementInputHandler,
+    Entity, EntityInputHandler, FocusHandle, Focusable, GlobalElementId, InspectorElementId,
+    KeyBinding, KeyDownEvent, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    PaintQuad, Pixels, Point, Render, ScrollWheelEvent, ShapedLine, SharedString,
+    StrikethroughStyle, Style, TextRun, UnderlineStyle, WeakEntity, Window, WindowAppearance,
+    actions, div, fill, point, prelude::*, px, relative, rgb, size,
 };
 use gpui_component::{
-    ActiveTheme as _, Disableable as _, Icon, IconName, Root, Sizable as _, WindowExt as _,
+    ActiveTheme as _, Disableable as _, Icon, IconName, IndexPath, Root, Sizable as _,
+    WindowExt as _,
     alert::Alert,
     button::{Button, ButtonVariants as _},
     checkbox::Checkbox,
     form::{field, v_form},
-    group_box::GroupBox,
     h_flex,
     input::{Input, InputState},
     radio::{Radio, RadioGroup},
+    select::{SearchableVec, SelectEvent, SelectState},
 };
 // The custom title bar only renders where the system title bar is transparent.
 #[cfg(target_os = "macos")]
@@ -185,6 +186,27 @@ fn new_input(
     })
 }
 
+type SettingSelect = Entity<SelectState<SearchableVec<SharedString>>>;
+
+fn setting_select_items(locale: ResolvedLocale, ids: &[MessageId]) -> SearchableVec<SharedString> {
+    SearchableVec::new(
+        ids.iter()
+            .map(|id| SharedString::from(Catalog::text(locale, *id)))
+            .collect::<Vec<_>>(),
+    )
+}
+
+fn new_setting_select(
+    window: &mut Window,
+    cx: &mut Context<AppView>,
+    locale: ResolvedLocale,
+    ids: &[MessageId],
+    selected_index: usize,
+) -> SettingSelect {
+    let items = setting_select_items(locale, ids);
+    cx.new(|cx| SelectState::new(items, Some(IndexPath::new(selected_index)), window, cx))
+}
+
 /// Muted, theme-agnostic hues for tag colors; mirrors the host-card avatar
 /// palette so tags sit comfortably on light and dark surfaces.
 fn tag_color_rgb(color: TagColor) -> u32 {
@@ -218,6 +240,9 @@ pub struct AppView {
     dialog_presenter: Option<Entity<DialogPresenter>>,
     main_view: MainView,
     settings_category: SettingsCategory,
+    locale_select: SettingSelect,
+    theme_select: SettingSelect,
+    new_tab_action_select: SettingSelect,
     locale: ResolvedLocale,
     system_locale: Option<String>,
     theme: ResolvedTheme,
@@ -234,6 +259,7 @@ pub struct AppView {
     terminal_selecting: bool,
     quitting: bool,
     _search_subscription: gpui::Subscription,
+    _settings_subscriptions: Vec<gpui::Subscription>,
 }
 
 impl AppView {
@@ -296,6 +322,97 @@ impl AppView {
             let _ = this;
             cx.notify();
         });
+        let preferences = state
+            .as_ref()
+            .map(|state| state.settings().clone())
+            .unwrap_or_default();
+        let locale_select = new_setting_select(
+            window,
+            cx,
+            locale,
+            &[
+                MessageId::System,
+                MessageId::English,
+                MessageId::SimplifiedChinese,
+            ],
+            match preferences.locale {
+                LocaleSetting::System => 0,
+                LocaleSetting::EnUs => 1,
+                LocaleSetting::ZhCn => 2,
+            },
+        );
+        let theme_select = new_setting_select(
+            window,
+            cx,
+            locale,
+            &[MessageId::System, MessageId::Light, MessageId::Dark],
+            match preferences.theme {
+                ThemeSetting::System => 0,
+                ThemeSetting::Light => 1,
+                ThemeSetting::Dark => 2,
+            },
+        );
+        let new_tab_action_select = new_setting_select(
+            window,
+            cx,
+            locale,
+            &[MessageId::AddConnection, MessageId::LocalTerminal],
+            match preferences.new_tab_action {
+                NewTabAction::AddConnection => 0,
+                NewTabAction::LocalTerminal => 1,
+            },
+        );
+        let settings_subscriptions = vec![
+            cx.subscribe_in(
+                &locale_select,
+                window,
+                |this, _, event: &SelectEvent<SearchableVec<SharedString>>, window, cx| {
+                    let SelectEvent::Confirm(Some(value)) = event else {
+                        return;
+                    };
+                    let setting = if value.as_str() == this.text(MessageId::English) {
+                        LocaleSetting::EnUs
+                    } else if value.as_str() == this.text(MessageId::SimplifiedChinese) {
+                        LocaleSetting::ZhCn
+                    } else {
+                        LocaleSetting::System
+                    };
+                    this.set_locale(setting, window, cx);
+                },
+            ),
+            cx.subscribe_in(
+                &theme_select,
+                window,
+                |this, _, event: &SelectEvent<SearchableVec<SharedString>>, window, cx| {
+                    let SelectEvent::Confirm(Some(value)) = event else {
+                        return;
+                    };
+                    let setting = if value.as_str() == this.text(MessageId::Light) {
+                        ThemeSetting::Light
+                    } else if value.as_str() == this.text(MessageId::Dark) {
+                        ThemeSetting::Dark
+                    } else {
+                        ThemeSetting::System
+                    };
+                    this.set_theme(setting, window, cx);
+                },
+            ),
+            cx.subscribe_in(
+                &new_tab_action_select,
+                window,
+                |this, _, event: &SelectEvent<SearchableVec<SharedString>>, _, cx| {
+                    let SelectEvent::Confirm(Some(value)) = event else {
+                        return;
+                    };
+                    let setting = if value.as_str() == this.text(MessageId::LocalTerminal) {
+                        NewTabAction::LocalTerminal
+                    } else {
+                        NewTabAction::AddConnection
+                    };
+                    this.set_new_tab_action(setting, cx);
+                },
+            ),
+        ];
         Self {
             root,
             state,
@@ -314,6 +431,9 @@ impl AppView {
             dialog_presenter: None,
             main_view: MainView::Workspace,
             settings_category: SettingsCategory::General,
+            locale_select,
+            theme_select,
+            new_tab_action_select,
             locale,
             system_locale,
             theme,
@@ -330,6 +450,7 @@ impl AppView {
             terminal_selecting: false,
             quitting: false,
             _search_subscription: search_subscription,
+            _settings_subscriptions: settings_subscriptions,
         }
     }
 
@@ -370,12 +491,81 @@ impl AppView {
                 ResolvedLocale::ZhCn => "zh-CN",
             });
             self.update_input_placeholders(window, cx);
+            self.update_setting_selects(window, cx);
         }
         if self.theme != theme {
             self.theme = theme;
             apply_theme(theme, window, cx);
             self.tabs.set_terminal_colors(self.theme.terminal_colors());
         }
+    }
+
+    fn update_setting_selects(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(state) = &self.state else {
+            return;
+        };
+        let settings = state.settings().clone();
+        let locale = self.locale;
+        self.locale_select.update(cx, |select, cx| {
+            select.set_items(
+                setting_select_items(
+                    locale,
+                    &[
+                        MessageId::System,
+                        MessageId::English,
+                        MessageId::SimplifiedChinese,
+                    ],
+                ),
+                window,
+                cx,
+            );
+            select.set_selected_index(
+                Some(IndexPath::new(match settings.locale {
+                    LocaleSetting::System => 0,
+                    LocaleSetting::EnUs => 1,
+                    LocaleSetting::ZhCn => 2,
+                })),
+                window,
+                cx,
+            );
+        });
+        self.theme_select.update(cx, |select, cx| {
+            select.set_items(
+                setting_select_items(
+                    locale,
+                    &[MessageId::System, MessageId::Light, MessageId::Dark],
+                ),
+                window,
+                cx,
+            );
+            select.set_selected_index(
+                Some(IndexPath::new(match settings.theme {
+                    ThemeSetting::System => 0,
+                    ThemeSetting::Light => 1,
+                    ThemeSetting::Dark => 2,
+                })),
+                window,
+                cx,
+            );
+        });
+        self.new_tab_action_select.update(cx, |select, cx| {
+            select.set_items(
+                setting_select_items(
+                    locale,
+                    &[MessageId::AddConnection, MessageId::LocalTerminal],
+                ),
+                window,
+                cx,
+            );
+            select.set_selected_index(
+                Some(IndexPath::new(match settings.new_tab_action {
+                    NewTabAction::AddConnection => 0,
+                    NewTabAction::LocalTerminal => 1,
+                })),
+                window,
+                cx,
+            );
+        });
     }
 
     fn update_input_placeholders(&mut self, window: &mut Window, cx: &mut Context<Self>) {

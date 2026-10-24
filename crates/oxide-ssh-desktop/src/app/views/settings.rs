@@ -1,11 +1,80 @@
 use super::*;
+use gpui_component::select::Select;
+
+fn settings_card(rows: Vec<AnyElement>, cx: &Context<AppView>) -> AnyElement {
+    let mut card = div()
+        .w_full()
+        .flex()
+        .flex_col()
+        .rounded(cx.theme().radius_lg)
+        .border_1()
+        .border_color(cx.theme().border)
+        .bg(cx.theme().background);
+    for (index, row) in rows.into_iter().enumerate() {
+        if index > 0 {
+            card = card.child(div().h(px(1.)).mx(px(20.)).bg(cx.theme().border));
+        }
+        card = card.child(row);
+    }
+    card.into_any_element()
+}
+
+fn settings_page(title: &'static str, rows: Vec<AnyElement>, cx: &Context<AppView>) -> AnyElement {
+    div()
+        .w_full()
+        .max_w(px(880.))
+        .mx_auto()
+        .flex()
+        .flex_col()
+        .gap(px(24.))
+        .child(
+            div()
+                .text_size(px(30.))
+                .font_weight(gpui::FontWeight::BOLD)
+                .child(title),
+        )
+        .child(settings_card(rows, cx))
+        .into_any_element()
+}
 
 impl AppView {
+    fn setting_row(
+        &self,
+        title: MessageId,
+        description: MessageId,
+        control: AnyElement,
+        cx: &Context<Self>,
+    ) -> AnyElement {
+        h_flex()
+            .w_full()
+            .items_center()
+            .gap(px(24.))
+            .p(px(20.))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w(px(0.))
+                    .flex()
+                    .flex_col()
+                    .gap(px(4.))
+                    .child(
+                        div()
+                            .text_sm()
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .child(self.text(title)),
+                    )
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(self.text(description)),
+                    ),
+            )
+            .child(div().flex_shrink_0().child(control))
+            .into_any_element()
+    }
+
     pub(in crate::app) fn render_settings(&mut self, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let settings = self.state.as_ref().map(|state| state.settings().clone());
-        let Some(settings) = settings else {
-            return div().into_any_element();
-        };
         let category = self.settings_category;
 
         let mut side_nav = div().flex().flex_col().gap(px(4.));
@@ -40,109 +109,61 @@ impl AppView {
             );
         }
 
-        let system_label = self.text(MessageId::System).to_owned();
         let content = match category {
-            SettingsCategory::General => {
-                let locale_index = match settings.locale {
-                    LocaleSetting::System => 0,
-                    LocaleSetting::EnUs => 1,
-                    LocaleSetting::ZhCn => 2,
-                };
-                let new_tab_action_index = match settings.new_tab_action {
-                    NewTabAction::AddConnection => 0,
-                    NewTabAction::LocalTerminal => 1,
-                };
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(CARD_GAP))
-                    .child(
-                        GroupBox::new()
-                            .title(self.text(MessageId::Language).to_owned())
-                            .child(
-                                RadioGroup::horizontal("setting-locale")
-                                    .selected_index(Some(locale_index))
-                                    .child(Radio::new("locale-system").label(system_label.clone()))
-                                    .child(
-                                        Radio::new("locale-english")
-                                            .label(self.text(MessageId::English)),
-                                    )
-                                    .child(
-                                        Radio::new("locale-chinese")
-                                            .label(self.text(MessageId::SimplifiedChinese)),
-                                    )
-                                    .on_click(cx.listener(|this, index, window, cx| {
-                                        let setting = match *index {
-                                            1 => LocaleSetting::EnUs,
-                                            2 => LocaleSetting::ZhCn,
-                                            _ => LocaleSetting::System,
-                                        };
-                                        this.set_locale(setting, window, cx);
-                                    })),
-                            ),
-                    )
-                    .child(
-                        GroupBox::new()
-                            .title(self.text(MessageId::NewTabButton).to_owned())
-                            .child(
-                                RadioGroup::horizontal("setting-new-tab-action")
-                                    .selected_index(Some(new_tab_action_index))
-                                    .child(
-                                        Radio::new("new-tab-add-connection")
-                                            .label(self.text(MessageId::AddConnection)),
-                                    )
-                                    .child(
-                                        Radio::new("new-tab-local-terminal")
-                                            .label(self.text(MessageId::LocalTerminal)),
-                                    )
-                                    .on_click(cx.listener(|this, index, _, cx| {
-                                        let setting = match *index {
-                                            1 => NewTabAction::LocalTerminal,
-                                            _ => NewTabAction::AddConnection,
-                                        };
-                                        this.set_new_tab_action(setting, cx);
-                                    })),
-                            ),
-                    )
-                    .into_any_element()
-            }
-            SettingsCategory::Appearance => {
-                let theme_index = match settings.theme {
-                    ThemeSetting::System => 0,
-                    ThemeSetting::Light => 1,
-                    ThemeSetting::Dark => 2,
-                };
-                GroupBox::new()
-                    .title(self.text(MessageId::Theme).to_owned())
-                    .child(
-                        RadioGroup::horizontal("setting-theme")
-                            .selected_index(Some(theme_index))
-                            .child(Radio::new("theme-system").label(system_label.clone()))
-                            .child(Radio::new("theme-light").label(self.text(MessageId::Light)))
-                            .child(Radio::new("theme-dark").label(self.text(MessageId::Dark)))
-                            .on_click(cx.listener(|this, index, window, cx| {
-                                let setting = match *index {
-                                    1 => ThemeSetting::Light,
-                                    2 => ThemeSetting::Dark,
-                                    _ => ThemeSetting::System,
-                                };
-                                this.set_theme(setting, window, cx);
-                            })),
-                    )
-                    .into_any_element()
-            }
+            SettingsCategory::General => settings_page(
+                self.text(MessageId::General),
+                vec![
+                    self.setting_row(
+                        MessageId::Language,
+                        MessageId::LanguageDescription,
+                        Select::new(&self.locale_select)
+                            .w(px(180.))
+                            .with_size(gpui_component::Size::Small)
+                            .into_any_element(),
+                        cx,
+                    ),
+                    self.setting_row(
+                        MessageId::NewTabButton,
+                        MessageId::NewTabButtonDescription,
+                        Select::new(&self.new_tab_action_select)
+                            .w(px(180.))
+                            .with_size(gpui_component::Size::Small)
+                            .into_any_element(),
+                        cx,
+                    ),
+                ],
+                cx,
+            ),
+            SettingsCategory::Appearance => settings_page(
+                self.text(MessageId::Appearance),
+                vec![
+                    self.setting_row(
+                        MessageId::Theme,
+                        MessageId::ThemeDescription,
+                        Select::new(&self.theme_select)
+                            .w(px(180.))
+                            .with_size(gpui_component::Size::Small)
+                            .into_any_element(),
+                        cx,
+                    ),
+                ],
+                cx,
+            ),
             SettingsCategory::Security => {
                 let known_hosts = self
                     .state
                     .as_ref()
                     .map(|state| state.known_hosts().to_vec())
                     .unwrap_or_default();
-                let mut trusted = div().flex().flex_col().gap(px(8.));
+                let mut rows = Vec::with_capacity(known_hosts.len().max(1));
                 if known_hosts.is_empty() {
-                    trusted = trusted.child(
+                    rows.push(
                         div()
+                            .p(px(20.))
+                            .text_sm()
                             .text_color(cx.theme().muted_foreground)
-                            .child(self.text(MessageId::NoTrustedHosts)),
+                            .child(self.text(MessageId::NoTrustedHosts))
+                            .into_any_element(),
                     );
                 }
                 for host in known_hosts {
@@ -150,25 +171,28 @@ impl AppView {
                     let title = format!("{}:{}", host.host, host.port);
                     let algorithm = host.algorithm.clone();
                     let view = cx.entity();
-                    trusted = trusted.child(
+                    rows.push(
                         h_flex()
                             .w_full()
-                            .p(px(12.))
-                            .rounded(cx.theme().radius_lg)
-                            .border_1()
-                            .border_color(cx.theme().border)
-                            .bg(cx.theme().secondary)
+                            .items_center()
+                            .gap(px(24.))
+                            .p(px(20.))
                             .child(
                                 div()
                                     .flex_1()
                                     .min_w(px(0.))
                                     .flex()
                                     .flex_col()
-                                    .gap(px(2.))
-                                    .child(div().text_sm().child(title))
+                                    .gap(px(4.))
                                     .child(
                                         div()
-                                            .text_xs()
+                                            .text_sm()
+                                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                                            .child(title),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_sm()
                                             .text_color(cx.theme().muted_foreground)
                                             .child(algorithm),
                                     ),
@@ -188,13 +212,11 @@ impl AppView {
                                         cx.notify();
                                     });
                                 }),
-                            ),
+                            )
+                            .into_any_element(),
                     );
                 }
-                GroupBox::new()
-                    .title(self.text(MessageId::TrustedHosts).to_owned())
-                    .child(trusted)
-                    .into_any_element()
+                settings_page(self.text(MessageId::Security), rows, cx)
             }
         };
 
@@ -250,7 +272,7 @@ impl AppView {
                             .flex_1()
                             .h_full()
                             .overflow_y_scroll()
-                            .p(px(CARD_PADDING))
+                            .p(px(32.))
                             .child(content),
                     ),
             )

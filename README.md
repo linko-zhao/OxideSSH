@@ -39,6 +39,7 @@ OxideSSH is a desktop SSH client written in Rust with a native GPU-rendered UI (
 - Color themes (light / dark / follow system) and English / 简体中文 UI.
 
 ### Desktop integration
+- **Settings** — category-based pages for language, new-tab behavior, appearance, and trusted hosts, with bilingual labels and descriptions.
 - Custom title bar with integrated tabs and window controls on Windows and macOS; native decorations on Linux.
 - macOS: Cmd+Q quit, Dock icon, and “New Window” menu item.
 - Conventional `.msi` installer on Windows and `.app` / `.dmg` on macOS.
