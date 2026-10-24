@@ -30,6 +30,8 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::Language => "Language",
         MessageId::LanguageDescription => "Application interface language",
         MessageId::Theme => "Theme",
+        MessageId::CopyOnSelect => "Copy on select",
+        MessageId::CopyOnSelectDescription => "Copy selected terminal text to the clipboard",
         MessageId::ThemeDescription => "Application color scheme",
         MessageId::TrustedHosts => "Trusted hosts",
         MessageId::NewTabButtonDescription => "Action performed by the new tab button",

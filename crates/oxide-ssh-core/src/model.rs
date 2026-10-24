@@ -272,6 +272,8 @@ pub struct AppSettings {
     pub theme: ThemeSetting,
     #[serde(default)]
     pub new_tab_action: NewTabAction,
+    #[serde(default)]
+    pub copy_on_select: bool,
 }
 
 #[cfg(test)]
@@ -340,7 +342,19 @@ mod tests {
         let settings: AppSettings =
             serde_json::from_str(r#"{"locale":"zh-CN","theme":"dark"}"#).unwrap();
         assert_eq!(settings.new_tab_action, NewTabAction::AddConnection);
+        assert!(!settings.copy_on_select);
         assert_eq!(settings.theme, ThemeSetting::Dark);
+    }
+
+    #[test]
+    fn copy_on_select_round_trips_in_settings() {
+        let settings = AppSettings {
+            copy_on_select: true,
+            ..AppSettings::default()
+        };
+        let encoded = serde_json::to_string(&settings).unwrap();
+        let decoded: AppSettings = serde_json::from_str(&encoded).unwrap();
+        assert!(decoded.copy_on_select);
     }
 
     #[test]

@@ -131,6 +131,15 @@ impl AppView {
                             .into_any_element(),
                         cx,
                     ),
+                    self.setting_row(
+                        MessageId::CopyOnSelect,
+                        MessageId::CopyOnSelectDescription,
+                        Checkbox::new("copy-on-select")
+                            .checked(self.state.as_ref().is_some_and(|state| state.settings().copy_on_select))
+                            .on_click(cx.listener(|this, _, _, cx| this.toggle_copy_on_select(cx)))
+                            .into_any_element(),
+                        cx,
+                    ),
                 ],
                 cx,
             ),
