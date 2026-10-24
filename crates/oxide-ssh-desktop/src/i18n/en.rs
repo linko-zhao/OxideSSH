@@ -33,6 +33,8 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::AnsiPalette => "ANSI palette",
         MessageId::AnsiPaletteDescription => "Enter 16 comma-separated RGB hex colors in index order (0–7 standard, 8–15 bright).",
         MessageId::Reset => "Reset",
+        MessageId::CopyOnSelect => "Copy on select",
+        MessageId::CopyOnSelectDescription => "Copy selected terminal text to the clipboard",
         MessageId::ThemeDescription => "Application color scheme",
         MessageId::TrustedHosts => "Trusted hosts",
         MessageId::ConfirmBeforeCloseWithSessions => "Confirm before closing sessions",

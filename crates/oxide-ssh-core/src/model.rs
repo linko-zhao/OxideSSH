@@ -359,6 +359,7 @@ pub struct AppSettings {
     #[serde(default = "default_paste_confirm_threshold")]
     pub paste_confirm_threshold: usize,
     pub osc52_clipboard: Osc52Clipboard,
+    pub copy_on_select: bool,
 }
 
 pub const fn default_paste_confirm_threshold() -> usize {
@@ -410,6 +411,7 @@ impl Default for AppSettings {
             paste_confirm_threshold: default_paste_confirm_threshold(),
             osc52_clipboard: Osc52Clipboard::default(),
             local_working_directory: String::new(),
+            copy_on_select: false,
         }
     }
 }
@@ -498,6 +500,7 @@ mod tests {
         assert_eq!(settings.new_tab_action, NewTabAction::AddConnection);
         assert!(!settings.ssh_compression);
         assert_eq!(settings.ssh_connect_timeout_seconds, 15);
+        assert!(!settings.copy_on_select);
         assert_eq!(settings.theme, ThemeSetting::Dark);
     }
 
@@ -581,6 +584,17 @@ mod tests {
         let settings: AppSettings =
             serde_json::from_str(r#"{"locale":"zh-CN","theme":"dark"}"#).unwrap();
         assert_eq!(settings.osc52_clipboard, Osc52Clipboard::Off);
+    }
+
+    #[test]
+    fn copy_on_select_round_trips_in_settings() {
+        let settings = AppSettings {
+            copy_on_select: true,
+            ..AppSettings::default()
+        };
+        let encoded = serde_json::to_string(&settings).unwrap();
+        let decoded: AppSettings = serde_json::from_str(&encoded).unwrap();
+        assert!(decoded.copy_on_select);
     }
 
     #[test]

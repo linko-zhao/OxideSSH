@@ -269,6 +269,7 @@ pub struct AppView {
     status_rendered: Option<MessageId>,
     terminal_geometry: Option<TerminalGeometry>,
     terminal_selecting: bool,
+    terminal_selection_dragged: bool,
     quitting: bool,
     _search_subscription: gpui::Subscription,
     _settings_subscriptions: Vec<gpui::Subscription>,
@@ -680,6 +681,7 @@ impl AppView {
             status_rendered: None,
             terminal_geometry: None,
             terminal_selecting: false,
+            terminal_selection_dragged: false,
             quitting: false,
             _search_subscription: search_subscription,
             _settings_subscriptions: settings_subscriptions,
@@ -1341,6 +1343,20 @@ impl AppView {
             self.copy_terminal_selection(cx);
             cx.stop_propagation();
         }
+    }
+
+    fn toggle_copy_on_select(&mut self, cx: &mut Context<Self>) {
+        if self
+            .state
+            .as_mut()
+            .is_some_and(|state| {
+                let enabled = !state.settings().copy_on_select;
+                state.set_copy_on_select(enabled).is_err()
+            })
+        {
+            self.status_message = Some(MessageId::StorageCorrupt);
+        }
+        cx.notify();
     }
 
     fn on_paste(&mut self, _: &Paste, window: &mut Window, cx: &mut Context<Self>) {
