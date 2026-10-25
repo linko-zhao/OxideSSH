@@ -489,13 +489,23 @@ impl AppView {
         let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
             return;
         };
-        let result = self
-            .tabs
-            .active()
-            .and_then(|id| self.tabs.tab_mut(id))
-            .map(|tab| tab.paste(&text));
-        if let Some(Err(error)) = result {
-            self.status_message = Some(local_error_message_id(error));
+        let Some(tab_id) = self.tabs.active() else {
+            return;
+        };
+        let max = oxide_ssh_terminal::MAX_PASTE_BYTES;
+        if text.len() > max {
+            self.status_message = Some(MessageId::PasteTooLarge);
+        } else {
+            let threshold = self
+                .state
+                .as_ref()
+                .map(|state| state.settings().paste_confirm_threshold)
+                .unwrap_or(4 * 1024);
+            if text.len() > threshold {
+                self.confirm = Some(ConfirmAction::Paste { tab_id, text });
+            } else if let Some(Err(error)) = self.tabs.tab_mut(tab_id).map(|tab| tab.paste(&text)) {
+                self.status_message = Some(local_error_message_id(error));
+            }
         }
         cx.notify();
     }

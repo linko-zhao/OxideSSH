@@ -165,6 +165,15 @@ impl AppView {
                             cx,
                         ),
                         self.setting_row(
+                            MessageId::PasteConfirmThreshold,
+                            MessageId::PasteConfirmThresholdDescription,
+                            Select::new(&self.paste_threshold_select)
+                                .w(px(180.))
+                                .with_size(gpui_component::Size::Small)
+                                .into_any_element(),
+                            cx,
+                        ),
+                        self.setting_row(
                             MessageId::NewTabButton,
                             MessageId::NewTabButtonDescription,
                             Select::new(&self.new_tab_action_select)

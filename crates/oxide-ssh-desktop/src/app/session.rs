@@ -637,6 +637,11 @@ impl AppView {
                     self.status_message = Some(MessageId::CredentialUnavailable);
                 }
             }
+            ConfirmAction::Paste { tab_id, text } => {
+                if let Some(Err(error)) = self.tabs.tab_mut(tab_id).map(|tab| tab.paste(&text)) {
+                    self.status_message = Some(local_error_message_id(error));
+                }
+            }
             ConfirmAction::Quit => {
                 self.quitting = true;
                 self.tabs.disconnect_all();

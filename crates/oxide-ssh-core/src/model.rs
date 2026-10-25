@@ -345,6 +345,12 @@ pub struct AppSettings {
     #[serde(default = "default_keepalive_max")]
     pub ssh_keepalive_max_count: usize,
     pub terminal_bell: TerminalBell,
+    #[serde(default = "default_paste_confirm_threshold")]
+    pub paste_confirm_threshold: usize,
+}
+
+pub const fn default_paste_confirm_threshold() -> usize {
+    4 * 1024
 }
 
 fn default_keepalive_interval() -> u64 {
@@ -389,6 +395,7 @@ impl Default for AppSettings {
             ssh_keepalive_interval_seconds: default_keepalive_interval(),
             ssh_keepalive_max_count: default_keepalive_max(),
             terminal_bell: TerminalBell::default(),
+            paste_confirm_threshold: default_paste_confirm_threshold(),
         }
     }
 }
@@ -546,6 +553,13 @@ mod tests {
             assert_eq!(serde_json::from_str::<TerminalBell>(json).unwrap(), mode);
             assert_eq!(serde_json::to_string(&mode).unwrap(), json);
         }
+    }
+
+    #[test]
+    fn old_settings_default_paste_confirmation_threshold() {
+        let settings: AppSettings =
+            serde_json::from_str(r#"{"locale":"zh-CN","theme":"dark"}"#).unwrap();
+        assert_eq!(settings.paste_confirm_threshold, 4 * 1024);
     }
 
     #[test]
