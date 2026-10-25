@@ -123,6 +123,15 @@ impl AppView {
                         cx,
                     ),
                     self.setting_row(
+                        MessageId::ScrollbackLines,
+                        MessageId::ScrollbackLinesDescription,
+                        div()
+                            .w(px(180.))
+                            .child(Input::new(&self.scrollback_input))
+                            .into_any_element(),
+                        cx,
+                    ),
+                    self.setting_row(
                         MessageId::NewTabButton,
                         MessageId::NewTabButtonDescription,
                         Select::new(&self.new_tab_action_select)
