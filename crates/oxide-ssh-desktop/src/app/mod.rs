@@ -1,3 +1,4 @@
+use gpui_component::input::InputEvent;
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use gpui::{
@@ -243,6 +244,7 @@ pub struct AppView {
     locale_select: SettingSelect,
     theme_select: SettingSelect,
     new_tab_action_select: SettingSelect,
+    ssh_term_input: Entity<InputState>,
     locale: ResolvedLocale,
     system_locale: Option<String>,
     theme: ResolvedTheme,
@@ -326,6 +328,14 @@ impl AppView {
             .as_ref()
             .map(|state| state.settings().clone())
             .unwrap_or_default();
+        let ssh_term_input = new_input(
+            window,
+            cx,
+            MessageId::SshTerm,
+            &preferences.ssh_term,
+            false,
+            locale,
+        );
         let locale_select = new_setting_select(
             window,
             cx,
@@ -412,6 +422,16 @@ impl AppView {
                     this.set_new_tab_action(setting, cx);
                 },
             ),
+            cx.subscribe_in(
+                &ssh_term_input,
+                window,
+                |this, input, event: &InputEvent, _, cx| {
+                    if matches!(event, InputEvent::Blur) {
+                        let term = input.read(cx).value().to_string();
+                        this.set_ssh_term(&term, cx);
+                    }
+                },
+            ),
         ];
         Self {
             root,
@@ -444,6 +464,7 @@ impl AppView {
             compose_tab: None,
             scroll_accumulator: 0.0,
             bell: false,
+            ssh_term_input,
             status_message,
             status_rendered: None,
             terminal_geometry: None,
@@ -645,6 +666,16 @@ impl AppView {
             .state
             .as_mut()
             .is_some_and(|state| state.set_new_tab_action(setting).is_err())
+        {
+            self.status_message = Some(MessageId::StorageCorrupt);
+        }
+        cx.notify();
+    }
+    fn set_ssh_term(&mut self, term: &str, cx: &mut Context<Self>) {
+        if self
+            .state
+            .as_mut()
+            .is_some_and(|state| state.set_ssh_term(term).is_err())
         {
             self.status_message = Some(MessageId::StorageCorrupt);
         }

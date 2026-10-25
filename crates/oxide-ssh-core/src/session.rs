@@ -41,6 +41,7 @@ pub struct ConnectRequest {
     pub profile: ConnectionProfile,
     pub secret: Option<SecretString>,
     pub initial_size: TerminalSize,
+    pub term: String,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -702,7 +703,7 @@ async fn run_session(
     channel
         .request_pty(
             true,
-            "xterm-256color",
+            crate::model::effective_ssh_term(&request.term),
             request.initial_size.columns,
             request.initial_size.rows,
             request.initial_size.pixel_width,
@@ -1314,6 +1315,7 @@ mod tests {
     struct FixtureServer {
         accepted_keys: Arc<Vec<PublicKey>>,
         resize_events: Sender<TerminalSize>,
+        term_events: Sender<String>,
     }
 
     impl server::Server for FixtureServer {
@@ -1364,7 +1366,7 @@ mod tests {
         async fn pty_request(
             &mut self,
             channel: ChannelId,
-            _term: &str,
+            term: &str,
             col_width: u32,
             row_height: u32,
             pix_width: u32,
@@ -1372,6 +1374,7 @@ mod tests {
             _modes: &[(Pty, u32)],
             session: &mut Session,
         ) -> Result<(), Self::Error> {
+            let _ = self.term_events.try_send(term.to_owned());
             let _ = self.resize_events.try_send(TerminalSize {
                 columns: col_width,
                 rows: row_height,
@@ -1427,6 +1430,7 @@ mod tests {
         #[cfg(unix)]
         agent_key: PrivateKey,
         resize_events: Receiver<TerminalSize>,
+        term_events: Receiver<String>,
         server_task: tokio::task::JoinHandle<()>,
     }
 
@@ -1467,6 +1471,7 @@ mod tests {
             ..Default::default()
         });
         let (resize_sender, resize_events) = async_channel::bounded(16);
+        let (term_sender, term_events) = async_channel::bounded(16);
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
             .await
             .unwrap();
@@ -1474,6 +1479,7 @@ mod tests {
         let fixture_server = FixtureServer {
             accepted_keys,
             resize_events: resize_sender,
+            term_events: term_sender,
         };
         let server_task = tokio::spawn(async move {
             let mut server = fixture_server;
@@ -1487,6 +1493,7 @@ mod tests {
             #[cfg(unix)]
             agent_key,
             resize_events,
+            term_events,
             server_task,
         }
     }
@@ -1602,6 +1609,7 @@ mod tests {
                         pixel_width: 800,
                         pixel_height: 480,
                     },
+                    term: "xterm-256color".into(),
                 })
                 .unwrap();
             let password_events = password.take_events().unwrap();
@@ -1636,6 +1644,7 @@ mod tests {
                         pixel_width: 800,
                         pixel_height: 480,
                     },
+                    term: "xterm-256color".into(),
                 })
                 .unwrap();
             let key_events = key_session.take_events().unwrap();
@@ -1656,6 +1665,7 @@ mod tests {
                         pixel_width: 800,
                         pixel_height: 480,
                     },
+                    term: "xterm-256color".into(),
                 })
                 .unwrap();
             let agent_events = agent_session.take_events().unwrap();
@@ -1694,6 +1704,7 @@ mod tests {
                         pixel_width: 800,
                         pixel_height: 480,
                     },
+                    term: "xterm-256color".into(),
                 })
                 .unwrap();
             let events = session.take_events().unwrap();
@@ -1739,6 +1750,7 @@ mod tests {
                         pixel_width: 800,
                         pixel_height: 480,
                     },
+                    term: "xterm-256color".into(),
                 })
                 .unwrap();
             let missing_secret_events = missing_secret_session.take_events().unwrap();
@@ -1764,6 +1776,7 @@ mod tests {
                         pixel_width: 800,
                         pixel_height: 480,
                     },
+                    term: "xterm-256color".into(),
                 })
                 .unwrap();
             let events = session.take_events().unwrap();
@@ -1807,10 +1820,12 @@ mod tests {
                         pixel_width: 800,
                         pixel_height: 480,
                     },
+                    term: "tmux-256color".into(),
                 })
                 .unwrap();
             let events = session.take_events().unwrap();
             wait_for_connected(&session, &events).await.unwrap();
+            assert_eq!(fixture.term_events.recv().await.unwrap(), "tmux-256color");
             let expected = TerminalSize {
                 columns: 132,
                 rows: 43,
@@ -1859,6 +1874,7 @@ mod tests {
                         pixel_width: 800,
                         pixel_height: 480,
                     },
+                    term: "xterm-256color".into(),
                 })
                 .unwrap();
             let events = session.take_events().unwrap();

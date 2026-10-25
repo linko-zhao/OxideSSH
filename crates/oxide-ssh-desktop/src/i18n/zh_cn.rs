@@ -33,6 +33,8 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::ThemeDescription => "应用界面的颜色方案",
         MessageId::TrustedHosts => "受信任主机",
         MessageId::NewTabButtonDescription => "点击新建标签按钮时执行的操作",
+        MessageId::SshTerm => "SSH TERM 类型",
+        MessageId::SshTermDescription => "远端 PTY 请求的终端类型",
         MessageId::System => "跟随系统",
         MessageId::Light => "浅色",
         MessageId::English => "英语",

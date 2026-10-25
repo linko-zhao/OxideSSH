@@ -33,6 +33,8 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::ThemeDescription => "Application color scheme",
         MessageId::TrustedHosts => "Trusted hosts",
         MessageId::NewTabButtonDescription => "Action performed by the new tab button",
+        MessageId::SshTerm => "SSH TERM",
+        MessageId::SshTermDescription => "Terminal type requested for remote PTYs",
         MessageId::System => "System",
         MessageId::Light => "Light",
         MessageId::English => "English",

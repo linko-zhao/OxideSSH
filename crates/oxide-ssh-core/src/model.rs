@@ -263,7 +263,7 @@ pub enum NewTabAction {
     LocalTerminal,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
     #[serde(default)]
@@ -272,6 +272,56 @@ pub struct AppSettings {
     pub theme: ThemeSetting,
     #[serde(default)]
     pub new_tab_action: NewTabAction,
+    #[serde(default = "default_ssh_term")]
+    pub ssh_term: String,
+}
+
+pub fn default_ssh_term() -> String {
+    "xterm-256color".into()
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            locale: LocaleSetting::default(),
+            theme: ThemeSetting::default(),
+            new_tab_action: NewTabAction::default(),
+            ssh_term: default_ssh_term(),
+        }
+    }
+}
+
+pub fn valid_ssh_term(term: &str) -> bool {
+    !term.is_empty()
+        && term.len() <= 64
+        && term
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"._+-".contains(&byte))
+}
+
+pub fn effective_ssh_term(term: &str) -> &str {
+    if valid_ssh_term(term) {
+        term
+    } else {
+        "xterm-256color"
+    }
+}
+#[cfg(test)]
+mod term_tests {
+    use super::*;
+
+    #[test]
+    fn missing_term_defaults_and_invalid_values_are_rejected() {
+        let settings: AppSettings =
+            serde_json::from_str(r#"{"locale":"zh-CN","theme":"dark"}"#).unwrap();
+        assert_eq!(settings.ssh_term, "xterm-256color");
+        assert_eq!(AppSettings::default().ssh_term, "xterm-256color");
+        assert!(valid_ssh_term("tmux-256color"));
+        assert!(!valid_ssh_term(""));
+        assert!(!valid_ssh_term("bad term"));
+        assert_eq!(effective_ssh_term(""), "xterm-256color");
+        assert_eq!(effective_ssh_term("bad term"), "xterm-256color");
+    }
 }
 
 #[cfg(test)]

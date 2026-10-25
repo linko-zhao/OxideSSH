@@ -201,6 +201,11 @@ impl AppView {
                 pixel_width: terminal_size.pixel_width,
                 pixel_height: terminal_size.pixel_height,
             },
+            term: self
+                .state
+                .as_ref()
+                .map(|state| state.settings().ssh_term.clone())
+                .unwrap_or_else(oxide_ssh_core::model::default_ssh_term),
         };
         let result = self
             .ssh
