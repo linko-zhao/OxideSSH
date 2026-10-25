@@ -29,6 +29,9 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::Security => "安全",
         MessageId::Language => "语言",
         MessageId::LanguageDescription => "应用界面语言",
+        MessageId::ScrollbackLines => "终端回滚行数",
+        MessageId::ScrollbackLinesDescription => "新终端保留的最大历史行数（1–1,000,000）",
+        MessageId::InvalidScrollbackLines => "请输入 1 到 1,000,000 之间的整数。",
         MessageId::Theme => "主题",
         MessageId::AnsiPalette => "ANSI 调色板",
         MessageId::AnsiPaletteDescription => {

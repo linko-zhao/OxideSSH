@@ -397,6 +397,8 @@ pub struct AppSettings {
     pub copy_on_select: bool,
     #[serde(default = "default_ssh_term")]
     pub ssh_term: String,
+    #[serde(default = "default_scrollback_lines")]
+    pub terminal_scrollback_lines: usize,
 }
 
 pub fn default_ssh_term() -> String {
@@ -488,12 +490,19 @@ impl Default for AppSettings {
             local_working_directory: String::new(),
             copy_on_select: false,
             ssh_term: default_ssh_term(),
+            terminal_scrollback_lines: DEFAULT_SCROLLBACK_LINES,
         }
     }
 }
 
 fn default_confirm_before_close_with_sessions() -> bool {
     true
+}
+
+pub const DEFAULT_SCROLLBACK_LINES: usize = 10_000;
+
+fn default_scrollback_lines() -> usize {
+    DEFAULT_SCROLLBACK_LINES
 }
 
 #[cfg(test)]
@@ -599,7 +608,29 @@ mod tests {
     }
 
     #[test]
+    fn scrollback_setting_defaults_for_old_settings() {
+        let settings: AppSettings = serde_json::from_str(
+            r#"{"locale":"zh-CN","theme":"dark","newTabAction":"localTerminal"}"#,
+        )
+        .unwrap();
+        assert_eq!(settings.terminal_scrollback_lines, DEFAULT_SCROLLBACK_LINES);
+    }
+
+    #[test]
+    fn scrollback_lines_round_trip() {
+        let settings = AppSettings {
+            terminal_scrollback_lines: 250,
+            ..AppSettings::default()
+        };
+        let encoded = serde_json::to_string(&settings).unwrap();
+        let decoded: AppSettings = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded.terminal_scrollback_lines, 250);
+    }
+
+    #[test]
     fn settings_without_new_fields_keep_legacy_defaults() {
+        // config.json written before newTabAction existed must still load,
+        // otherwise the app falls into the read-only Recovery UI.
         let settings: AppSettings =
             serde_json::from_str(r#"{"locale":"zh-CN","theme":"dark"}"#).unwrap();
         assert_eq!(settings.new_tab_action, NewTabAction::AddConnection);

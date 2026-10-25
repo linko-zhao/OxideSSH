@@ -176,12 +176,20 @@ pub struct TerminalModel {
 
 impl TerminalModel {
     pub fn new(size: TerminalSize) -> Result<Self, TerminalError> {
-        Self::with_colors(size, TerminalColors::default())
+        Self::with_scrollback(size, TerminalColors::default(), SCROLLBACK_HISTORY_LINES)
     }
 
     pub fn with_colors(
         size: TerminalSize,
         default_colors: TerminalColors,
+    ) -> Result<Self, TerminalError> {
+        Self::with_scrollback(size, default_colors, SCROLLBACK_HISTORY_LINES)
+    }
+
+    pub fn with_scrollback(
+        size: TerminalSize,
+        default_colors: TerminalColors,
+        scrollback_lines: usize,
     ) -> Result<Self, TerminalError> {
         if !size.is_valid() {
             return Err(TerminalError::InvalidSize);
@@ -192,7 +200,7 @@ impl TerminalModel {
             pending: pending_events.clone(),
         };
         let config = Config {
-            scrolling_history: SCROLLBACK_HISTORY_LINES,
+            scrolling_history: scrollback_lines,
             kitty_keyboard: false,
             // Requests become actions; the desktop applies policy before writing.
             osc52: Osc52::OnlyCopy,
@@ -708,6 +716,15 @@ mod tests {
             model.cell_render_style(cell.cell).foreground,
             light.foreground
         );
+    }
+
+    #[test]
+    fn configured_scrollback_discards_oldest_history() {
+        let mut model =
+            TerminalModel::with_scrollback(size(10, 2), TerminalColors::default(), 2).unwrap();
+        model.process_output(b"one\r\ntwo\r\nthree\r\nfour\r\nfive");
+        assert_eq!(model.history_size(), 2);
+        assert!(visible_text(&model).contains("five"));
     }
 
     #[test]

@@ -29,6 +29,11 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::Security => "Security",
         MessageId::Language => "Language",
         MessageId::LanguageDescription => "Application interface language",
+        MessageId::ScrollbackLines => "Scrollback lines",
+        MessageId::ScrollbackLinesDescription => {
+            "Maximum number of lines retained for new terminals (1–1,000,000)"
+        }
+        MessageId::InvalidScrollbackLines => "Enter a whole number from 1 to 1,000,000.",
         MessageId::Theme => "Theme",
         MessageId::AnsiPalette => "ANSI palette",
         MessageId::AnsiPaletteDescription => {

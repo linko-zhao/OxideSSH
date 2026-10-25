@@ -358,7 +358,7 @@ mod tests {
     }
     #[test]
     fn local_shell_echoes_and_exits() {
-        let mut handle = spawn_local_shell(size(), "");
+        let mut handle = spawn_local_shell(size(), "").expect("spawn /bin/sh");
 
         let events = handle.take_events().expect("events");
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);

@@ -49,7 +49,7 @@ fn open_window(root: PathBuf, cx: &mut App) {
         }
         _ => None,
     };
-    let screen = cx.primary_display().map(|display| display.default_bounds());
+    let screen = cx.primary_display().map(|display| display.bounds());
     let width = restored.map_or(1080.0, |saved| saved.width as f32);
     let height = restored.map_or(720.0, |saved| saved.height as f32);
     let window_size = size(

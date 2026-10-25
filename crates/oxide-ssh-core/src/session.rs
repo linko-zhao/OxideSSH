@@ -799,6 +799,9 @@ async fn run_session(
                     Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => {
                         return Ok(exit_status);
                     }
+                    Some(ChannelMsg::Failure) => {
+                        return Err(SessionError::ShellRejected);
+                    }
                     Some(_) => {}
                 }
             }

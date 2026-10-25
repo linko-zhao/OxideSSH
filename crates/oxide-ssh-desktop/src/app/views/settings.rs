@@ -131,6 +131,15 @@ impl AppView {
                             cx,
                         ),
                         self.setting_row(
+                            MessageId::ScrollbackLines,
+                            MessageId::ScrollbackLinesDescription,
+                            div()
+                                .w(px(180.))
+                                .child(Input::new(&self.scrollback_input))
+                                .into_any_element(),
+                            cx,
+                        ),
+                        self.setting_row(
                             MessageId::SshConnectTimeout,
                             MessageId::SshConnectTimeoutDescription,
                             Select::new(&self.ssh_connect_timeout_select)
