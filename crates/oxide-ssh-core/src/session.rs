@@ -33,6 +33,7 @@ use crate::{
 
 pub(crate) const INPUT_QUEUE_CAPACITY: usize = 128;
 pub(crate) const EVENT_QUEUE_CAPACITY: usize = 256;
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 const HOST_KEY_DECISION_TIMEOUT: Duration = Duration::from_secs(120);
 const DISCONNECT_GRACE: Duration = Duration::from_secs(2);
 
@@ -41,7 +42,6 @@ pub struct ConnectRequest {
     pub secret: Option<SecretString>,
     pub initial_size: TerminalSize,
     pub ssh_compression: bool,
-    pub connect_timeout_seconds: u64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -169,9 +169,6 @@ impl SshService {
             .validate()
             .map_err(|_| SessionError::InvalidProfile)?;
         if !request.initial_size.is_valid() {
-            return Err(SessionError::InvalidProfile);
-        }
-        if !(1..=300).contains(&request.connect_timeout_seconds) {
             return Err(SessionError::InvalidProfile);
         }
 
@@ -644,17 +641,6 @@ fn enable_compression(config: &mut client::Config) {
         russh::compression::NONE,
     ]);
 }
-fn ssh_client_config(profile: &ConnectionProfile) -> Arc<client::Config> {
-    Arc::new(client::Config {
-        keepalive_interval: Some(Duration::from_secs(
-            profile.ssh_keepalive_interval_seconds.unwrap_or(30),
-        )),
-        keepalive_max: profile.ssh_keepalive_max_count.unwrap_or(3),
-        inactivity_timeout: None,
-        nodelay: true,
-        ..Default::default()
-    })
-}
 async fn run_session(
     request: ConnectRequest,
     input: Receiver<Bytes>,
@@ -686,8 +672,7 @@ async fn run_session(
     let address = (endpoint.host.as_str(), endpoint.port);
     let mut connect = Box::pin(client::connect(config, address, handler));
     let mut awaiting = trust.subscribe_awaiting(&endpoint);
-    let connect_timeout = Duration::from_secs(request.connect_timeout_seconds);
-    let mut deadline = Box::pin(tokio::time::sleep(connect_timeout));
+    let mut deadline = Box::pin(tokio::time::sleep(CONNECT_TIMEOUT));
     let mut handle = loop {
         tokio::select! {
             result = &mut connect => break result?,
@@ -699,7 +684,7 @@ async fn run_session(
                 deadline = Box::pin(tokio::time::sleep(if *awaiting.borrow() {
                     HOST_KEY_DECISION_TIMEOUT
                 } else {
-                    connect_timeout
+                    CONNECT_TIMEOUT
                 }));
             }
         }
@@ -907,21 +892,6 @@ mod tests {
     use tempfile::{TempDir, tempdir};
 
     use super::*;
-
-    #[test]
-    fn ssh_client_configuration_uses_resolved_keepalive_values() {
-        let mut profile = connection_profile(22, AuthConfig::Agent);
-        let defaults = ssh_client_config(&profile);
-        assert_eq!(defaults.keepalive_interval, Some(Duration::from_secs(30)));
-        assert_eq!(defaults.keepalive_max, 3);
-
-        profile.ssh_keepalive_interval_seconds = Some(11);
-        profile.ssh_keepalive_max_count = Some(6);
-        let configured = ssh_client_config(&profile);
-        assert_eq!(configured.keepalive_interval, Some(Duration::from_secs(11)));
-        assert_eq!(configured.keepalive_max, 6);
-    }
-
     fn runtime() -> Arc<Runtime> {
         Arc::new(
             tokio::runtime::Builder::new_current_thread()
@@ -1559,8 +1529,6 @@ mod tests {
             username: "oxide".into(),
             auth,
             tag_ids: Vec::new(),
-            ssh_keepalive_interval_seconds: None,
-            ssh_keepalive_max_count: None,
         }
     }
 
@@ -1662,7 +1630,6 @@ mod tests {
                         pixel_height: 480,
                     },
                     ssh_compression: true,
-                    connect_timeout_seconds: 15,
                 })
                 .unwrap();
             let password_events = password.take_events().unwrap();
@@ -1698,7 +1665,6 @@ mod tests {
                         pixel_height: 480,
                     },
                     ssh_compression: false,
-                    connect_timeout_seconds: 15,
                 })
                 .unwrap();
             let key_events = key_session.take_events().unwrap();
@@ -1720,7 +1686,6 @@ mod tests {
                         pixel_height: 480,
                     },
                     ssh_compression: false,
-                    connect_timeout_seconds: 15,
                 })
                 .unwrap();
             let agent_events = agent_session.take_events().unwrap();
@@ -1760,7 +1725,6 @@ mod tests {
                         pixel_height: 480,
                     },
                     ssh_compression: false,
-                    connect_timeout_seconds: 15,
                 })
                 .unwrap();
             let events = session.take_events().unwrap();
@@ -1807,7 +1771,6 @@ mod tests {
                         pixel_height: 480,
                     },
                     ssh_compression: false,
-                    connect_timeout_seconds: 15,
                 })
                 .unwrap();
             let missing_secret_events = missing_secret_session.take_events().unwrap();
@@ -1834,7 +1797,6 @@ mod tests {
                         pixel_height: 480,
                     },
                     ssh_compression: false,
-                    connect_timeout_seconds: 15,
                 })
                 .unwrap();
             let events = session.take_events().unwrap();
@@ -1879,7 +1841,6 @@ mod tests {
                         pixel_height: 480,
                     },
                     ssh_compression: false,
-                    connect_timeout_seconds: 15,
                 })
                 .unwrap();
             let events = session.take_events().unwrap();
@@ -1909,54 +1870,6 @@ mod tests {
     }
 
     #[test]
-    fn configured_connect_timeout_ends_an_unresponsive_ssh_handshake() {
-        let runtime = runtime();
-        let (port, server_task) = runtime.block_on(async {
-            let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
-                .await
-                .unwrap();
-            let port = listener.local_addr().unwrap().port();
-            let server_task = tokio::spawn(async move {
-                let (_stream, _) = listener.accept().await.unwrap();
-                std::future::pending::<()>().await;
-            });
-            (port, server_task)
-        });
-        let directory = tempdir().unwrap();
-        let store = Arc::new(AppStore::open(directory.path().to_path_buf()).unwrap());
-        let service = SshService::new(store).unwrap();
-        let mut session = service
-            .connect(ConnectRequest {
-                profile: connection_profile(port, AuthConfig::Agent),
-                secret: None,
-                initial_size: TerminalSize {
-                    columns: 80,
-                    rows: 24,
-                    pixel_width: 800,
-                    pixel_height: 480,
-                },
-                connect_timeout_seconds: 1,
-            })
-            .unwrap();
-        let events = session.take_events().unwrap();
-        runtime.block_on(async {
-            loop {
-                match tokio::time::timeout(Duration::from_secs(5), events.recv())
-                    .await
-                    .unwrap()
-                    .unwrap()
-                {
-                    SessionEvent::Error(SessionError::ConnectTimeout) => break,
-                    SessionEvent::Error(error) => panic!("unexpected error: {error:?}"),
-                    _ => {}
-                }
-            }
-        });
-        session.disconnect();
-        server_task.abort();
-    }
-
-    #[test]
     fn disconnect_terminates_once() {
         let runtime = runtime();
         let service = runtime.block_on(async {
@@ -1981,7 +1894,6 @@ mod tests {
                         pixel_height: 480,
                     },
                     ssh_compression: false,
-                    connect_timeout_seconds: 15,
                 })
                 .unwrap();
             let events = session.take_events().unwrap();

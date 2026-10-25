@@ -7,7 +7,7 @@ use alacritty_terminal::{
     selection::{Selection, SelectionType},
     term::{
         Config, MIN_COLUMNS, MIN_SCREEN_LINES, Osc52, RenderableContent, Term, TermDamage,
-        TermMode, ClipboardType,
+        TermMode,
         cell::{Cell, Flags},
         color,
     },
@@ -123,7 +123,6 @@ pub struct CellRenderStyle {
 pub enum TerminalAction {
     WriteBack(Bytes),
     Bell,
-    Clipboard(String),
     Wakeup,
 }
 
@@ -194,8 +193,7 @@ impl TerminalModel {
         let config = Config {
             scrolling_history: SCROLLBACK_HISTORY_LINES,
             kitty_keyboard: false,
-            // Requests become actions; the desktop applies policy before writing.
-            osc52: Osc52::OnlyCopy,
+            osc52: Osc52::Disabled,
             ..Default::default()
         };
 
@@ -232,13 +230,10 @@ impl TerminalModel {
                 }
                 Event::Bell => actions.push(TerminalAction::Bell),
                 Event::Wakeup => actions.push(TerminalAction::Wakeup),
-                Event::ClipboardStore(ClipboardType::Clipboard, content) => {
-                    actions.push(TerminalAction::Clipboard(content));
-                }
-                Event::ClipboardStore(_, _)
-                | Event::MouseCursorDirty
+                Event::MouseCursorDirty
                 | Event::Title(_)
                 | Event::ResetTitle
+                | Event::ClipboardStore(_, _)
                 | Event::ClipboardLoad(_, _)
                 | Event::CursorBlinkingChange
                 | Event::Exit
@@ -568,12 +563,10 @@ mod tests {
     }
 
     #[test]
-    fn bell_and_osc52_clipboard_requests_are_reported() {
+    fn bell_queries_and_unsafe_osc_events_are_bounded() {
         let mut model = TerminalModel::new(size(80, 24)).unwrap();
         let actions =
-            model.process_output(
-                b"\x07\x1b[6n\x1b]0;ignored title\x07\x1b]52;c;YQ==\x07\x1b]52;c;Yg==\x07",
-            );
+            model.process_output(b"\x07\x1b[6n\x1b]0;ignored title\x07\x1b]52;c;YQ==\x07");
 
         assert!(actions.contains(&TerminalAction::Bell));
         assert!(
@@ -588,8 +581,6 @@ mod tests {
                 .count(),
             1,
         );
-        assert!(actions.contains(&TerminalAction::Clipboard("a".into())));
-        assert!(actions.contains(&TerminalAction::Clipboard("b".into())));
         assert_eq!(
             actions
                 .iter()

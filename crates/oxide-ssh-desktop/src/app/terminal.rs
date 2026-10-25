@@ -650,7 +650,6 @@ impl AppView {
         if let Some(tab) = self.tabs.active().and_then(|id| self.tabs.tab_mut(id)) {
             tab.terminal_mut().start_selection(row, column, side);
             self.terminal_selecting = true;
-            self.terminal_selection_dragged = false;
             cx.notify();
         }
     }
@@ -668,7 +667,6 @@ impl AppView {
             return;
         };
         if let Some(tab) = self.tabs.active().and_then(|id| self.tabs.tab_mut(id)) {
-            self.terminal_selection_dragged = true;
             tab.terminal_mut().update_selection(row, column, side);
             cx.notify();
         }
@@ -678,24 +676,9 @@ impl AppView {
         &mut self,
         _: &MouseUpEvent,
         _: &mut Window,
-        cx: &mut Context<Self>,
+        _: &mut Context<Self>,
     ) {
-        if self.terminal_selecting
-            && self.terminal_selection_dragged
-            && self.state.as_ref().is_some_and(|state| state.settings().copy_on_select)
-        {
-            if let Some(text) = self
-                .tabs
-                .active()
-                .and_then(|id| self.tabs.tab(id))
-                .and_then(|tab| tab.terminal().selected_text())
-                .filter(|text| !text.is_empty())
-            {
-                cx.write_to_clipboard(ClipboardItem::new_string(text));
-            }
-        }
         self.terminal_selecting = false;
-        self.terminal_selection_dragged = false;
     }
 
     pub(super) fn terminal_scroll(

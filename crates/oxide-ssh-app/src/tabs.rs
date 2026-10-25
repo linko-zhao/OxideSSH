@@ -54,11 +54,10 @@ pub enum TabLocalError {
     InvalidTerminalSize,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TabNotification {
     Repaint,
     Bell,
-    Clipboard(String),
     LocalError(TabLocalError),
 }
 
@@ -350,11 +349,6 @@ impl Tab {
                     }
                 }
                 TerminalAction::Bell => notifications.push(TabNotification::Bell),
-                TerminalAction::Clipboard(text) => {
-                    if matches!(&self.kind, TabKind::Ssh(_)) {
-                        notifications.push(TabNotification::Clipboard(text));
-                    }
-                }
                 TerminalAction::Wakeup => notifications.push(TabNotification::Repaint),
             }
         }
@@ -755,8 +749,6 @@ mod tests {
             username: "oxide".into(),
             auth: AuthConfig::Agent,
             tag_ids: Vec::new(),
-            ssh_keepalive_interval_seconds: None,
-            ssh_keepalive_max_count: None,
         }
     }
 

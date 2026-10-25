@@ -188,13 +188,10 @@ impl AppView {
         let Some(tab) = self.tabs.tab(tab_id) else {
             return;
         };
-        let Some(mut profile) = tab.profile().cloned() else {
+        let Some(profile) = tab.profile().cloned() else {
             return;
         };
         let terminal_size = tab.terminal().size();
-        if let Some(state) = &self.state {
-            profile.inherit_keepalive_defaults(state.settings());
-        }
         let request = ConnectRequest {
             profile,
             secret,
@@ -208,9 +205,6 @@ impl AppView {
                 .state
                 .as_ref()
                 .is_some_and(|state| state.settings().ssh_compression),
-            connect_timeout_seconds: self.state.as_ref().map_or(15, |state| {
-                state.settings().ssh_connect_timeout_seconds
-            }),
         };
         let result = self
             .ssh
@@ -351,7 +345,6 @@ impl AppView {
         }
         let mut notifications = Vec::new();
         let mut repainted = false;
-        let mut belled = false;
         for event in events {
             let batch_notifications = self.tabs.apply_event(tab_id, event);
             for notification in batch_notifications {
@@ -359,32 +352,12 @@ impl AppView {
                     TabNotification::LocalError(error) => {
                         notifications.push(error);
                     }
-                    TabNotification::Bell => {
-                        belled = true;
-                        self.handle_terminal_bell(cx);
-                    }
+                    TabNotification::Bell => self.bell = true,
                     TabNotification::Repaint => repainted = true,
-                    TabNotification::Clipboard(text) => match self
-                        .state
-                        .as_ref()
-                        .map(|state| state.settings().osc52_clipboard)
-                    {
-                        Some(Osc52Clipboard::On) => {
-                            cx.write_to_clipboard(ClipboardItem::new_string(text));
-                        }
-                        Some(Osc52Clipboard::Ask) if self.confirm.is_none() => {
-                            self.confirm = Some(ConfirmAction::Osc52Clipboard {
-                                tab_id,
-                                session_id,
-                                text,
-                            });
-                        }
-                        _ => {}
-                    },
                 }
             }
         }
-        if repainted && !belled {
+        if repainted {
             self.bell = false;
         }
         for error in notifications {
@@ -422,37 +395,16 @@ impl AppView {
         }
         let notifications = self.tabs.apply_event(tab_id, event);
         let mut repainted = false;
-        let mut belled = false;
         for notification in notifications {
             match notification {
                 TabNotification::LocalError(error) => {
                     self.status_message = Some(local_error_message_id(error));
                 }
-                TabNotification::Bell => {
-                    belled = true;
-                    self.handle_terminal_bell(cx);
-                }
+                TabNotification::Bell => self.bell = true,
                 TabNotification::Repaint => repainted = true,
-                TabNotification::Clipboard(text) => match self
-                    .state
-                    .as_ref()
-                    .map(|state| state.settings().osc52_clipboard)
-                {
-                    Some(Osc52Clipboard::On) => {
-                        cx.write_to_clipboard(ClipboardItem::new_string(text));
-                    }
-                    Some(Osc52Clipboard::Ask) if self.confirm.is_none() => {
-                        self.confirm = Some(ConfirmAction::Osc52Clipboard {
-                            tab_id,
-                            session_id,
-                            text,
-                        });
-                    }
-                    _ => {}
-                },
             }
         }
-        if repainted && !belled {
+        if repainted {
             self.bell = false;
         }
         if matches!(
@@ -634,22 +586,6 @@ impl AppView {
                 }
             }
             ConfirmAction::DeleteTag(id) => self.delete_tag(id, cx),
-            ConfirmAction::Osc52Clipboard {
-                tab_id,
-                session_id,
-                text,
-            } => {
-                let still_authorized = self.state.as_ref().is_some_and(|state| {
-                    state.settings().osc52_clipboard == Osc52Clipboard::Ask
-                }) && self.tabs.tab(tab_id).is_some_and(|tab| {
-                    tab.session_id() == Some(session_id)
-                        && !tab.is_local()
-                        && matches!(tab.state(), TabState::Connected)
-                });
-                if still_authorized {
-                    cx.write_to_clipboard(ClipboardItem::new_string(text));
-                }
-            }
             ConfirmAction::Quit => {
                 self.quitting = true;
                 self.tabs.disconnect_all();
