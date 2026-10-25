@@ -146,6 +146,35 @@ impl AppView {
                             .into_any_element(),
                         cx,
                     ),
+                    self.setting_row(
+                        MessageId::AnsiPalette,
+                        MessageId::AnsiPaletteDescription,
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(px(8.))
+                            .child(Input::new(&self.ansi_palette_input))
+                            .child(
+                                h_flex()
+                                    .gap(px(8.))
+                                    .child(
+                                        Button::new("save-ansi-palette")
+                                            .label(self.text(MessageId::Save))
+                                            .on_click(cx.listener(|this, _, window, cx| {
+                                                this.save_ansi_palette(window, cx);
+                                            })),
+                                    )
+                                    .child(
+                                        Button::new("reset-ansi-palette")
+                                            .label(self.text(MessageId::Reset))
+                                            .on_click(cx.listener(|this, _, window, cx| {
+                                                this.reset_ansi_palette(window, cx);
+                                            })),
+                                    ),
+                            )
+                            .into_any_element(),
+                        cx,
+                    ),
                 ],
                 cx,
             ),
