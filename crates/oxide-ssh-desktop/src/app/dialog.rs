@@ -7,6 +7,7 @@ pub(super) enum ConfirmAction {
     DeleteProfile(ProfileId),
     DeleteHost(Endpoint),
     DeleteTag(TagId),
+    ClearAllCredentials,
     /// Window close: disconnects, then removes only this window.
     Quit,
     /// Cmd+Q / dock Quit: disconnects, then terminates the process.
@@ -611,6 +612,10 @@ impl DialogPresenter {
             ConfirmAction::DeleteProfile(_) => (MessageId::ConfirmDeleteProfile, MessageId::Delete),
             ConfirmAction::DeleteHost(_) => (MessageId::ConfirmDeleteHost, MessageId::Delete),
             ConfirmAction::DeleteTag(_) => (MessageId::ConfirmDeleteTag, MessageId::Delete),
+            ConfirmAction::ClearAllCredentials => (
+                MessageId::ConfirmClearAllCredentials,
+                MessageId::ClearAllCredentials,
+            ),
             ConfirmAction::Quit | ConfirmAction::QuitApp => {
                 (MessageId::ConfirmQuit, MessageId::Quit)
             }
@@ -624,7 +629,7 @@ impl DialogPresenter {
                 .update(cx, |app, cx| app.perform_confirm(window, cx))
                 .ok();
         });
-        let mut body = h_flex().gap(px(8.)).child(self.text(message));
+        let mut body = div().w_full().text_sm().child(self.text(message));
         if matches!(action, ConfirmAction::DeleteTag(_)) {
             body = body.child(
                 div()

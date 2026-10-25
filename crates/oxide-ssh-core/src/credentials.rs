@@ -7,6 +7,7 @@ pub trait CredentialStore: Send + Sync {
     fn get(&self, reference: &CredentialRef) -> Result<Option<SecretString>, CredentialError>;
     fn put(&self, reference: &CredentialRef, secret: &SecretString) -> Result<(), CredentialError>;
     fn delete(&self, reference: &CredentialRef) -> Result<(), CredentialError>;
+    fn list_application_credentials(&self) -> Result<Vec<CredentialRef>, CredentialError>;
 }
 
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]

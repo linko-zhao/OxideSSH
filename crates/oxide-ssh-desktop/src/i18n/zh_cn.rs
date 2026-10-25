@@ -72,6 +72,12 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::Save => "保存",
         MessageId::AgentDescription => "使用系统 SSH 代理中的身份。",
         MessageId::CredentialRequired => "输入此连接所需的凭据。",
+        MessageId::ClearAllCredentials => "清空所有已保存凭据",
+        MessageId::ConfirmClearAllCredentials => {
+            "此操作将永久删除系统凭据库中所有属于 OxideSSH 的凭据，包括未被任何资料引用的凭据，且无法撤销。"
+        }
+        MessageId::ClearCredentialsSuccess => "已删除所有 OxideSSH 凭据。",
+        MessageId::ClearCredentialsFailures => "部分 OxideSSH 凭据无法删除：",
         MessageId::Connect => "连接",
         MessageId::ConnectOnce => "仅本次连接",
         MessageId::Edit => "编辑",

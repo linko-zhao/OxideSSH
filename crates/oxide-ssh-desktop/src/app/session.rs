@@ -586,6 +586,43 @@ impl AppView {
                 }
             }
             ConfirmAction::DeleteTag(id) => self.delete_tag(id, cx),
+            ConfirmAction::ClearAllCredentials => {
+                if let Some(credentials) = self.credentials.clone() {
+                    self.credential_clear_failures.clear();
+                    cx.spawn(async move |weak, cx| {
+                        let result = credentials.clear_all();
+                        weak.update(cx, |this, cx| {
+                            match result {
+                                Ok(items) => {
+                                    this.credential_clear_failures = items
+                                        .into_iter()
+                                        .filter_map(|item| {
+                                            item.err().map(|(reference, error)| {
+                                                format!("{} ({error})", reference.as_str())
+                                            })
+                                        })
+                                        .collect();
+                                    this.status_message =
+                                        Some(if this.credential_clear_failures.is_empty() {
+                                            MessageId::ClearCredentialsSuccess
+                                        } else {
+                                            MessageId::ClearCredentialsFailures
+                                        });
+                                }
+                                Err(error) => {
+                                    this.credential_clear_failures.clear();
+                                    this.status_message = Some(credential_error_message_id(error));
+                                }
+                            }
+                            cx.notify();
+                        })
+                        .ok();
+                    })
+                    .detach();
+                } else {
+                    self.status_message = Some(MessageId::CredentialUnavailable);
+                }
+            }
             ConfirmAction::Quit => {
                 self.quitting = true;
                 self.tabs.disconnect_all();

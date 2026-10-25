@@ -280,6 +280,42 @@ impl AppView {
                             .into_any_element(),
                     );
                 }
+                let view = cx.entity();
+                rows.push(
+                    h_flex()
+                        .w_full()
+                        .items_center()
+                        .justify_between()
+                        .gap(px(16.))
+                        .p(px(20.))
+                        .child(
+                            div()
+                                .text_sm()
+                                .child(self.text(MessageId::ClearAllCredentials)),
+                        )
+                        .child(
+                            Button::new("clear-all-credentials")
+                                .label(self.text(MessageId::ClearAllCredentials))
+                                .danger()
+                                .on_click(move |_, _, cx| {
+                                    view.update(cx, |this, cx| {
+                                        this.confirm = Some(ConfirmAction::ClearAllCredentials);
+                                        cx.notify();
+                                    });
+                                }),
+                        )
+                        .into_any_element(),
+                );
+                if !self.credential_clear_failures.is_empty() {
+                    rows.push(
+                        div()
+                            .p(px(20.))
+                            .text_sm()
+                            .child(self.text(MessageId::ClearCredentialsFailures))
+                            .child(self.credential_clear_failures.join("\n"))
+                            .into_any_element(),
+                    );
+                }
                 settings_page(self.text(MessageId::Security), rows, cx)
             }
         };
