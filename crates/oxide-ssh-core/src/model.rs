@@ -316,6 +316,13 @@ pub enum NewTabAction {
     LocalTerminal,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WindowSize {
+    pub width: u32,
+    pub height: u32,
+}
+
 fn default_ssh_connect_timeout_seconds() -> u64 {
     15
 }
@@ -341,6 +348,10 @@ pub struct AppSettings {
     pub local_working_directory: String,
     #[serde(default)]
     pub new_tab_action: NewTabAction,
+    #[serde(default)]
+    pub remember_window_size: bool,
+    #[serde(default)]
+    pub window_size: Option<WindowSize>,
     #[serde(default)]
     pub ssh_compression: bool,
     #[serde(default = "default_confirm_before_close_with_sessions")]
@@ -402,6 +413,8 @@ impl Default for AppSettings {
             theme: ThemeSetting::default(),
             ssh_connect_timeout_seconds: default_ssh_connect_timeout_seconds(),
             new_tab_action: NewTabAction::default(),
+            remember_window_size: false,
+            window_size: None,
             ssh_compression: false,
             confirm_before_close_with_sessions: default_confirm_before_close_with_sessions(),
             ansi_palette: None,
@@ -517,6 +530,25 @@ mod tests {
             serde_json::from_str(r#"{"locale":"en-US","theme":"dark","newTabAction":"addConnection"}"#)
                 .unwrap();
         assert_eq!(settings.ansi_palette, None);
+    }
+
+    #[test]
+    fn settings_without_window_size_preferences_keep_defaults() {
+        let settings: AppSettings =
+            serde_json::from_str(r#"{"locale":"zh-CN","theme":"dark"}"#).unwrap();
+        assert!(!settings.remember_window_size);
+        assert_eq!(settings.window_size, None);
+    }
+
+    #[test]
+    fn window_size_settings_round_trip() {
+        let settings = AppSettings {
+            remember_window_size: true,
+            window_size: Some(WindowSize { width: 1280, height: 800 }),
+            ..AppSettings::default()
+        };
+        let encoded = serde_json::to_string(&settings).unwrap();
+        assert_eq!(serde_json::from_str::<AppSettings>(&encoded).unwrap(), settings);
     }
 
     #[test]

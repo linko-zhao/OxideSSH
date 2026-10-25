@@ -200,6 +200,19 @@ impl AppView {
                             cx,
                         ),
                         self.setting_row(
+                            MessageId::RememberWindowSize,
+                            MessageId::RememberWindowSizeDescription,
+                            Checkbox::new("remember-window-size")
+                                .checked(self.state.as_ref().is_some_and(|state| {
+                                    state.settings().remember_window_size
+                                }))
+                                .on_click(cx.listener(|this, checked, window, cx| {
+                                    this.set_remember_window_size(*checked, window, cx);
+                                }))
+                                .into_any_element(),
+                            cx,
+                        ),
+                        self.setting_row(
                             MessageId::NewTabButton,
                             MessageId::NewTabButtonDescription,
                             Select::new(&self.new_tab_action_select)

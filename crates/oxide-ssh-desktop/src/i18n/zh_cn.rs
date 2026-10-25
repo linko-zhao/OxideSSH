@@ -42,6 +42,8 @@ pub(super) fn text(id: MessageId) -> &'static str {
             "关闭有活动会话的标签页、窗口或应用前询问"
         }
         MessageId::NewTabButtonDescription => "点击新建标签按钮时执行的操作",
+        MessageId::RememberWindowSize => "记住窗口尺寸",
+        MessageId::RememberWindowSizeDescription => "下次启动时恢复上次窗口尺寸",
         MessageId::SshCompression => "SSH 压缩",
         MessageId::SshCompressionDescription => "服务器支持时压缩 SSH 流量；不支持压缩的服务器将回退为未压缩连接。",
         MessageId::SshConnectTimeout => "SSH 连接超时",

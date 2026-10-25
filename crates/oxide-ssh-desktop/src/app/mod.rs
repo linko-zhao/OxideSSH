@@ -273,6 +273,7 @@ pub struct AppView {
     quitting: bool,
     _search_subscription: gpui::Subscription,
     _settings_subscriptions: Vec<gpui::Subscription>,
+    _bounds_subscription: gpui::Subscription,
 }
 
 
@@ -635,6 +636,21 @@ impl AppView {
                 },
             ),
         ];
+        let bounds_subscription = cx.observe_window_bounds(window, |this, window, cx| {
+            if let Some(state) = &mut this.state {
+                let bounds = window.bounds();
+                if state
+                    .set_window_size(
+                        u32::from(bounds.size.width),
+                        u32::from(bounds.size.height),
+                    )
+                    .is_err()
+                {
+                    this.status_message = Some(MessageId::StorageCorrupt);
+                    cx.notify();
+                }
+            }
+        });
         Self {
             root,
             state,
@@ -685,6 +701,7 @@ impl AppView {
             quitting: false,
             _search_subscription: search_subscription,
             _settings_subscriptions: settings_subscriptions,
+            _bounds_subscription: bounds_subscription,
         }
     }
 
@@ -1155,6 +1172,35 @@ impl AppView {
             .is_some_and(|state| state.set_osc52_clipboard(setting).is_err())
         {
             self.status_message = Some(MessageId::StorageCorrupt);
+        }
+        cx.notify();
+    }
+
+    fn set_remember_window_size(
+        &mut self,
+        remember: bool,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self
+            .state
+            .as_mut()
+            .is_some_and(|state| state.set_remember_window_size(remember).is_err())
+        {
+            self.status_message = Some(MessageId::StorageCorrupt);
+        }
+        if remember {
+            let bounds = window.bounds();
+            if self.state.as_mut().is_some_and(|state| {
+                state
+                    .set_window_size(
+                        u32::from(bounds.size.width),
+                        u32::from(bounds.size.height),
+                    )
+                    .is_err()
+            }) {
+                self.status_message = Some(MessageId::StorageCorrupt);
+            }
         }
         cx.notify();
     }

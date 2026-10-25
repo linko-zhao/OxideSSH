@@ -347,6 +347,29 @@ impl AppState {
         Ok(())
     }
 
+    pub fn set_remember_window_size(&mut self, remember: bool) -> Result<(), StorageError> {
+        let mut config = self.config.clone();
+        config.settings.remember_window_size = remember;
+        if !remember {
+            config.settings.window_size = None;
+        }
+        self.store.save_config(&config)?;
+        self.config = config;
+        Ok(())
+    }
+
+    pub fn set_window_size(&mut self, width: u32, height: u32) -> Result<(), StorageError> {
+        if !self.config.settings.remember_window_size {
+            return Ok(());
+        }
+        let mut config = self.config.clone();
+        config.settings.window_size = Some(oxide_ssh_core::model::WindowSize { width, height });
+        self.store.save_config(&config)?;
+        self.config = config;
+        Ok(())
+    }
+
+
     pub fn reload_config(&mut self) -> Result<(), StorageError> {
         self.config = self.store.load_config()?;
         Ok(())
@@ -427,6 +450,33 @@ mod tests {
             .unwrap();
         let stored = state.store().load_config().unwrap();
         assert_eq!(stored.settings.local_working_directory, "C:/work");
+    }
+    #[test]
+    fn disabling_window_size_memory_clears_saved_dimensions() {
+        let directory = tempdir().unwrap();
+        let AppLoadOutcome::Ready(mut state) = AppState::load(directory.path().to_path_buf()) else {
+            panic!("fresh store should load");
+        };
+        state.set_remember_window_size(true).unwrap();
+        state.set_window_size(1280, 800).unwrap();
+        let AppLoadOutcome::Ready(state) = AppState::load(directory.path().to_path_buf()) else {
+            panic!("saved store should load");
+        };
+        assert!(state.settings().remember_window_size);
+        assert_eq!(
+            state.settings().window_size,
+            Some(oxide_ssh_core::model::WindowSize {
+                width: 1280,
+                height: 800
+            })
+        );
+        let mut state = state;
+        state.set_remember_window_size(false).unwrap();
+        let AppLoadOutcome::Ready(state) = AppState::load(directory.path().to_path_buf()) else {
+            panic!("saved store should load");
+        };
+        assert!(!state.settings().remember_window_size);
+        assert_eq!(state.settings().window_size, None);
     }
     #[test]
     fn untagged_filter_is_exclusive_with_tag_selection() {
