@@ -260,12 +260,22 @@ impl AppState {
     pub fn set_ssh_compression(&mut self, enabled: bool) -> Result<(), StorageError> {
         let mut config = self.config.clone();
         config.settings.ssh_compression = enabled;
+        self.store.save_config(&config)?;
+        self.config = config;
+        Ok(())
+    }
+
     pub fn set_ssh_connect_timeout_seconds(&mut self, seconds: u64) -> Result<(), StorageError> {
         if !(1..=300).contains(&seconds) {
             return Ok(());
         }
         let mut config = self.config.clone();
         config.settings.ssh_connect_timeout_seconds = seconds;
+        self.store.save_config(&config)?;
+        self.config = config;
+        Ok(())
+    }
+
     pub fn set_ssh_keepalive(
         &mut self,
         interval_seconds: u64,
@@ -274,6 +284,11 @@ impl AppState {
         let mut config = self.config.clone();
         config.settings.ssh_keepalive_interval_seconds = interval_seconds;
         config.settings.ssh_keepalive_max_count = max_count;
+        self.store.save_config(&config)?;
+        self.config = config;
+        Ok(())
+    }
+
     pub fn set_terminal_bell(&mut self, bell: TerminalBell) -> Result<(), StorageError> {
         let mut config = self.config.clone();
         config.settings.terminal_bell = bell;

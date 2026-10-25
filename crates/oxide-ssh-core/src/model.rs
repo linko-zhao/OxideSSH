@@ -284,7 +284,19 @@ pub enum NewTabAction {
 fn default_ssh_connect_timeout_seconds() -> u64 {
     15
 }
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+
+fn default_keepalive_interval() -> u64 {
+    30
+}
+
+fn default_keepalive_max() -> usize {
+    3
+}
+
+fn default_confirm_before_close_with_sessions() -> bool {
+    true
+}
+
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TerminalBell {
@@ -294,7 +306,6 @@ pub enum TerminalBell {
     Off,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
@@ -312,14 +323,8 @@ pub struct AppSettings {
     pub ssh_keepalive_interval_seconds: u64,
     #[serde(default = "default_keepalive_max")]
     pub ssh_keepalive_max_count: usize,
-}
-
-fn default_keepalive_interval() -> u64 {
-    30
-}
-
-fn default_keepalive_max() -> usize {
-    3
+    #[serde(default)]
+    pub terminal_bell: TerminalBell,
     #[serde(default = "default_confirm_before_close_with_sessions")]
     pub confirm_before_close_with_sessions: bool,
 }
@@ -331,20 +336,13 @@ impl Default for AppSettings {
             theme: ThemeSetting::default(),
             ssh_connect_timeout_seconds: default_ssh_connect_timeout_seconds(),
             new_tab_action: NewTabAction::default(),
-            new_tab_action: NewTabAction::default(),
+            ssh_compression: false,
             ssh_keepalive_interval_seconds: default_keepalive_interval(),
             ssh_keepalive_max_count: default_keepalive_max(),
-        }
-    }
-    pub terminal_bell: TerminalBell,
-            new_tab_action: NewTabAction::default(),
+            terminal_bell: TerminalBell::default(),
             confirm_before_close_with_sessions: default_confirm_before_close_with_sessions(),
         }
     }
-}
-
-fn default_confirm_before_close_with_sessions() -> bool {
-    true
 }
 
 #[cfg(test)]
@@ -464,6 +462,9 @@ mod tests {
         assert_eq!(profile.ssh_keepalive_max_count, Some(5));
         assert_eq!(round_trip.ssh_keepalive_interval_seconds, Some(12));
         assert_eq!(round_trip.ssh_keepalive_max_count, Some(5));
+    }
+
+    #[test]
     fn terminal_bell_defaults_to_visual_and_round_trips_all_modes() {
         let old: AppSettings =
             serde_json::from_str(r#"{"locale":"zh-CN","theme":"dark"}"#).unwrap();
