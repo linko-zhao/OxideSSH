@@ -592,14 +592,20 @@ impl AppView {
     }
 
     pub fn request_quit(&mut self, cx: &mut Context<Self>) {
-        if self.has_live_tabs() {
+        if self.confirm_before_close_with_sessions() && self.has_live_tabs() {
             self.confirm = Some(ConfirmAction::Quit);
             cx.notify();
         }
     }
 
+    pub fn confirm_before_close_with_sessions(&self) -> bool {
+        self.state
+            .as_ref()
+            .is_none_or(|state| state.settings().confirm_before_close_with_sessions)
+    }
+
     fn on_quit_app(&mut self, _: &QuitApp, _: &mut Window, cx: &mut Context<Self>) {
-        if self.has_live_tabs() {
+        if self.confirm_before_close_with_sessions() && self.has_live_tabs() {
             self.confirm = Some(ConfirmAction::QuitApp);
             cx.notify();
         } else {
@@ -825,7 +831,6 @@ impl AppView {
         self.refresh_preferences(window, cx);
         cx.notify();
     }
-
     fn set_new_tab_action(&mut self, setting: NewTabAction, cx: &mut Context<Self>) {
         if self
             .state
@@ -884,6 +889,17 @@ impl AppView {
             self.status_message = Some(MessageId::StorageCorrupt);
         } else if interval.is_none() || max_count.is_none() {
             self.status_message = Some(MessageId::InvalidKeepalive);
+        }
+        cx.notify();
+    }
+
+    fn set_confirm_before_close_with_sessions(&mut self, confirm: bool, cx: &mut Context<Self>) {
+        if self.state.as_mut().is_some_and(|state| {
+            state
+                .set_confirm_before_close_with_sessions(confirm)
+                .is_err()
+        }) {
+            self.status_message = Some(MessageId::StorageCorrupt);
         }
         cx.notify();
     }

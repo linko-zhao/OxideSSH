@@ -306,6 +306,8 @@ pub struct AppSettings {
     pub ssh_keepalive_interval_seconds: u64,
     #[serde(default = "default_keepalive_max")]
     pub ssh_keepalive_max_count: usize,
+    #[serde(default = "default_confirm_before_close_with_sessions")]
+    pub confirm_before_close_with_sessions: bool,
 }
 
 fn default_keepalive_interval() -> u64 {
@@ -329,6 +331,7 @@ impl Default for AppSettings {
             terminal_font_family: default_terminal_font_family(),
             terminal_font_size: default_terminal_font_size(),
             terminal_line_height: default_terminal_line_height(),
+            confirm_before_close_with_sessions: default_confirm_before_close_with_sessions(),
         }
     }
 }
@@ -355,9 +358,23 @@ fn default_terminal_line_height() -> u16 {
     17
 }
 
+fn default_confirm_before_close_with_sessions() -> bool {
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn app_settings_default_close_confirmation_for_legacy_config() {
+        let settings: AppSettings = serde_json::from_str(
+            r#"{"locale":"system","theme":"system","newTabAction":"addConnection"}"#,
+        )
+        .unwrap();
+        assert!(settings.confirm_before_close_with_sessions);
+        assert!(AppSettings::default().confirm_before_close_with_sessions);
+    }
 
     fn valid_profile() -> ConnectionProfile {
         ConnectionProfile {

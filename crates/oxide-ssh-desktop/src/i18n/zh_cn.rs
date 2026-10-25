@@ -32,6 +32,10 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::Theme => "主题",
         MessageId::ThemeDescription => "应用界面的颜色方案",
         MessageId::TrustedHosts => "受信任主机",
+        MessageId::ConfirmBeforeCloseWithSessions => "关闭活动会话前确认",
+        MessageId::ConfirmBeforeCloseWithSessionsDescription => {
+            "关闭有活动会话的标签页、窗口或应用前询问"
+        }
         MessageId::NewTabButtonDescription => "点击新建标签按钮时执行的操作",
         MessageId::SshCompression => "SSH 压缩",
         MessageId::SshCompressionDescription => {

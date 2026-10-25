@@ -171,6 +171,24 @@ impl AppView {
                             .into_any_element(),
                         cx,
                     ),
+                    self.setting_row(
+                        MessageId::ConfirmBeforeCloseWithSessions,
+                        MessageId::ConfirmBeforeCloseWithSessionsDescription,
+                        Checkbox::new("confirm-before-close-with-sessions")
+                            .checked(self.state.as_ref().is_none_or(|state| {
+                                state.settings().confirm_before_close_with_sessions
+                            }))
+                            .on_click({
+                                let view = cx.entity();
+                                move |checked, _, cx| {
+                                    view.update(cx, |this, cx| {
+                                        this.set_confirm_before_close_with_sessions(*checked, cx)
+                                    });
+                                }
+                            })
+                            .into_any_element(),
+                        cx,
+                    ),
                 ],
                 cx,
             ),
