@@ -33,6 +33,8 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::ThemeDescription => "应用界面的颜色方案",
         MessageId::TrustedHosts => "受信任主机",
         MessageId::NewTabButtonDescription => "点击新建标签按钮时执行的操作",
+        MessageId::RememberWindowSize => "记住窗口尺寸",
+        MessageId::RememberWindowSizeDescription => "下次启动时恢复上次窗口尺寸",
         MessageId::System => "跟随系统",
         MessageId::Light => "浅色",
         MessageId::English => "英语",

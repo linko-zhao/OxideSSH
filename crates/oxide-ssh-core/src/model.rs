@@ -263,6 +263,13 @@ pub enum NewTabAction {
     LocalTerminal,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WindowSize {
+    pub width: u32,
+    pub height: u32,
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
@@ -272,6 +279,10 @@ pub struct AppSettings {
     pub theme: ThemeSetting,
     #[serde(default)]
     pub new_tab_action: NewTabAction,
+    #[serde(default)]
+    pub remember_window_size: bool,
+    #[serde(default)]
+    pub window_size: Option<WindowSize>,
 }
 
 #[cfg(test)]
@@ -341,6 +352,25 @@ mod tests {
             serde_json::from_str(r#"{"locale":"zh-CN","theme":"dark"}"#).unwrap();
         assert_eq!(settings.new_tab_action, NewTabAction::AddConnection);
         assert_eq!(settings.theme, ThemeSetting::Dark);
+    }
+
+    #[test]
+    fn settings_without_window_size_preferences_keep_defaults() {
+        let settings: AppSettings =
+            serde_json::from_str(r#"{"locale":"zh-CN","theme":"dark"}"#).unwrap();
+        assert!(!settings.remember_window_size);
+        assert_eq!(settings.window_size, None);
+    }
+
+    #[test]
+    fn window_size_settings_round_trip() {
+        let settings = AppSettings {
+            remember_window_size: true,
+            window_size: Some(WindowSize { width: 1280, height: 800 }),
+            ..AppSettings::default()
+        };
+        let encoded = serde_json::to_string(&settings).unwrap();
+        assert_eq!(serde_json::from_str::<AppSettings>(&encoded).unwrap(), settings);
     }
 
     #[test]

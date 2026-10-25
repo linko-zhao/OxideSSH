@@ -33,6 +33,10 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::ThemeDescription => "Application color scheme",
         MessageId::TrustedHosts => "Trusted hosts",
         MessageId::NewTabButtonDescription => "Action performed by the new tab button",
+        MessageId::RememberWindowSize => "Remember window size",
+        MessageId::RememberWindowSizeDescription => {
+            "Restore the last window size on the next launch"
+        },
         MessageId::System => "System",
         MessageId::Light => "Light",
         MessageId::English => "English",
