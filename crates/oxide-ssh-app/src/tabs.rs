@@ -755,6 +755,8 @@ mod tests {
             username: "oxide".into(),
             auth: AuthConfig::Agent,
             tag_ids: Vec::new(),
+            ssh_keepalive_interval_seconds: None,
+            ssh_keepalive_max_count: None,
         }
     }
 

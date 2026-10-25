@@ -188,10 +188,13 @@ impl AppView {
         let Some(tab) = self.tabs.tab(tab_id) else {
             return;
         };
-        let Some(profile) = tab.profile().cloned() else {
+        let Some(mut profile) = tab.profile().cloned() else {
             return;
         };
         let terminal_size = tab.terminal().size();
+        if let Some(state) = &self.state {
+            profile.inherit_keepalive_defaults(state.settings());
+        }
         let request = ConnectRequest {
             profile,
             secret,
@@ -201,6 +204,13 @@ impl AppView {
                 pixel_width: terminal_size.pixel_width,
                 pixel_height: terminal_size.pixel_height,
             },
+            ssh_compression: self
+                .state
+                .as_ref()
+                .is_some_and(|state| state.settings().ssh_compression),
+            connect_timeout_seconds: self.state.as_ref().map_or(15, |state| {
+                state.settings().ssh_connect_timeout_seconds
+            }),
         };
         let result = self
             .ssh
@@ -341,6 +351,7 @@ impl AppView {
         }
         let mut notifications = Vec::new();
         let mut repainted = false;
+        let mut belled = false;
         for event in events {
             let batch_notifications = self.tabs.apply_event(tab_id, event);
             for notification in batch_notifications {
@@ -348,7 +359,10 @@ impl AppView {
                     TabNotification::LocalError(error) => {
                         notifications.push(error);
                     }
-                    TabNotification::Bell => self.bell = true,
+                    TabNotification::Bell => {
+                        belled = true;
+                        self.handle_terminal_bell(cx);
+                    }
                     TabNotification::Repaint => repainted = true,
                     TabNotification::Clipboard(text) => match self
                         .state
@@ -370,7 +384,7 @@ impl AppView {
                 }
             }
         }
-        if repainted {
+        if repainted && !belled {
             self.bell = false;
         }
         for error in notifications {
@@ -408,12 +422,16 @@ impl AppView {
         }
         let notifications = self.tabs.apply_event(tab_id, event);
         let mut repainted = false;
+        let mut belled = false;
         for notification in notifications {
             match notification {
                 TabNotification::LocalError(error) => {
                     self.status_message = Some(local_error_message_id(error));
                 }
-                TabNotification::Bell => self.bell = true,
+                TabNotification::Bell => {
+                    belled = true;
+                    self.handle_terminal_bell(cx);
+                }
                 TabNotification::Repaint => repainted = true,
                 TabNotification::Clipboard(text) => match self
                     .state
@@ -434,7 +452,7 @@ impl AppView {
                 },
             }
         }
-        if repainted {
+        if repainted && !belled {
             self.bell = false;
         }
         if matches!(
@@ -507,7 +525,27 @@ impl AppView {
     }
 
     pub(super) fn close_tab(&mut self, tab_id: TabId, cx: &mut Context<Self>) {
-        self.tabs.request_close(tab_id);
+        if self
+            .state
+            .as_ref()
+            .is_none_or(|state| state.settings().confirm_before_close_with_sessions)
+        {
+            self.tabs.request_close(tab_id);
+        } else if self.tabs.begin_close(tab_id) {
+            cx.spawn(async move |weak, cx| {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_secs(2))
+                    .await;
+                weak.update(cx, |this, cx| {
+                    if this.tabs.tab(tab_id).is_some_and(|tab| tab.closing()) {
+                        this.tabs.remove(tab_id);
+                        cx.notify();
+                    }
+                })
+                .ok();
+            })
+            .detach();
+        }
         cx.notify();
     }
 
