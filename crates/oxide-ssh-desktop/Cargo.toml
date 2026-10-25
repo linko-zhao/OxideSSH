@@ -37,6 +37,14 @@ thiserror.workspace = true
 objc2 = "=0.6.4"
 objc2-app-kit = "=0.3.2"
 objc2-foundation = "=0.3.2"
+security-framework.workspace = true
+
+
+[target.'cfg(target_os = "linux")'.dependencies]
+secret-service.workspace = true
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys.workspace = true
 
 [build-dependencies]
 embed-resource = "3"

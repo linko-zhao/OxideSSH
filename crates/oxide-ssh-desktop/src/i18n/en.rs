@@ -65,6 +65,12 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::Connect => "Connect",
         MessageId::ConnectOnce => "Connect once",
         MessageId::Edit => "Edit",
+        MessageId::ClearAllCredentials => "Clear all saved credentials",
+        MessageId::ConfirmClearAllCredentials => {
+            "This permanently deletes every OxideSSH credential from the system credential store, including credentials not referenced by a profile. This cannot be undone."
+        }
+        MessageId::ClearCredentialsSuccess => "All OxideSSH credentials were deleted.",
+        MessageId::ClearCredentialsFailures => "Some OxideSSH credentials could not be deleted:",
         MessageId::ConfirmDeleteProfile => "Delete this connection?",
         MessageId::ConfirmDeleteHost => "Delete this trusted host?",
         MessageId::ConfirmDeleteTag => "Delete this tag?",
