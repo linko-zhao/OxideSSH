@@ -152,6 +152,18 @@ impl AppView {
                             .on_click(cx.listener(|this, checked, _, cx| {
                                 this.set_ssh_compression(*checked, cx);
                             }))
+                        MessageId::SshKeepaliveInterval,
+                        MessageId::SshKeepaliveInterval,
+                        Input::new(&self.ssh_keepalive_interval)
+                            .w(px(180.))
+                            .into_any_element(),
+                        cx,
+                    ),
+                    self.setting_row(
+                        MessageId::SshKeepaliveMaxCount,
+                        MessageId::SshKeepaliveMaxCount,
+                        Input::new(&self.ssh_keepalive_max_count)
+                            .w(px(180.))
                             .into_any_element(),
                         cx,
                     ),

@@ -16,9 +16,9 @@ use gpui_component::{
     checkbox::Checkbox,
     form::{field, v_form},
     h_flex,
-    input::{Input, InputState},
-    radio::{Radio, RadioGroup},
+    input::{Input, InputEvent, InputState},
     select::{SearchableVec, SelectEvent, SelectState},
+    radio::{Radio, RadioGroup},
 };
 // The custom title bar only renders where the system title bar is transparent.
 #[cfg(target_os = "macos")]
@@ -244,6 +244,8 @@ pub struct AppView {
     theme_select: SettingSelect,
     ssh_connect_timeout_select: SettingSelect,
     new_tab_action_select: SettingSelect,
+    ssh_keepalive_interval: Entity<InputState>,
+    ssh_keepalive_max_count: Entity<InputState>,
     locale: ResolvedLocale,
     system_locale: Option<String>,
     theme: ResolvedTheme,
@@ -380,6 +382,22 @@ impl AppView {
                 NewTabAction::LocalTerminal => 1,
             },
         );
+        let ssh_keepalive_interval = new_input(
+            window,
+            cx,
+            MessageId::SshKeepaliveInterval,
+            &preferences.ssh_keepalive_interval_seconds.to_string(),
+            false,
+            locale,
+        );
+        let ssh_keepalive_max_count = new_input(
+            window,
+            cx,
+            MessageId::SshKeepaliveMaxCount,
+            &preferences.ssh_keepalive_max_count.to_string(),
+            false,
+            locale,
+        );
         let settings_subscriptions = vec![
             cx.subscribe_in(
                 &locale_select,
@@ -449,6 +467,24 @@ impl AppView {
                     this.set_new_tab_action(setting, cx);
                 },
             ),
+            cx.subscribe_in(
+                &ssh_keepalive_interval,
+                window,
+                |this, _, event: &InputEvent, _, cx| {
+                    if matches!(event, InputEvent::Blur) {
+                        this.commit_ssh_keepalive(cx);
+                    }
+                },
+            ),
+            cx.subscribe_in(
+                &ssh_keepalive_max_count,
+                window,
+                |this, _, event: &InputEvent, _, cx| {
+                    if matches!(event, InputEvent::Blur) {
+                        this.commit_ssh_keepalive(cx);
+                    }
+                },
+            ),
         ];
         Self {
             root,
@@ -472,6 +508,8 @@ impl AppView {
             theme_select,
             ssh_connect_timeout_select,
             new_tab_action_select,
+            ssh_keepalive_interval,
+            ssh_keepalive_max_count,
             locale,
             system_locale,
             theme,
@@ -654,6 +692,8 @@ impl AppView {
                 (&editor.port, MessageId::Port),
                 (&editor.username, MessageId::Username),
                 (&editor.private_key_path, MessageId::PrivateKey),
+                (&editor.ssh_keepalive_interval, MessageId::ProfileKeepaliveInterval),
+                (&editor.ssh_keepalive_max_count, MessageId::ProfileKeepaliveMaxCount),
                 (
                     &editor.secret,
                     if editor.form.auth_method == AuthMethod::PrivateKey {
@@ -732,6 +772,36 @@ impl AppView {
             .is_some_and(|state| state.set_ssh_compression(enabled).is_err())
         {
             self.status_message = Some(MessageId::StorageCorrupt);
+        }
+        cx.notify();
+    }
+
+    fn commit_ssh_keepalive(&mut self, cx: &mut Context<Self>) {
+        let interval = self
+            .ssh_keepalive_interval
+            .read(cx)
+            .value()
+            .trim()
+            .parse::<u64>()
+            .ok()
+            .filter(|value| *value > 0);
+        let max_count = self
+            .ssh_keepalive_max_count
+            .read(cx)
+            .value()
+            .trim()
+            .parse::<usize>()
+            .ok()
+            .filter(|value| *value > 0);
+        if let (Some(interval), Some(max_count)) = (interval, max_count)
+            && self
+                .state
+                .as_mut()
+                .is_some_and(|state| state.set_ssh_keepalive(interval, max_count).is_err())
+        {
+            self.status_message = Some(MessageId::StorageCorrupt);
+        } else if interval.is_none() || max_count.is_none() {
+            self.status_message = Some(MessageId::InvalidKeepalive);
         }
         cx.notify();
     }

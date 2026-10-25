@@ -256,6 +256,14 @@ impl AppState {
         }
         let mut config = self.config.clone();
         config.settings.ssh_connect_timeout_seconds = seconds;
+    pub fn set_ssh_keepalive(
+        &mut self,
+        interval_seconds: u64,
+        max_count: usize,
+    ) -> Result<(), StorageError> {
+        let mut config = self.config.clone();
+        config.settings.ssh_keepalive_interval_seconds = interval_seconds;
+        config.settings.ssh_keepalive_max_count = max_count;
         self.store.save_config(&config)?;
         self.config = config;
         Ok(())
@@ -312,6 +320,8 @@ mod tests {
             username: username.into(),
             auth: AuthConfig::Agent,
             tag_ids: Vec::new(),
+            ssh_keepalive_interval_seconds: None,
+            ssh_keepalive_max_count: None,
         }
     }
 
@@ -506,6 +516,12 @@ mod tests {
         assert_eq!(stored.settings.locale, LocaleSetting::ZhCn);
         assert_eq!(stored.settings.theme, ThemeSetting::Dark);
         assert!(stored.settings.ssh_compression);
+        state.set_ssh_keepalive(45, 4).unwrap();
+        let stored = state.store().load_config().unwrap();
+        assert_eq!(stored.settings.locale, LocaleSetting::ZhCn);
+        assert_eq!(stored.settings.theme, ThemeSetting::Dark);
+        assert_eq!(stored.settings.ssh_keepalive_interval_seconds, 45);
+        assert_eq!(stored.settings.ssh_keepalive_max_count, 4);
         assert_eq!(state.resolved_locale(Some("en-US")), ResolvedLocale::ZhCn);
         assert_eq!(state.resolved_theme(false), ResolvedTheme::Dark);
     }

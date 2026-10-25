@@ -644,6 +644,17 @@ fn enable_compression(config: &mut client::Config) {
         russh::compression::NONE,
     ]);
 }
+fn ssh_client_config(profile: &ConnectionProfile) -> Arc<client::Config> {
+    Arc::new(client::Config {
+        keepalive_interval: Some(Duration::from_secs(
+            profile.ssh_keepalive_interval_seconds.unwrap_or(30),
+        )),
+        keepalive_max: profile.ssh_keepalive_max_count.unwrap_or(3),
+        inactivity_timeout: None,
+        nodelay: true,
+        ..Default::default()
+    })
+}
 async fn run_session(
     request: ConnectRequest,
     input: Receiver<Bytes>,
@@ -896,6 +907,21 @@ mod tests {
     use tempfile::{TempDir, tempdir};
 
     use super::*;
+
+    #[test]
+    fn ssh_client_configuration_uses_resolved_keepalive_values() {
+        let mut profile = connection_profile(22, AuthConfig::Agent);
+        let defaults = ssh_client_config(&profile);
+        assert_eq!(defaults.keepalive_interval, Some(Duration::from_secs(30)));
+        assert_eq!(defaults.keepalive_max, 3);
+
+        profile.ssh_keepalive_interval_seconds = Some(11);
+        profile.ssh_keepalive_max_count = Some(6);
+        let configured = ssh_client_config(&profile);
+        assert_eq!(configured.keepalive_interval, Some(Duration::from_secs(11)));
+        assert_eq!(configured.keepalive_max, 6);
+    }
+
     fn runtime() -> Arc<Runtime> {
         Arc::new(
             tokio::runtime::Builder::new_current_thread()
@@ -1533,6 +1559,8 @@ mod tests {
             username: "oxide".into(),
             auth,
             tag_ids: Vec::new(),
+            ssh_keepalive_interval_seconds: None,
+            ssh_keepalive_max_count: None,
         }
     }
 
