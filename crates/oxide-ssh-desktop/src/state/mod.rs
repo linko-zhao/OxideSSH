@@ -246,6 +246,16 @@ impl AppState {
         self.config = config;
         Ok(())
     }
+    pub fn set_confirm_before_close_with_sessions(
+        &mut self,
+        confirm: bool,
+    ) -> Result<(), StorageError> {
+        let mut config = self.config.clone();
+        config.settings.confirm_before_close_with_sessions = confirm;
+        self.store.save_config(&config)?;
+        self.config = config;
+        Ok(())
+    }
 
     pub fn reload_config(&mut self) -> Result<(), StorageError> {
         self.config = self.store.load_config()?;
@@ -452,9 +462,11 @@ mod tests {
 
         state.set_locale(LocaleSetting::ZhCn).unwrap();
         state.set_theme(ThemeSetting::Dark).unwrap();
+        state.set_confirm_before_close_with_sessions(false).unwrap();
         let stored = state.store().load_config().unwrap();
         assert_eq!(stored.settings.locale, LocaleSetting::ZhCn);
         assert_eq!(stored.settings.theme, ThemeSetting::Dark);
+        assert!(!stored.settings.confirm_before_close_with_sessions);
         assert_eq!(state.resolved_locale(Some("en-US")), ResolvedLocale::ZhCn);
         assert_eq!(state.resolved_theme(false), ResolvedTheme::Dark);
     }
