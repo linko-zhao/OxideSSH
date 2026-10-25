@@ -401,6 +401,7 @@ impl AppView {
             &preferences.ssh_keepalive_max_count.to_string(),
             false,
             locale,
+        );
         let terminal_bell_select = new_setting_select(
             window,
             cx,
@@ -497,6 +498,9 @@ impl AppView {
                     if matches!(event, InputEvent::Blur) {
                         this.commit_ssh_keepalive(cx);
                     }
+                },
+            ),
+            cx.subscribe_in(
                 &terminal_bell_select,
                 window,
                 |this, _, event: &SelectEvent<SearchableVec<SharedString>>, _, cx| {
