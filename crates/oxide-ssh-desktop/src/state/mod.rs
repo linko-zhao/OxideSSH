@@ -5,7 +5,7 @@ use std::{collections::HashSet, path::PathBuf, sync::Arc};
 use oxide_ssh_core::{
     model::{
         AppSettings, ConnectionProfile, Endpoint, LocaleSetting, NewTabAction, Tag, TagColor,
-        TagId, ThemeSetting,
+        TagId, TerminalBell, ThemeSetting,
     },
     storage::{AppConfig, AppStore, KnownHostEntry, KnownHosts, StorageError},
 };
@@ -264,6 +264,9 @@ impl AppState {
         let mut config = self.config.clone();
         config.settings.ssh_keepalive_interval_seconds = interval_seconds;
         config.settings.ssh_keepalive_max_count = max_count;
+    pub fn set_terminal_bell(&mut self, bell: TerminalBell) -> Result<(), StorageError> {
+        let mut config = self.config.clone();
+        config.settings.terminal_bell = bell;
         self.store.save_config(&config)?;
         self.config = config;
         Ok(())

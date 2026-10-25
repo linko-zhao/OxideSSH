@@ -164,6 +164,11 @@ impl AppView {
                         MessageId::SshKeepaliveMaxCount,
                         Input::new(&self.ssh_keepalive_max_count)
                             .w(px(180.))
+                        MessageId::TerminalBell,
+                        MessageId::BellDescription,
+                        Select::new(&self.terminal_bell_select)
+                            .w(px(180.))
+                            .with_size(gpui_component::Size::Small)
                             .into_any_element(),
                         cx,
                     ),
