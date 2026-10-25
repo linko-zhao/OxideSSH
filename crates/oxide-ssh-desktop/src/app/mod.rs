@@ -17,8 +17,8 @@ use gpui_component::{
     form::{field, v_form},
     h_flex,
     input::{Input, InputEvent, InputState},
-    select::{SearchableVec, SelectEvent, SelectState},
     radio::{Radio, RadioGroup},
+    select::{SearchableVec, SelectEvent, SelectState},
 };
 // The custom title bar only renders where the system title bar is transparent.
 #[cfg(target_os = "macos")]
@@ -749,8 +749,14 @@ impl AppView {
                 (&editor.port, MessageId::Port),
                 (&editor.username, MessageId::Username),
                 (&editor.private_key_path, MessageId::PrivateKey),
-                (&editor.ssh_keepalive_interval, MessageId::ProfileKeepaliveInterval),
-                (&editor.ssh_keepalive_max_count, MessageId::ProfileKeepaliveMaxCount),
+                (
+                    &editor.ssh_keepalive_interval,
+                    MessageId::ProfileKeepaliveInterval,
+                ),
+                (
+                    &editor.ssh_keepalive_max_count,
+                    MessageId::ProfileKeepaliveMaxCount,
+                ),
                 (
                     &editor.secret,
                     if editor.form.auth_method == AuthMethod::PrivateKey {
@@ -840,7 +846,6 @@ impl AppView {
         }
         cx.notify();
     }
-
 
     fn set_ssh_compression(&mut self, enabled: bool, cx: &mut Context<Self>) {
         if self

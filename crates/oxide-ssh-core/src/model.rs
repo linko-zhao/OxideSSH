@@ -204,8 +204,7 @@ impl ConnectionProfile {
         {
             return Err(ProfileValidationError::PrivateKeyPath);
         }
-        if self.ssh_keepalive_interval_seconds == Some(0)
-            || self.ssh_keepalive_max_count == Some(0)
+        if self.ssh_keepalive_interval_seconds == Some(0) || self.ssh_keepalive_max_count == Some(0)
         {
             return Err(ProfileValidationError::Keepalive);
         }
@@ -454,8 +453,14 @@ mod tests {
         profile.ssh_keepalive_interval_seconds = Some(12);
         profile.ssh_keepalive_max_count = Some(5);
         let mut old_profile = serde_json::to_value(valid_profile()).unwrap();
-        old_profile.as_object_mut().unwrap().remove("sshKeepaliveIntervalSeconds");
-        old_profile.as_object_mut().unwrap().remove("sshKeepaliveMaxCount");
+        old_profile
+            .as_object_mut()
+            .unwrap()
+            .remove("sshKeepaliveIntervalSeconds");
+        old_profile
+            .as_object_mut()
+            .unwrap()
+            .remove("sshKeepaliveMaxCount");
         let old_profile: ConnectionProfile = serde_json::from_value(old_profile).unwrap();
         assert_eq!(old_profile.ssh_keepalive_interval_seconds, None);
         assert_eq!(old_profile.ssh_keepalive_max_count, None);

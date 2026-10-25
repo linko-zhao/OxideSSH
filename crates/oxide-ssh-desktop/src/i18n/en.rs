@@ -34,7 +34,9 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::TrustedHosts => "Trusted hosts",
         MessageId::NewTabButtonDescription => "Action performed by the new tab button",
         MessageId::SshCompression => "SSH compression",
-        MessageId::SshCompressionDescription => "Compress SSH traffic when available; peers without compression fall back to uncompressed traffic.",
+        MessageId::SshCompressionDescription => {
+            "Compress SSH traffic when available; peers without compression fall back to uncompressed traffic."
+        }
         MessageId::SshConnectTimeout => "SSH connection timeout",
         MessageId::SshConnectTimeoutDescription => "Time allowed for a new SSH connection",
         MessageId::Timeout15Seconds => "15 seconds",
@@ -43,8 +45,12 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::Timeout120Seconds => "120 seconds",
         MessageId::SshKeepaliveInterval => "SSH keepalive interval (seconds)",
         MessageId::SshKeepaliveMaxCount => "SSH keepalive maximum missed replies",
-        MessageId::ProfileKeepaliveInterval => "Profile keepalive interval override (seconds; blank inherits)",
-        MessageId::ProfileKeepaliveMaxCount => "Profile keepalive maximum missed replies (blank inherits)",
+        MessageId::ProfileKeepaliveInterval => {
+            "Profile keepalive interval override (seconds; blank inherits)"
+        }
+        MessageId::ProfileKeepaliveMaxCount => {
+            "Profile keepalive maximum missed replies (blank inherits)"
+        }
         MessageId::InvalidKeepalive => "Keepalive values must be positive whole numbers.",
         MessageId::System => "System",
         MessageId::Light => "Light",
