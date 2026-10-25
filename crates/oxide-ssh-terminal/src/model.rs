@@ -172,6 +172,8 @@ pub struct TerminalModel {
     size: TerminalSize,
     default_colors: TerminalColors,
     remote_cursor_style: bool,
+    remote_cursor_blink: bool,
+    last_output_ended_escape: bool,
 }
 
 impl TerminalModel {
@@ -205,11 +207,18 @@ impl TerminalModel {
             size,
             default_colors,
             remote_cursor_style: false,
+            remote_cursor_blink: false,
+            last_output_ended_escape: false,
         })
     }
 
     pub fn process_output(&mut self, bytes: &[u8]) -> SmallVec<[TerminalAction; 4]> {
         let previous_cursor_shape = self.term.cursor_style().shape;
+        let reset = (self.last_output_ended_escape && bytes.first() == Some(&b'c'))
+            || bytes.windows(2).any(|sequence| sequence == b"\x1bc");
+        if !bytes.is_empty() {
+            self.last_output_ended_escape = bytes.last() == Some(&0x1b);
+        }
         self.processor.advance(&mut self.term, bytes);
         self.processor.stop_sync(&mut self.term);
         self.remote_cursor_style |= self.term.cursor_style().shape != previous_cursor_shape;
@@ -234,7 +243,10 @@ impl TerminalModel {
                 }
                 Event::Bell => actions.push(TerminalAction::Bell),
                 Event::Wakeup => actions.push(TerminalAction::Wakeup),
-                Event::CursorBlinkingChange => actions.push(TerminalAction::Wakeup),
+                Event::CursorBlinkingChange => {
+                    self.remote_cursor_blink = true;
+                    actions.push(TerminalAction::Wakeup);
+                }
                 Event::MouseCursorDirty
                 | Event::Title(_)
                 | Event::ResetTitle
@@ -243,6 +255,10 @@ impl TerminalModel {
                 | Event::Exit
                 | Event::ChildExit(_) => {}
             }
+        }
+        if reset {
+            self.remote_cursor_style = false;
+            self.remote_cursor_blink = false;
         }
         *self.pending_events.lock() = pending;
 
@@ -290,6 +306,9 @@ impl TerminalModel {
     }
     pub fn has_remote_cursor_style(&self) -> bool {
         self.remote_cursor_style
+    }
+    pub fn has_remote_cursor_blink(&self) -> bool {
+        self.remote_cursor_blink
     }
 
     pub fn cell_render_style(&self, cell: &Cell) -> CellRenderStyle {
@@ -568,6 +587,17 @@ mod tests {
         assert!(model.cursor_blinking());
         assert!(model.has_remote_cursor_style());
         assert!(actions.contains(&TerminalAction::Wakeup));
+    }
+    #[test]
+    fn terminal_reset_restores_local_cursor_precedence() {
+        let mut model = TerminalModel::new(size(80, 24)).unwrap();
+        model.process_output(b"\x1b[5 q");
+        assert!(model.has_remote_cursor_style());
+        assert!(model.has_remote_cursor_blink());
+        model.process_output(b"\x1b");
+        model.process_output(b"c");
+        assert!(!model.has_remote_cursor_style());
+        assert!(!model.has_remote_cursor_blink());
     }
 
     #[test]

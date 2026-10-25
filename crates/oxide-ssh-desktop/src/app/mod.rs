@@ -258,6 +258,8 @@ pub struct AppView {
     status_rendered: Option<MessageId>,
     terminal_geometry: Option<TerminalGeometry>,
     terminal_selecting: bool,
+    cursor_blink_phase: bool,
+    terminal_cursor_focused: bool,
     quitting: bool,
     _search_subscription: gpui::Subscription,
     _settings_subscriptions: Vec<gpui::Subscription>,
@@ -442,6 +444,34 @@ impl AppView {
                 },
             ),
         ];
+        cx.spawn(async move |weak, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_millis(500))
+                    .await;
+                if weak
+                    .update(cx, |this, cx| {
+                        let blinking = this
+                            .state
+                            .as_ref()
+                            .is_some_and(|state| state.settings().cursor_blink)
+                            || this
+                                .tabs
+                                .active()
+                                .and_then(|id| this.tabs.tab(id))
+                                .is_some_and(|tab| tab.terminal().cursor_blinking());
+                        if this.terminal_cursor_focused && blinking {
+                            this.cursor_blink_phase = !this.cursor_blink_phase;
+                            cx.notify();
+                        }
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })
+        .detach();
         Self {
             cursor_style_select,
             root,
@@ -478,6 +508,8 @@ impl AppView {
             status_rendered: None,
             terminal_geometry: None,
             terminal_selecting: false,
+            cursor_blink_phase: true,
+            terminal_cursor_focused: false,
             quitting: false,
             _search_subscription: search_subscription,
             _settings_subscriptions: settings_subscriptions,

@@ -1,6 +1,14 @@
 use super::messages::local_error_message_id;
 use super::*;
 
+fn cursor_phase_visible(blinking: bool, focused: bool, blink_phase: bool) -> bool {
+    !blinking || !focused || blink_phase
+}
+
+fn cursor_visible(blinking: bool, focused: bool, blink_phase: bool) -> bool {
+    cursor_phase_visible(blinking, focused, blink_phase)
+}
+
 #[cfg(target_os = "macos")]
 pub(super) const TERMINAL_FONT: &str = "Menlo";
 
@@ -103,7 +111,12 @@ impl Element for TerminalElement {
             columns: columns.max(2),
             rows: rows.max(1),
         };
+        let terminal_focused = self.view.read(cx).terminal_focus.is_focused(window);
         self.view.update(cx, |view, cx| {
+            view.terminal_cursor_focused = terminal_focused;
+            if !terminal_focused {
+                view.cursor_blink_phase = true;
+            }
             view.update_terminal_geometry(self.tab_id, geometry, cx)
         });
 
@@ -267,6 +280,16 @@ impl Element for TerminalElement {
                     }
                 }
             };
+            let blinking = if model.has_remote_cursor_style() || model.has_remote_cursor_blink() {
+                model.cursor_blinking()
+            } else {
+                view.state
+                    .as_ref()
+                    .is_some_and(|state| state.settings().cursor_blink)
+            };
+            if !cursor_visible(blinking, view.terminal_focus.is_focused(window), view.cursor_blink_phase) {
+                Vec::new()
+            } else {
             match shape {
                 alacritty_terminal::vte::ansi::CursorShape::Hidden => Vec::new(),
                 alacritty_terminal::vte::ansi::CursorShape::Beam => vec![fill(
@@ -290,6 +313,7 @@ impl Element for TerminalElement {
                         ..cursor_color
                     },
                 )],
+            }
             }
         };
 
@@ -717,5 +741,18 @@ impl AppView {
             tab.terminal_mut().scroll_display(lines);
             cx.notify();
         }
+    }
+}
+
+#[cfg(test)]
+mod cursor_blink_tests {
+    use super::cursor_phase_visible;
+
+    #[test]
+    fn cursor_visibility_tracks_blink_phase_and_focus() {
+        assert!(!cursor_phase_visible(true, true, false));
+        assert!(cursor_phase_visible(true, false, false));
+        assert!(cursor_phase_visible(true, true, true));
+        assert!(cursor_phase_visible(false, true, false));
     }
 }
