@@ -201,6 +201,10 @@ impl AppView {
                 pixel_width: terminal_size.pixel_width,
                 pixel_height: terminal_size.pixel_height,
             },
+            ssh_compression: self
+                .state
+                .as_ref()
+                .is_some_and(|state| state.settings().ssh_compression),
         };
         let result = self
             .ssh

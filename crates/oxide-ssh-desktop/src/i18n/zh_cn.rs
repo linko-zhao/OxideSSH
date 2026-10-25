@@ -35,6 +35,8 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::ThemeDescription => "应用界面的颜色方案",
         MessageId::TrustedHosts => "受信任主机",
         MessageId::NewTabButtonDescription => "点击新建标签按钮时执行的操作",
+        MessageId::SshCompression => "SSH 压缩",
+        MessageId::SshCompressionDescription => "服务器支持时压缩 SSH 流量；不支持压缩的服务器将回退为未压缩连接。",
         MessageId::System => "跟随系统",
         MessageId::Light => "浅色",
         MessageId::English => "英语",

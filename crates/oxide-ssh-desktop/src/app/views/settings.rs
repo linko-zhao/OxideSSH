@@ -140,6 +140,21 @@ impl AppView {
                             .into_any_element(),
                         cx,
                     ),
+                    self.setting_row(
+                        MessageId::SshCompression,
+                        MessageId::SshCompressionDescription,
+                        Checkbox::new("ssh-compression")
+                            .checked(
+                                self.state
+                                    .as_ref()
+                                    .is_some_and(|state| state.settings().ssh_compression),
+                            )
+                            .on_click(cx.listener(|this, checked, _, cx| {
+                                this.set_ssh_compression(*checked, cx);
+                            }))
+                            .into_any_element(),
+                        cx,
+                    ),
                 ],
                 cx,
             ),

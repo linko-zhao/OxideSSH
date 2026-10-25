@@ -116,6 +116,8 @@ pub enum MessageId {
     SessionClosed,
     ShellRejected,
     LocalShellFailed,
+    SshCompression,
+    SshCompressionDescription,
 }
 
 impl MessageId {
@@ -231,6 +233,8 @@ impl MessageId {
         Self::SessionClosed,
         Self::ShellRejected,
         Self::LocalShellFailed,
+        Self::SshCompression,
+        Self::SshCompressionDescription,
     ];
 }
 

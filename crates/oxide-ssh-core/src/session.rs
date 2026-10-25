@@ -41,6 +41,7 @@ pub struct ConnectRequest {
     pub profile: ConnectionProfile,
     pub secret: Option<SecretString>,
     pub initial_size: TerminalSize,
+    pub ssh_compression: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -633,6 +634,13 @@ impl AgentConnector for SystemAgentConnector {
     }
 }
 
+fn enable_compression(config: &mut client::Config) {
+    config.preferred.compression = std::borrow::Cow::Owned(vec![
+        russh::compression::ZLIB_LEGACY,
+        russh::compression::ZLIB,
+        russh::compression::NONE,
+    ]);
+}
 async fn run_session(
     request: ConnectRequest,
     input: Receiver<Bytes>,
@@ -644,13 +652,17 @@ async fn run_session(
 ) -> Result<Option<u32>, SessionError> {
     let endpoint = canonicalize_endpoint(&request.profile.endpoint)
         .map_err(|_| SessionError::InvalidProfile)?;
-    let config = Arc::new(client::Config {
+    let mut config = client::Config {
         keepalive_interval: Some(Duration::from_secs(30)),
         keepalive_max: 3,
         inactivity_timeout: None,
         nodelay: true,
         ..Default::default()
-    });
+    };
+    if request.ssh_compression {
+        enable_compression(&mut config);
+    }
+    let config = Arc::new(config);
     let handler = ClientHandler {
         endpoint: endpoint.clone(),
         events: events.clone(),
@@ -888,6 +900,21 @@ mod tests {
                 .build()
                 .unwrap(),
         )
+    }
+
+    #[test]
+    fn compression_setting_prioritizes_real_algorithms_and_keeps_none_fallback() {
+        let mut config = client::Config::default();
+        enable_compression(&mut config);
+        assert_eq!(
+            config
+                .preferred
+                .compression
+                .iter()
+                .map(|name| name.as_ref())
+                .collect::<Vec<_>>(),
+            ["zlib@openssh.com", "zlib", "none"]
+        );
     }
 
     fn endpoint() -> Endpoint {
@@ -1602,6 +1629,7 @@ mod tests {
                         pixel_width: 800,
                         pixel_height: 480,
                     },
+                    ssh_compression: true,
                 })
                 .unwrap();
             let password_events = password.take_events().unwrap();
@@ -1636,6 +1664,7 @@ mod tests {
                         pixel_width: 800,
                         pixel_height: 480,
                     },
+                    ssh_compression: false,
                 })
                 .unwrap();
             let key_events = key_session.take_events().unwrap();
@@ -1656,6 +1685,7 @@ mod tests {
                         pixel_width: 800,
                         pixel_height: 480,
                     },
+                    ssh_compression: false,
                 })
                 .unwrap();
             let agent_events = agent_session.take_events().unwrap();
@@ -1694,6 +1724,7 @@ mod tests {
                         pixel_width: 800,
                         pixel_height: 480,
                     },
+                    ssh_compression: false,
                 })
                 .unwrap();
             let events = session.take_events().unwrap();
@@ -1739,6 +1770,7 @@ mod tests {
                         pixel_width: 800,
                         pixel_height: 480,
                     },
+                    ssh_compression: false,
                 })
                 .unwrap();
             let missing_secret_events = missing_secret_session.take_events().unwrap();
@@ -1764,6 +1796,7 @@ mod tests {
                         pixel_width: 800,
                         pixel_height: 480,
                     },
+                    ssh_compression: false,
                 })
                 .unwrap();
             let events = session.take_events().unwrap();
@@ -1807,6 +1840,7 @@ mod tests {
                         pixel_width: 800,
                         pixel_height: 480,
                     },
+                    ssh_compression: false,
                 })
                 .unwrap();
             let events = session.take_events().unwrap();
@@ -1859,6 +1893,7 @@ mod tests {
                         pixel_width: 800,
                         pixel_height: 480,
                     },
+                    ssh_compression: false,
                 })
                 .unwrap();
             let events = session.take_events().unwrap();

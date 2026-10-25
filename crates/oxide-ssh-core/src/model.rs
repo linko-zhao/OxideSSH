@@ -274,6 +274,8 @@ pub struct AppSettings {
     pub new_tab_action: NewTabAction,
     #[serde(default)]
     pub copy_on_select: bool,
+    #[serde(default)]
+    pub ssh_compression: bool,
 }
 
 #[cfg(test)]
@@ -336,13 +338,12 @@ mod tests {
     }
 
     #[test]
-    fn settings_without_new_tab_action_defaults_to_add_connection() {
-        // config.json written before newTabAction existed must still load,
-        // otherwise the app falls into the read-only Recovery UI.
+    fn settings_without_new_fields_keep_legacy_defaults() {
         let settings: AppSettings =
             serde_json::from_str(r#"{"locale":"zh-CN","theme":"dark"}"#).unwrap();
         assert_eq!(settings.new_tab_action, NewTabAction::AddConnection);
         assert!(!settings.copy_on_select);
+        assert!(!settings.ssh_compression);
         assert_eq!(settings.theme, ThemeSetting::Dark);
     }
 
