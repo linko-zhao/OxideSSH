@@ -124,6 +124,8 @@ pub enum SessionError {
     ShellRejected,
     #[error("failed to start local shell")]
     LocalShellFailed,
+    #[error("local working directory is unavailable")]
+    LocalWorkingDirectoryInvalid,
     #[error("session disconnected")]
     Disconnected,
 }

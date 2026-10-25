@@ -329,6 +329,8 @@ pub struct AppSettings {
     #[serde(default = "default_ssh_connect_timeout_seconds")]
     pub ssh_connect_timeout_seconds: u64,
     #[serde(default)]
+    pub local_working_directory: String,
+    #[serde(default)]
     pub new_tab_action: NewTabAction,
     #[serde(default)]
     pub ssh_compression: bool,
@@ -396,6 +398,7 @@ impl Default for AppSettings {
             ssh_keepalive_max_count: default_keepalive_max(),
             terminal_bell: TerminalBell::default(),
             paste_confirm_threshold: default_paste_confirm_threshold(),
+            local_working_directory: String::new(),
         }
     }
 }
@@ -586,5 +589,13 @@ mod tests {
             profile.validate(),
             Err(ProfileValidationError::PrivateKeyPath)
         );
+    }
+
+    #[test]
+    fn old_settings_default_local_working_directory() {
+        let settings: AppSettings =
+            serde_json::from_str(r#"{"locale":"system","theme":"system","newTabAction":"addConnection"}"#)
+                .unwrap();
+        assert!(settings.local_working_directory.is_empty());
     }
 }

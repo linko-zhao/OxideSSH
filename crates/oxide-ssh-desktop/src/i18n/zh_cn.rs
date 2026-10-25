@@ -53,6 +53,8 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::ProfileKeepaliveInterval => "主机保活间隔覆盖（秒；留空则继承）",
         MessageId::ProfileKeepaliveMaxCount => "主机保活最大未响应次数（留空则继承）",
         MessageId::InvalidKeepalive => "保活参数必须是正整数。",
+        MessageId::LocalWorkingDirectory => "本地终端工作目录",
+        MessageId::LocalWorkingDirectoryDescription => "留空则使用用户主目录。",
         MessageId::System => "跟随系统",
         MessageId::Light => "浅色",
         MessageId::English => "英语",
@@ -157,5 +159,6 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::SessionClosed => "会话输入通道已关闭。",
         MessageId::ShellRejected => "服务器拒绝了 Shell 请求。",
         MessageId::LocalShellFailed => "无法启动本机 Shell。",
+        MessageId::LocalWorkingDirectoryInvalid => "配置的本地工作目录不存在或无法访问。",
     }
 }

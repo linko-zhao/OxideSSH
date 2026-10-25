@@ -52,6 +52,8 @@ pub enum MessageId {
     ProfileKeepaliveInterval,
     ProfileKeepaliveMaxCount,
     InvalidKeepalive,
+    LocalWorkingDirectory,
+    LocalWorkingDirectoryDescription,
     System,
     Light,
     English,
@@ -156,6 +158,7 @@ pub enum MessageId {
     LocalShellFailed,
     SshCompression,
     SshCompressionDescription,
+    LocalWorkingDirectoryInvalid,
 }
 
 impl MessageId {
@@ -207,6 +210,8 @@ impl MessageId {
         Self::ProfileKeepaliveInterval,
         Self::ProfileKeepaliveMaxCount,
         Self::InvalidKeepalive,
+        Self::LocalWorkingDirectory,
+        Self::LocalWorkingDirectoryDescription,
         Self::System,
         Self::Light,
         Self::English,
@@ -311,6 +316,7 @@ impl MessageId {
         Self::LocalShellFailed,
         Self::SshCompression,
         Self::SshCompressionDescription,
+        Self::LocalWorkingDirectoryInvalid,
     ];
 }
 

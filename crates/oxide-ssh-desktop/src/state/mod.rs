@@ -319,6 +319,17 @@ impl AppState {
         Ok(())
     }
 
+    pub fn set_local_working_directory(
+        &mut self,
+        directory: String,
+    ) -> Result<(), StorageError> {
+        let mut config = self.config.clone();
+        config.settings.local_working_directory = directory;
+        self.store.save_config(&config)?;
+        self.config = config;
+        Ok(())
+    }
+
     pub fn reload_config(&mut self) -> Result<(), StorageError> {
         self.config = self.store.load_config()?;
         Ok(())
@@ -387,6 +398,18 @@ mod tests {
             panic!("expected ready state");
         };
         assert_eq!(reloaded.settings().paste_confirm_threshold, 8192);
+    }
+    #[test]
+    fn local_working_directory_setting_persists() {
+        let directory = tempdir().unwrap();
+        let AppLoadOutcome::Ready(mut state) = AppState::load(directory.path().to_path_buf()) else {
+            panic!("expected ready state");
+        };
+        state
+            .set_local_working_directory("C:/work".to_owned())
+            .unwrap();
+        let stored = state.store().load_config().unwrap();
+        assert_eq!(stored.settings.local_working_directory, "C:/work");
     }
     #[test]
     fn untagged_filter_is_exclusive_with_tag_selection() {

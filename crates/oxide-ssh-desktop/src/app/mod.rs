@@ -17,8 +17,8 @@ use gpui_component::{
     form::{field, v_form},
     h_flex,
     input::{Input, InputEvent, InputState},
-    select::{SearchableVec, SelectEvent, SelectState},
     radio::{Radio, RadioGroup},
+    select::{SearchableVec, SelectEvent, SelectState},
 };
 // The custom title bar only renders where the system title bar is transparent.
 #[cfg(target_os = "macos")]
@@ -249,6 +249,7 @@ pub struct AppView {
     ssh_keepalive_max_count: Entity<InputState>,
     terminal_bell_select: SettingSelect,
     paste_threshold_select: SettingSelect,
+    local_working_directory: Entity<InputState>,
     locale: ResolvedLocale,
     system_locale: Option<String>,
     theme: ResolvedTheme,
@@ -449,6 +450,14 @@ impl AppView {
                 _ => 2,
             },
         );
+        let local_working_directory = new_input(
+            window,
+            cx,
+            MessageId::LocalWorkingDirectory,
+            &preferences.local_working_directory,
+            false,
+            locale,
+        );
         let settings_subscriptions = vec![
             cx.subscribe_in(
                 &locale_select,
@@ -575,6 +584,21 @@ impl AppView {
                     cx.notify();
                 },
             ),
+            cx.subscribe_in(
+                &local_working_directory,
+                window,
+                |this, _, event: &InputEvent, _window, cx| {
+                    if matches!(event, InputEvent::Blur) {
+                        let value = this.local_working_directory.read(cx).value().to_string();
+                        if this.state.as_mut().is_some_and(|state| {
+                            state.set_local_working_directory(value).is_err()
+                        }) {
+                            this.status_message = Some(MessageId::StorageCorrupt);
+                        }
+                        cx.notify();
+                    }
+                },
+            ),
         ];
         Self {
             root,
@@ -603,6 +627,7 @@ impl AppView {
             ssh_keepalive_interval,
             ssh_keepalive_max_count,
             terminal_bell_select,
+            local_working_directory,
             locale,
             system_locale,
             theme,
