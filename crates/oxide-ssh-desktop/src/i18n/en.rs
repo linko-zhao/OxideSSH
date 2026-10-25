@@ -31,7 +31,9 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::LanguageDescription => "Application interface language",
         MessageId::Theme => "Theme",
         MessageId::AnsiPalette => "ANSI palette",
-        MessageId::AnsiPaletteDescription => "Enter 16 comma-separated RGB hex colors in index order (0–7 standard, 8–15 bright).",
+        MessageId::AnsiPaletteDescription => {
+            "Enter 16 comma-separated RGB hex colors in index order (0–7 standard, 8–15 bright)."
+        }
         MessageId::Reset => "Reset",
         MessageId::CopyOnSelect => "Copy on select",
         MessageId::CopyOnSelectDescription => "Copy selected terminal text to the clipboard",
@@ -45,9 +47,11 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::RememberWindowSize => "Remember window size",
         MessageId::RememberWindowSizeDescription => {
             "Restore the last window size on the next launch"
-        },
+        }
         MessageId::SshCompression => "SSH compression",
-        MessageId::SshCompressionDescription => "Compress SSH traffic when available; peers without compression fall back to uncompressed traffic.",
+        MessageId::SshCompressionDescription => {
+            "Compress SSH traffic when available; peers without compression fall back to uncompressed traffic."
+        }
         MessageId::SshConnectTimeout => "SSH connection timeout",
         MessageId::SshConnectTimeoutDescription => "Time allowed for a new SSH connection",
         MessageId::Timeout15Seconds => "15 seconds",
@@ -56,17 +60,25 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::Timeout120Seconds => "120 seconds",
         MessageId::SshKeepaliveInterval => "SSH keepalive interval (seconds)",
         MessageId::SshKeepaliveMaxCount => "SSH keepalive maximum missed replies",
-        MessageId::ProfileKeepaliveInterval => "Profile keepalive interval override (seconds; blank inherits)",
-        MessageId::ProfileKeepaliveMaxCount => "Profile keepalive maximum missed replies (blank inherits)",
+        MessageId::ProfileKeepaliveInterval => {
+            "Profile keepalive interval override (seconds; blank inherits)"
+        }
+        MessageId::ProfileKeepaliveMaxCount => {
+            "Profile keepalive maximum missed replies (blank inherits)"
+        }
         MessageId::InvalidKeepalive => "Keepalive values must be positive whole numbers.",
         MessageId::LocalWorkingDirectory => "Local terminal working directory",
         MessageId::LocalWorkingDirectoryDescription => "Leave empty to use your home directory.",
         MessageId::Osc52Clipboard => "Remote clipboard",
-        MessageId::Osc52ClipboardDescription => "Allow remote applications to write to the system clipboard",
+        MessageId::Osc52ClipboardDescription => {
+            "Allow remote applications to write to the system clipboard"
+        }
         MessageId::Osc52ClipboardOff => "Off",
         MessageId::Osc52ClipboardAsk => "Ask",
         MessageId::Osc52ClipboardOn => "On",
-        MessageId::Osc52ClipboardConfirm => "Allow this remote application to replace the system clipboard?",
+        MessageId::Osc52ClipboardConfirm => {
+            "Allow this remote application to replace the system clipboard?"
+        }
         MessageId::Allow => "Allow",
         MessageId::SshTerm => "SSH TERM",
         MessageId::SshTermDescription => "Terminal type requested for remote PTYs",
@@ -97,7 +109,9 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::Username => "Username",
         MessageId::AuthMethod => "Authentication method",
         MessageId::Password => "Password",
-        MessageId::EnvironmentVariables => "Remote environment requests (JSON array; server may reject)",
+        MessageId::EnvironmentVariables => {
+            "Remote environment requests (JSON array; server may reject)"
+        }
         MessageId::PrivateKey => "Private key",
         MessageId::StartupCommand => "Startup command",
         MessageId::Agent => "SSH agent",
@@ -148,7 +162,9 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::ConfirmLargePaste => "This paste is large. Send all of it to the terminal?",
         MessageId::Paste => "Send",
         MessageId::PasteConfirmThreshold => "Large paste confirmation",
-        MessageId::PasteConfirmThresholdDescription => "Ask before sending pasted text longer than this size.",
+        MessageId::PasteConfirmThresholdDescription => {
+            "Ask before sending pasted text longer than this size."
+        }
         MessageId::PasteThreshold1KiB => "1 KiB",
         MessageId::PasteThreshold4KiB => "4 KiB",
         MessageId::PasteThreshold16KiB => "16 KiB",
@@ -175,6 +191,8 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::SessionClosed => "The session input channel is closed.",
         MessageId::ShellRejected => "The server rejected the shell request.",
         MessageId::LocalShellFailed => "Failed to start the local shell.",
-        MessageId::LocalWorkingDirectoryInvalid => "The configured local working directory does not exist or cannot be accessed.",
+        MessageId::LocalWorkingDirectoryInvalid => {
+            "The configured local working directory does not exist or cannot be accessed."
+        }
     }
 }

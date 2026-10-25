@@ -838,6 +838,8 @@ mod tests {
         assert!(!is_application_profile_reference(
             "some-other-service.io.github.linko-zhao.OxideSSH"
         ));
-        assert!(!is_application_profile_reference("profile/not-a-uuid/password"));
+        assert!(!is_application_profile_reference(
+            "profile/not-a-uuid/password"
+        ));
     }
 }

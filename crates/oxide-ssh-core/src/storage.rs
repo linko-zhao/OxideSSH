@@ -550,8 +550,8 @@ mod tests {
 
     use super::*;
     use crate::model::{
-        AuthConfig, ConnectionProfile, CredentialRef, EnvironmentVariable, LocaleSetting, ProfileId,
-        Tag, TagId, ThemeSetting,
+        AuthConfig, ConnectionProfile, CredentialRef, EnvironmentVariable, LocaleSetting,
+        ProfileId, Tag, TagId, ThemeSetting,
     };
 
     fn profile(name: &str) -> ConnectionProfile {
@@ -595,7 +595,6 @@ mod tests {
         config.settings.theme = ThemeSetting::Dark;
         let mut first = profile("first");
         first.startup_command = Some("tmux attach".into());
-        config.profiles.push(first);
         first.environment_variables.push(EnvironmentVariable {
             name: "BUILD_ID".into(),
             value: "full value = preserved".into(),

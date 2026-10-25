@@ -31,8 +31,8 @@ use oxide_ssh_core::{
     credentials::{CredentialError, CredentialStore},
     model::{
         AuthConfig, ConnectionProfile, Endpoint, LocaleSetting, NewTabAction, Osc52Clipboard,
-        ProfileId, SessionId, Tag, TagColor, TagId, TerminalBell,
-        TerminalSize as CoreTerminalSize, ThemeSetting,
+        ProfileId, SessionId, Tag, TagColor, TagId, TerminalBell, TerminalSize as CoreTerminalSize,
+        ThemeSetting,
     },
     session::{
         ConnectRequest, HostKeyDecision, SessionError, SessionEvent, SshService,
@@ -277,7 +277,6 @@ pub struct AppView {
     _bounds_subscription: gpui::Subscription,
 }
 
-
 impl AppView {
     pub(super) fn terminal_colors(&self) -> oxide_ssh_terminal::TerminalColors {
         self.theme.terminal_colors(
@@ -441,7 +440,11 @@ impl AppView {
             window,
             cx,
             locale,
-            &[MessageId::BellVisual, MessageId::BellSound, MessageId::BellOff],
+            &[
+                MessageId::BellVisual,
+                MessageId::BellSound,
+                MessageId::BellOff,
+            ],
             match preferences.terminal_bell {
                 TerminalBell::Visual => 0,
                 TerminalBell::Sound => 1,
@@ -486,183 +489,182 @@ impl AppView {
                 Osc52Clipboard::On => 2,
             },
         );
-        let settings_subscriptions = vec![
-            cx.subscribe_in(
-                &locale_select,
-                window,
-                |this, _, event: &SelectEvent<SearchableVec<SharedString>>, window, cx| {
-                    let SelectEvent::Confirm(Some(value)) = event else {
-                        return;
-                    };
-                    let setting = if value.as_str() == this.text(MessageId::English) {
-                        LocaleSetting::EnUs
-                    } else if value.as_str() == this.text(MessageId::SimplifiedChinese) {
-                        LocaleSetting::ZhCn
-                    } else {
-                        LocaleSetting::System
-                    };
-                    this.set_locale(setting, window, cx);
-                },
-            ),
-            cx.subscribe_in(
-                &theme_select,
-                window,
-                |this, _, event: &SelectEvent<SearchableVec<SharedString>>, window, cx| {
-                    let SelectEvent::Confirm(Some(value)) = event else {
-                        return;
-                    };
-                    let setting = if value.as_str() == this.text(MessageId::Light) {
-                        ThemeSetting::Light
-                    } else if value.as_str() == this.text(MessageId::Dark) {
-                        ThemeSetting::Dark
-                    } else {
-                        ThemeSetting::System
-                    };
-                    this.set_theme(setting, window, cx);
-                },
-            ),
-            cx.subscribe_in(
-                &ssh_connect_timeout_select,
-                window,
-                |this, _, event: &SelectEvent<SearchableVec<SharedString>>, _, cx| {
-                    let SelectEvent::Confirm(Some(value)) = event else {
-                        return;
-                    };
-                    let seconds = if value.as_str() == this.text(MessageId::Timeout30Seconds) {
-                        30
-                    } else if value.as_str() == this.text(MessageId::Timeout60Seconds) {
-                        60
-                    } else if value.as_str() == this.text(MessageId::Timeout120Seconds) {
-                        120
-                    } else {
-                        15
-                    };
-                    this.set_ssh_connect_timeout_seconds(seconds, cx);
-                },
-            ),
-            cx.subscribe_in(
-                &new_tab_action_select,
-                window,
-                |this, _, event: &SelectEvent<SearchableVec<SharedString>>, _, cx| {
-                    let SelectEvent::Confirm(Some(value)) = event else {
-                        return;
-                    };
-                    let setting = if value.as_str() == this.text(MessageId::LocalTerminal) {
-                        NewTabAction::LocalTerminal
-                    } else {
-                        NewTabAction::AddConnection
-                    };
-                    this.set_new_tab_action(setting, cx);
-                },
-            ),
-            cx.subscribe_in(
-                &ssh_keepalive_interval,
-                window,
-                |this, _, event: &InputEvent, _, cx| {
-                    if matches!(event, InputEvent::Blur) {
-                        this.commit_ssh_keepalive(cx);
-                    }
-                },
-            ),
-            cx.subscribe_in(
-                &ssh_keepalive_max_count,
-                window,
-                |this, _, event: &InputEvent, _, cx| {
-                    if matches!(event, InputEvent::Blur) {
-                        this.commit_ssh_keepalive(cx);
-                    }
-                },
-            ),
-            cx.subscribe_in(
-                &terminal_bell_select,
-                window,
-                |this, _, event: &SelectEvent<SearchableVec<SharedString>>, _, cx| {
-                    let SelectEvent::Confirm(Some(value)) = event else {
-                        return;
-                    };
-                    let setting = if value.as_str() == this.text(MessageId::BellSound) {
-                        TerminalBell::Sound
-                    } else if value.as_str() == this.text(MessageId::BellOff) {
-                        TerminalBell::Off
-                    } else {
-                        TerminalBell::Visual
-                    };
-                    this.set_terminal_bell(setting, cx);
-                },
-            ),
-            cx.subscribe_in(
-                &paste_threshold_select,
-                window,
-                |this, _, event: &SelectEvent<SearchableVec<SharedString>>, _, cx| {
-                    let SelectEvent::Confirm(Some(value)) = event else {
-                        return;
-                    };
-                    let threshold = if value.as_str() == this.text(MessageId::PasteThreshold1KiB) {
-                        1024
-                    } else if value.as_str() == this.text(MessageId::PasteThreshold16KiB) {
-                        16 * 1024
-                    } else {
-                        4 * 1024
-                    };
-                    if this.state.as_mut().is_some_and(|state| {
-                        state.set_paste_confirm_threshold(threshold).is_err()
-                    }) {
-                        this.status_message = Some(MessageId::StorageCorrupt);
-                    }
-                    cx.notify();
-                },
-            ),
-            cx.subscribe_in(
-                &local_working_directory,
-                window,
-                |this, _, event: &InputEvent, _window, cx| {
-                    if matches!(event, InputEvent::Blur) {
-                        let value = this.local_working_directory.read(cx).value().to_string();
+        let settings_subscriptions =
+            vec![
+                cx.subscribe_in(
+                    &locale_select,
+                    window,
+                    |this, _, event: &SelectEvent<SearchableVec<SharedString>>, window, cx| {
+                        let SelectEvent::Confirm(Some(value)) = event else {
+                            return;
+                        };
+                        let setting = if value.as_str() == this.text(MessageId::English) {
+                            LocaleSetting::EnUs
+                        } else if value.as_str() == this.text(MessageId::SimplifiedChinese) {
+                            LocaleSetting::ZhCn
+                        } else {
+                            LocaleSetting::System
+                        };
+                        this.set_locale(setting, window, cx);
+                    },
+                ),
+                cx.subscribe_in(
+                    &theme_select,
+                    window,
+                    |this, _, event: &SelectEvent<SearchableVec<SharedString>>, window, cx| {
+                        let SelectEvent::Confirm(Some(value)) = event else {
+                            return;
+                        };
+                        let setting = if value.as_str() == this.text(MessageId::Light) {
+                            ThemeSetting::Light
+                        } else if value.as_str() == this.text(MessageId::Dark) {
+                            ThemeSetting::Dark
+                        } else {
+                            ThemeSetting::System
+                        };
+                        this.set_theme(setting, window, cx);
+                    },
+                ),
+                cx.subscribe_in(
+                    &ssh_connect_timeout_select,
+                    window,
+                    |this, _, event: &SelectEvent<SearchableVec<SharedString>>, _, cx| {
+                        let SelectEvent::Confirm(Some(value)) = event else {
+                            return;
+                        };
+                        let seconds = if value.as_str() == this.text(MessageId::Timeout30Seconds) {
+                            30
+                        } else if value.as_str() == this.text(MessageId::Timeout60Seconds) {
+                            60
+                        } else if value.as_str() == this.text(MessageId::Timeout120Seconds) {
+                            120
+                        } else {
+                            15
+                        };
+                        this.set_ssh_connect_timeout_seconds(seconds, cx);
+                    },
+                ),
+                cx.subscribe_in(
+                    &new_tab_action_select,
+                    window,
+                    |this, _, event: &SelectEvent<SearchableVec<SharedString>>, _, cx| {
+                        let SelectEvent::Confirm(Some(value)) = event else {
+                            return;
+                        };
+                        let setting = if value.as_str() == this.text(MessageId::LocalTerminal) {
+                            NewTabAction::LocalTerminal
+                        } else {
+                            NewTabAction::AddConnection
+                        };
+                        this.set_new_tab_action(setting, cx);
+                    },
+                ),
+                cx.subscribe_in(
+                    &ssh_keepalive_interval,
+                    window,
+                    |this, _, event: &InputEvent, _, cx| {
+                        if matches!(event, InputEvent::Blur) {
+                            this.commit_ssh_keepalive(cx);
+                        }
+                    },
+                ),
+                cx.subscribe_in(
+                    &ssh_keepalive_max_count,
+                    window,
+                    |this, _, event: &InputEvent, _, cx| {
+                        if matches!(event, InputEvent::Blur) {
+                            this.commit_ssh_keepalive(cx);
+                        }
+                    },
+                ),
+                cx.subscribe_in(
+                    &terminal_bell_select,
+                    window,
+                    |this, _, event: &SelectEvent<SearchableVec<SharedString>>, _, cx| {
+                        let SelectEvent::Confirm(Some(value)) = event else {
+                            return;
+                        };
+                        let setting = if value.as_str() == this.text(MessageId::BellSound) {
+                            TerminalBell::Sound
+                        } else if value.as_str() == this.text(MessageId::BellOff) {
+                            TerminalBell::Off
+                        } else {
+                            TerminalBell::Visual
+                        };
+                        this.set_terminal_bell(setting, cx);
+                    },
+                ),
+                cx.subscribe_in(
+                    &paste_threshold_select,
+                    window,
+                    |this, _, event: &SelectEvent<SearchableVec<SharedString>>, _, cx| {
+                        let SelectEvent::Confirm(Some(value)) = event else {
+                            return;
+                        };
+                        let threshold =
+                            if value.as_str() == this.text(MessageId::PasteThreshold1KiB) {
+                                1024
+                            } else if value.as_str() == this.text(MessageId::PasteThreshold16KiB) {
+                                16 * 1024
+                            } else {
+                                4 * 1024
+                            };
                         if this.state.as_mut().is_some_and(|state| {
-                            state.set_local_working_directory(value).is_err()
+                            state.set_paste_confirm_threshold(threshold).is_err()
                         }) {
                             this.status_message = Some(MessageId::StorageCorrupt);
                         }
                         cx.notify();
-                    }
-                },
-            ),
-            cx.subscribe_in(
-                &osc52_clipboard_select,
-                window,
-                |this, _, event: &SelectEvent<SearchableVec<SharedString>>, _, cx| {
-                    let SelectEvent::Confirm(Some(value)) = event else {
-                        return;
-                    };
-                    let setting = if value.as_str() == this.text(MessageId::Osc52ClipboardAsk) {
-                        Osc52Clipboard::Ask
-                    } else if value.as_str() == this.text(MessageId::Osc52ClipboardOn) {
-                        Osc52Clipboard::On
-                    } else {
-                        Osc52Clipboard::Off
-                    };
-                    this.set_osc52_clipboard(setting, cx);
-                },
-            ),
-            cx.subscribe_in(
-                &ssh_term_input,
-                window,
-                |this, input, event: &InputEvent, _, cx| {
-                    if matches!(event, InputEvent::Blur) {
-                        let term = input.read(cx).value().to_string();
-                        this.set_ssh_term(&term, cx);
-                    }
-                },
-            ),
-        ];
+                    },
+                ),
+                cx.subscribe_in(
+                    &local_working_directory,
+                    window,
+                    |this, _, event: &InputEvent, _window, cx| {
+                        if matches!(event, InputEvent::Blur) {
+                            let value = this.local_working_directory.read(cx).value().to_string();
+                            if this.state.as_mut().is_some_and(|state| {
+                                state.set_local_working_directory(value).is_err()
+                            }) {
+                                this.status_message = Some(MessageId::StorageCorrupt);
+                            }
+                            cx.notify();
+                        }
+                    },
+                ),
+                cx.subscribe_in(
+                    &osc52_clipboard_select,
+                    window,
+                    |this, _, event: &SelectEvent<SearchableVec<SharedString>>, _, cx| {
+                        let SelectEvent::Confirm(Some(value)) = event else {
+                            return;
+                        };
+                        let setting = if value.as_str() == this.text(MessageId::Osc52ClipboardAsk) {
+                            Osc52Clipboard::Ask
+                        } else if value.as_str() == this.text(MessageId::Osc52ClipboardOn) {
+                            Osc52Clipboard::On
+                        } else {
+                            Osc52Clipboard::Off
+                        };
+                        this.set_osc52_clipboard(setting, cx);
+                    },
+                ),
+                cx.subscribe_in(
+                    &ssh_term_input,
+                    window,
+                    |this, input, event: &InputEvent, _, cx| {
+                        if matches!(event, InputEvent::Blur) {
+                            let term = input.read(cx).value().to_string();
+                            this.set_ssh_term(&term, cx);
+                        }
+                    },
+                ),
+            ];
         let bounds_subscription = cx.observe_window_bounds(window, |this, window, cx| {
             if let Some(state) = &mut this.state {
                 let bounds = window.bounds();
                 if state
-                    .set_window_size(
-                        u32::from(bounds.size.width),
-                        u32::from(bounds.size.height),
-                    )
+                    .set_window_size(u32::from(bounds.size.width), u32::from(bounds.size.height))
                     .is_err()
                 {
                     this.status_message = Some(MessageId::StorageCorrupt);
@@ -779,9 +781,13 @@ impl AppView {
             apply_theme(theme, window, cx);
             self.tabs.set_terminal_colors(self.terminal_colors());
             if !has_custom_ansi_palette {
-                let value = self.terminal_colors().ansi.iter()
+                let value = self
+                    .terminal_colors()
+                    .ansi
+                    .iter()
                     .map(|color| format!("{:06x}", color.to_hex()))
-                    .collect::<Vec<_>>().join(",");
+                    .collect::<Vec<_>>()
+                    .join(",");
                 self.ansi_palette_input.update(cx, |input, cx| {
                     input.set_value(value, window, cx);
                 });
@@ -884,7 +890,11 @@ impl AppView {
             select.set_items(
                 setting_select_items(
                     locale,
-                    &[MessageId::BellVisual, MessageId::BellSound, MessageId::BellOff],
+                    &[
+                        MessageId::BellVisual,
+                        MessageId::BellSound,
+                        MessageId::BellOff,
+                    ],
                 ),
                 window,
                 cx,
@@ -970,8 +980,14 @@ impl AppView {
                 (&editor.port, MessageId::Port),
                 (&editor.username, MessageId::Username),
                 (&editor.private_key_path, MessageId::PrivateKey),
-                (&editor.ssh_keepalive_interval, MessageId::ProfileKeepaliveInterval),
-                (&editor.ssh_keepalive_max_count, MessageId::ProfileKeepaliveMaxCount),
+                (
+                    &editor.ssh_keepalive_interval,
+                    MessageId::ProfileKeepaliveInterval,
+                ),
+                (
+                    &editor.ssh_keepalive_max_count,
+                    MessageId::ProfileKeepaliveMaxCount,
+                ),
                 (
                     &editor.secret,
                     if editor.form.auth_method == AuthMethod::PrivateKey {
@@ -1051,7 +1067,6 @@ impl AppView {
         cx.notify();
     }
 
-
     fn set_ssh_compression(&mut self, enabled: bool, cx: &mut Context<Self>) {
         if self
             .state
@@ -1074,17 +1089,27 @@ impl AppView {
     }
 
     fn save_ansi_palette(&mut self, _: &mut Window, cx: &mut Context<Self>) {
-        let parsed = self.ansi_palette_input.read(cx).value().split(',')
+        let parsed = self
+            .ansi_palette_input
+            .read(cx)
+            .value()
+            .split(',')
             .map(|entry| {
                 let value = entry.trim().trim_start_matches('#');
-                (value.len() == 6).then(|| u32::from_str_radix(value, 16).ok()).flatten()
+                (value.len() == 6)
+                    .then(|| u32::from_str_radix(value, 16).ok())
+                    .flatten()
             })
             .collect::<Option<Vec<_>>>();
         let Some(values) = parsed.filter(|values| values.len() == 16) else {
             return;
         };
         let palette: [u32; 16] = values.try_into().expect("length checked");
-        if self.state.as_mut().is_some_and(|state| state.set_ansi_palette(Some(palette)).is_err()) {
+        if self
+            .state
+            .as_mut()
+            .is_some_and(|state| state.set_ansi_palette(Some(palette)).is_err())
+        {
             self.status_message = Some(MessageId::StorageCorrupt);
             return;
         }
@@ -1093,9 +1118,14 @@ impl AppView {
     }
 
     fn reset_ansi_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let value = self.theme.terminal_colors(None).ansi.iter()
+        let value = self
+            .theme
+            .terminal_colors(None)
+            .ansi
+            .iter()
             .map(|color| format!("{:06x}", color.to_hex()))
-            .collect::<Vec<_>>().join(",");
+            .collect::<Vec<_>>()
+            .join(",");
         if self
             .state
             .as_mut()
@@ -1104,7 +1134,8 @@ impl AppView {
             self.status_message = Some(MessageId::StorageCorrupt);
             return;
         }
-        self.ansi_palette_input.update(cx, |input, cx| input.set_value(value, window, cx));
+        self.ansi_palette_input
+            .update(cx, |input, cx| input.set_value(value, window, cx));
         self.tabs.set_terminal_colors(self.terminal_colors());
         cx.notify();
     }
@@ -1223,10 +1254,7 @@ impl AppView {
             let bounds = window.bounds();
             if self.state.as_mut().is_some_and(|state| {
                 state
-                    .set_window_size(
-                        u32::from(bounds.size.width),
-                        u32::from(bounds.size.height),
-                    )
+                    .set_window_size(u32::from(bounds.size.width), u32::from(bounds.size.height))
                     .is_err()
             }) {
                 self.status_message = Some(MessageId::StorageCorrupt);
@@ -1422,14 +1450,10 @@ impl AppView {
     }
 
     fn toggle_copy_on_select(&mut self, cx: &mut Context<Self>) {
-        if self
-            .state
-            .as_mut()
-            .is_some_and(|state| {
-                let enabled = !state.settings().copy_on_select;
-                state.set_copy_on_select(enabled).is_err()
-            })
-        {
+        if self.state.as_mut().is_some_and(|state| {
+            let enabled = !state.settings().copy_on_select;
+            state.set_copy_on_select(enabled).is_err()
+        }) {
             self.status_message = Some(MessageId::StorageCorrupt);
         }
         cx.notify();

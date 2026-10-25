@@ -92,8 +92,10 @@ impl ConnectionForm {
                 .ssh_keepalive_max_count
                 .map(|value| value.to_string())
                 .unwrap_or_default(),
-            environment_variables_json: serde_json::to_string_pretty(&profile.environment_variables)
-                .expect("serializing environment variables cannot fail"),
+            environment_variables_json: serde_json::to_string_pretty(
+                &profile.environment_variables,
+            )
+            .expect("serializing environment variables cannot fail"),
             profile_id: profile.id,
             previous: Some(profile),
         }
@@ -247,11 +249,15 @@ mod tests {
         let profile = form.save_request().unwrap().profile;
         assert_eq!(profile.startup_command.as_deref(), Some("tmux attach"));
         assert_eq!(
-            ConnectionForm::edit(profile).save_request().unwrap().profile.startup_command.as_deref(),
+            ConnectionForm::edit(profile)
+                .save_request()
+                .unwrap()
+                .profile
+                .startup_command
+                .as_deref(),
             Some("tmux attach")
         );
     }
-
 
     #[test]
     fn keepalive_form_overrides_round_trip_and_blank_inherits() {
@@ -259,7 +265,13 @@ mod tests {
         form.name = "fixture".into();
         form.host = "example.com".into();
         form.username = "oxide".into();
-        assert_eq!(form.save_request().unwrap().profile.ssh_keepalive_interval_seconds, None);
+        assert_eq!(
+            form.save_request()
+                .unwrap()
+                .profile
+                .ssh_keepalive_interval_seconds,
+            None
+        );
         form.ssh_keepalive_interval_seconds = "12".into();
         form.ssh_keepalive_max_count = "5".into();
         let saved = form.save_request().unwrap().profile;
@@ -268,10 +280,15 @@ mod tests {
         let mut edit = ConnectionForm::edit(saved);
         assert_eq!(edit.ssh_keepalive_interval_seconds, "12");
         edit.ssh_keepalive_interval_seconds.clear();
-        assert_eq!(edit.save_request().unwrap().profile.ssh_keepalive_interval_seconds, None);
+        assert_eq!(
+            edit.save_request()
+                .unwrap()
+                .profile
+                .ssh_keepalive_interval_seconds,
+            None
+        );
         edit.ssh_keepalive_max_count = "0".into();
         assert_eq!(edit.save_request().unwrap_err(), FormError::Keepalive);
-
     }
 
     #[test]
@@ -289,9 +306,11 @@ mod tests {
             "  release=blue\nwith newline  "
         );
 
-        form.environment_variables_json =
-            r#"[{"name":"BUILD-ID","value":"release"}]"#.into();
-        assert_eq!(form.save_request().unwrap_err(), FormError::EnvironmentVariable);
+        form.environment_variables_json = r#"[{"name":"BUILD-ID","value":"release"}]"#.into();
+        assert_eq!(
+            form.save_request().unwrap_err(),
+            FormError::EnvironmentVariable
+        );
     }
 
     #[test]

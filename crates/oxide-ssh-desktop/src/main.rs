@@ -53,12 +53,20 @@ fn open_window(root: PathBuf, cx: &mut App) {
     let width = restored.map_or(1080.0, |saved| saved.width as f32);
     let height = restored.map_or(720.0, |saved| saved.height as f32);
     let window_size = size(
-        px(screen.as_ref().map_or(width, |bounds| width.min(f32::from(bounds.size.width)))),
-        px(screen.as_ref().map_or(height, |bounds| height.min(f32::from(bounds.size.height)))),
+        px(screen
+            .as_ref()
+            .map_or(width, |bounds| width.min(f32::from(bounds.size.width)))),
+        px(screen
+            .as_ref()
+            .map_or(height, |bounds| height.min(f32::from(bounds.size.height)))),
     );
     let min_size = size(
-        px(screen.as_ref().map_or(800.0, |bounds| 800.0_f32.min(f32::from(bounds.size.width)))),
-        px(screen.as_ref().map_or(520.0, |bounds| 520.0_f32.min(f32::from(bounds.size.height)))),
+        px(screen
+            .as_ref()
+            .map_or(800.0, |bounds| 800.0_f32.min(f32::from(bounds.size.width)))),
+        px(screen
+            .as_ref()
+            .map_or(520.0, |bounds| 520.0_f32.min(f32::from(bounds.size.height)))),
     );
     let bounds = Bounds::centered(None, window_size, cx);
     cx.open_window(

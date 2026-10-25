@@ -647,6 +647,18 @@ fn enable_compression(config: &mut client::Config) {
         russh::compression::NONE,
     ]);
 }
+fn ssh_client_config(profile: &ConnectionProfile) -> client::Config {
+    client::Config {
+        keepalive_interval: Some(Duration::from_secs(
+            profile.ssh_keepalive_interval_seconds.unwrap_or(30),
+        )),
+        keepalive_max: profile.ssh_keepalive_max_count.unwrap_or(3),
+        inactivity_timeout: None,
+        nodelay: true,
+        ..Default::default()
+    }
+}
+
 async fn run_session(
     request: ConnectRequest,
     input: Receiver<Bytes>,
@@ -658,15 +670,7 @@ async fn run_session(
 ) -> Result<Option<u32>, SessionError> {
     let endpoint = canonicalize_endpoint(&request.profile.endpoint)
         .map_err(|_| SessionError::InvalidProfile)?;
-    let mut config = client::Config {
-        keepalive_interval: Some(Duration::from_secs(
-            request.profile.ssh_keepalive_interval_seconds.unwrap_or(30),
-        )),
-        keepalive_max: request.profile.ssh_keepalive_max_count.unwrap_or(3),
-        inactivity_timeout: None,
-        nodelay: true,
-        ..Default::default()
-    };
+    let mut config = ssh_client_config(&request.profile);
     if request.ssh_compression {
         enable_compression(&mut config);
     }
@@ -1696,19 +1700,26 @@ mod tests {
             let service = SshService::new(store).unwrap();
             let mut profile = connection_profile(
                 fixture.port,
-                AuthConfig::Password { credential_ref: None },
+                AuthConfig::Password {
+                    credential_ref: None,
+                },
             );
             profile.startup_command = Some("tmux attach".into());
-            let mut session = service.connect(ConnectRequest {
-                profile,
-                secret: Some(SecretString::from("oxide-test")),
-                initial_size: TerminalSize {
-                    columns: 80,
-                    rows: 24,
-                    pixel_width: 800,
-                    pixel_height: 480,
-                },
-            }).unwrap();
+            let mut session = service
+                .connect(ConnectRequest {
+                    profile,
+                    secret: Some(SecretString::from("oxide-test")),
+                    ssh_compression: false,
+                    connect_timeout_seconds: 15,
+                    term: crate::model::default_ssh_term(),
+                    initial_size: TerminalSize {
+                        columns: 80,
+                        rows: 24,
+                        pixel_width: 800,
+                        pixel_height: 480,
+                    },
+                })
+                .unwrap();
             let events = session.take_events().unwrap();
             wait_for_connected(&session, &events).await.unwrap();
             assert_eq!(
@@ -1754,6 +1765,9 @@ mod tests {
                 .connect(ConnectRequest {
                     profile,
                     secret: Some(SecretString::from("oxide-test")),
+                    ssh_compression: false,
+                    connect_timeout_seconds: 15,
+                    term: crate::model::default_ssh_term(),
                     initial_size: TerminalSize {
                         columns: 80,
                         rows: 24,
@@ -2091,6 +2105,8 @@ mod tests {
             .connect(ConnectRequest {
                 profile: connection_profile(port, AuthConfig::Agent),
                 secret: None,
+                ssh_compression: false,
+                term: crate::model::default_ssh_term(),
                 initial_size: TerminalSize {
                     columns: 80,
                     rows: 24,

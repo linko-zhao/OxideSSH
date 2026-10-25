@@ -208,9 +208,10 @@ impl AppView {
                 .state
                 .as_ref()
                 .is_some_and(|state| state.settings().ssh_compression),
-            connect_timeout_seconds: self.state.as_ref().map_or(15, |state| {
-                state.settings().ssh_connect_timeout_seconds
-            }),
+            connect_timeout_seconds: self
+                .state
+                .as_ref()
+                .map_or(15, |state| state.settings().ssh_connect_timeout_seconds),
             term: self
                 .state
                 .as_ref()
@@ -245,10 +246,9 @@ impl AppView {
     /// Opens a local-shell tab and spawns the platform shell on a PTY.
     pub(super) fn connect_local(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.main_view = MainView::Sessions;
-        let tab_id = self.tabs.open_local(
-            self.estimated_terminal_size(window),
-            self.terminal_colors(),
-        );
+        let tab_id = self
+            .tabs
+            .open_local(self.estimated_terminal_size(window), self.terminal_colors());
         self.start_local_session(tab_id, cx);
         cx.notify();
     }
@@ -694,13 +694,14 @@ impl AppView {
                 session_id,
                 text,
             } => {
-                let still_authorized = self.state.as_ref().is_some_and(|state| {
-                    state.settings().osc52_clipboard == Osc52Clipboard::Ask
-                }) && self.tabs.tab(tab_id).is_some_and(|tab| {
-                    tab.session_id() == Some(session_id)
-                        && !tab.is_local()
-                        && matches!(tab.state(), TabState::Connected)
-                });
+                let still_authorized =
+                    self.state.as_ref().is_some_and(|state| {
+                        state.settings().osc52_clipboard == Osc52Clipboard::Ask
+                    }) && self.tabs.tab(tab_id).is_some_and(|tab| {
+                        tab.session_id() == Some(session_id)
+                            && !tab.is_local()
+                            && matches!(tab.state(), TabState::Connected)
+                    });
                 if still_authorized {
                     cx.write_to_clipboard(ClipboardItem::new_string(text));
                 }

@@ -171,7 +171,10 @@ mod startup_command_tests {
         let profile = ConnectionProfile {
             id: ProfileId::new(),
             name: "old".into(),
-            endpoint: Endpoint { host: "example.com".into(), port: 22 },
+            endpoint: Endpoint {
+                host: "example.com".into(),
+                port: 22,
+            },
             username: "user".into(),
             auth: AuthConfig::Agent,
             tag_ids: Vec::new(),
@@ -242,8 +245,7 @@ impl ConnectionProfile {
         {
             return Err(ProfileValidationError::PrivateKeyPath);
         }
-        if self.ssh_keepalive_interval_seconds == Some(0)
-            || self.ssh_keepalive_max_count == Some(0)
+        if self.ssh_keepalive_interval_seconds == Some(0) || self.ssh_keepalive_max_count == Some(0)
         {
             return Err(ProfileValidationError::Keepalive);
         }
@@ -385,10 +387,13 @@ pub struct AppSettings {
     pub ssh_keepalive_interval_seconds: u64,
     #[serde(default = "default_keepalive_max")]
     pub ssh_keepalive_max_count: usize,
+    #[serde(default)]
     pub terminal_bell: TerminalBell,
     #[serde(default = "default_paste_confirm_threshold")]
     pub paste_confirm_threshold: usize,
+    #[serde(default)]
     pub osc52_clipboard: Osc52Clipboard,
+    #[serde(default)]
     pub copy_on_select: bool,
     #[serde(default = "default_ssh_term")]
     pub ssh_term: String,
@@ -397,7 +402,6 @@ pub struct AppSettings {
 pub fn default_ssh_term() -> String {
     "xterm-256color".into()
 }
-
 
 pub fn valid_ssh_term(term: &str) -> bool {
     !term.is_empty()
@@ -443,7 +447,6 @@ fn default_keepalive_interval() -> u64 {
 fn default_keepalive_max() -> usize {
     3
 }
-
 
 fn deserialize_ansi_palette<'de, D>(deserializer: D) -> Result<Option<[u32; 16]>, D::Error>
 where
@@ -492,7 +495,6 @@ impl Default for AppSettings {
 fn default_confirm_before_close_with_sessions() -> bool {
     true
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -616,9 +618,10 @@ mod tests {
 
     #[test]
     fn missing_ansi_palette_preserves_legacy_settings() {
-        let settings: AppSettings =
-            serde_json::from_str(r#"{"locale":"en-US","theme":"dark","newTabAction":"addConnection"}"#)
-                .unwrap();
+        let settings: AppSettings = serde_json::from_str(
+            r#"{"locale":"en-US","theme":"dark","newTabAction":"addConnection"}"#,
+        )
+        .unwrap();
         assert_eq!(settings.ansi_palette, None);
     }
 
@@ -634,11 +637,17 @@ mod tests {
     fn window_size_settings_round_trip() {
         let settings = AppSettings {
             remember_window_size: true,
-            window_size: Some(WindowSize { width: 1280, height: 800 }),
+            window_size: Some(WindowSize {
+                width: 1280,
+                height: 800,
+            }),
             ..AppSettings::default()
         };
         let encoded = serde_json::to_string(&settings).unwrap();
-        assert_eq!(serde_json::from_str::<AppSettings>(&encoded).unwrap(), settings);
+        assert_eq!(
+            serde_json::from_str::<AppSettings>(&encoded).unwrap(),
+            settings
+        );
     }
 
     #[test]
@@ -652,8 +661,14 @@ mod tests {
         profile.ssh_keepalive_interval_seconds = Some(12);
         profile.ssh_keepalive_max_count = Some(5);
         let mut old_profile = serde_json::to_value(valid_profile()).unwrap();
-        old_profile.as_object_mut().unwrap().remove("sshKeepaliveIntervalSeconds");
-        old_profile.as_object_mut().unwrap().remove("sshKeepaliveMaxCount");
+        old_profile
+            .as_object_mut()
+            .unwrap()
+            .remove("sshKeepaliveIntervalSeconds");
+        old_profile
+            .as_object_mut()
+            .unwrap()
+            .remove("sshKeepaliveMaxCount");
         let old_profile: ConnectionProfile = serde_json::from_value(old_profile).unwrap();
         assert_eq!(old_profile.ssh_keepalive_interval_seconds, None);
         assert_eq!(old_profile.ssh_keepalive_max_count, None);
@@ -747,9 +762,10 @@ mod tests {
 
     #[test]
     fn old_settings_default_local_working_directory() {
-        let settings: AppSettings =
-            serde_json::from_str(r#"{"locale":"system","theme":"system","newTabAction":"addConnection"}"#)
-                .unwrap();
+        let settings: AppSettings = serde_json::from_str(
+            r#"{"locale":"system","theme":"system","newTabAction":"addConnection"}"#,
+        )
+        .unwrap();
         assert!(settings.local_working_directory.is_empty());
     }
 }

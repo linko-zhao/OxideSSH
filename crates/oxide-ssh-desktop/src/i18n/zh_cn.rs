@@ -31,7 +31,9 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::LanguageDescription => "应用界面语言",
         MessageId::Theme => "主题",
         MessageId::AnsiPalette => "ANSI 调色板",
-        MessageId::AnsiPaletteDescription => "按索引顺序输入 16 个逗号分隔的 RGB 十六进制颜色（0–7 标准色，8–15 高亮色）。",
+        MessageId::AnsiPaletteDescription => {
+            "按索引顺序输入 16 个逗号分隔的 RGB 十六进制颜色（0–7 标准色，8–15 高亮色）。"
+        }
         MessageId::Reset => "重置",
         MessageId::CopyOnSelect => "选中即复制",
         MessageId::CopyOnSelectDescription => "将选中的终端文本复制到剪贴板",
@@ -45,7 +47,9 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::RememberWindowSize => "记住窗口尺寸",
         MessageId::RememberWindowSizeDescription => "下次启动时恢复上次窗口尺寸",
         MessageId::SshCompression => "SSH 压缩",
-        MessageId::SshCompressionDescription => "服务器支持时压缩 SSH 流量；不支持压缩的服务器将回退为未压缩连接。",
+        MessageId::SshCompressionDescription => {
+            "服务器支持时压缩 SSH 流量；不支持压缩的服务器将回退为未压缩连接。"
+        }
         MessageId::SshConnectTimeout => "SSH 连接超时",
         MessageId::SshConnectTimeoutDescription => "新建 SSH 连接的超时时间",
         MessageId::Timeout15Seconds => "15 秒",

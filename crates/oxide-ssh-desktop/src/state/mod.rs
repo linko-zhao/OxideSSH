@@ -285,11 +285,8 @@ impl AppState {
         Ok(())
     }
 
-
     pub fn set_ansi_palette(&mut self, palette: Option<[u32; 16]>) -> Result<(), StorageError> {
-        if palette
-            .is_some_and(|colors| colors.iter().any(|color| color & 0xff00_0000 != 0))
-        {
+        if palette.is_some_and(|colors| colors.iter().any(|color| color & 0xff00_0000 != 0)) {
             return Ok(());
         }
         let mut config = self.config.clone();
@@ -339,10 +336,7 @@ impl AppState {
         Ok(())
     }
 
-    pub fn set_local_working_directory(
-        &mut self,
-        directory: String,
-    ) -> Result<(), StorageError> {
+    pub fn set_local_working_directory(&mut self, directory: String) -> Result<(), StorageError> {
         let mut config = self.config.clone();
         config.settings.local_working_directory = directory;
         self.store.save_config(&config)?;
@@ -379,7 +373,6 @@ impl AppState {
         self.config = config;
         Ok(())
     }
-
 
     pub fn reload_config(&mut self) -> Result<(), StorageError> {
         self.config = self.store.load_config()?;
@@ -454,7 +447,8 @@ mod tests {
     #[test]
     fn local_working_directory_setting_persists() {
         let directory = tempdir().unwrap();
-        let AppLoadOutcome::Ready(mut state) = AppState::load(directory.path().to_path_buf()) else {
+        let AppLoadOutcome::Ready(mut state) = AppState::load(directory.path().to_path_buf())
+        else {
             panic!("expected ready state");
         };
         state
@@ -466,7 +460,8 @@ mod tests {
     #[test]
     fn disabling_window_size_memory_clears_saved_dimensions() {
         let directory = tempdir().unwrap();
-        let AppLoadOutcome::Ready(mut state) = AppState::load(directory.path().to_path_buf()) else {
+        let AppLoadOutcome::Ready(mut state) = AppState::load(directory.path().to_path_buf())
+        else {
             panic!("fresh store should load");
         };
         state.set_remember_window_size(true).unwrap();
@@ -569,8 +564,7 @@ mod tests {
         state.set_ansi_palette(Some(invalid)).unwrap();
         assert_eq!(state.settings().ansi_palette, Some(palette));
 
-        let AppLoadOutcome::Ready(reloaded) = AppState::load(directory.path().to_path_buf())
-        else {
+        let AppLoadOutcome::Ready(reloaded) = AppState::load(directory.path().to_path_buf()) else {
             panic!("expected ready state");
         };
         assert_eq!(reloaded.settings().ansi_palette, Some(palette));

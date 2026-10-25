@@ -6,8 +6,8 @@ use alacritty_terminal::{
     index::{Column, Point, Side},
     selection::{Selection, SelectionType},
     term::{
-        Config, MIN_COLUMNS, MIN_SCREEN_LINES, Osc52, RenderableContent, Term, TermDamage,
-        TermMode, ClipboardType,
+        ClipboardType, Config, MIN_COLUMNS, MIN_SCREEN_LINES, Osc52, RenderableContent, Term,
+        TermDamage, TermMode,
         cell::{Cell, Flags},
         color,
     },
@@ -570,10 +570,9 @@ mod tests {
     #[test]
     fn bell_and_osc52_clipboard_requests_are_reported() {
         let mut model = TerminalModel::new(size(80, 24)).unwrap();
-        let actions =
-            model.process_output(
-                b"\x07\x1b[6n\x1b]0;ignored title\x07\x1b]52;c;YQ==\x07\x1b]52;c;Yg==\x07",
-            );
+        let actions = model.process_output(
+            b"\x07\x1b[6n\x1b]0;ignored title\x07\x1b]52;c;YQ==\x07\x1b]52;c;Yg==\x07",
+        );
 
         assert!(actions.contains(&TerminalAction::Bell));
         assert!(
@@ -653,7 +652,6 @@ mod tests {
         assert!(!model.mode().contains(TermMode::ALT_SCREEN));
         assert!(visible_text(&model).contains("red"));
     }
-
 
     #[test]
     fn standard_and_bright_ansi_output_use_configured_palette() {

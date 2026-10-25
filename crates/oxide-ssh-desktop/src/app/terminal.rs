@@ -692,7 +692,10 @@ impl AppView {
     ) {
         if self.terminal_selecting
             && self.terminal_selection_dragged
-            && self.state.as_ref().is_some_and(|state| state.settings().copy_on_select)
+            && self
+                .state
+                .as_ref()
+                .is_some_and(|state| state.settings().copy_on_select)
         {
             if let Some(text) = self
                 .tabs

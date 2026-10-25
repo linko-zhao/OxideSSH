@@ -202,8 +202,14 @@ impl AppView {
                             MessageId::CopyOnSelect,
                             MessageId::CopyOnSelectDescription,
                             Checkbox::new("copy-on-select")
-                                .checked(self.state.as_ref().is_some_and(|state| state.settings().copy_on_select))
-                                .on_click(cx.listener(|this, _, _, cx| this.toggle_copy_on_select(cx)))
+                                .checked(
+                                    self.state
+                                        .as_ref()
+                                        .is_some_and(|state| state.settings().copy_on_select),
+                                )
+                                .on_click(
+                                    cx.listener(|this, _, _, cx| this.toggle_copy_on_select(cx)),
+                                )
                                 .into_any_element(),
                             cx,
                         ),
@@ -211,9 +217,11 @@ impl AppView {
                             MessageId::RememberWindowSize,
                             MessageId::RememberWindowSizeDescription,
                             Checkbox::new("remember-window-size")
-                                .checked(self.state.as_ref().is_some_and(|state| {
-                                    state.settings().remember_window_size
-                                }))
+                                .checked(
+                                    self.state
+                                        .as_ref()
+                                        .is_some_and(|state| state.settings().remember_window_size),
+                                )
                                 .on_click(cx.listener(|this, checked, window, cx| {
                                     this.set_remember_window_size(*checked, window, cx);
                                 }))

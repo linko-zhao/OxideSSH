@@ -260,8 +260,7 @@ mod windows_tests {
 
     #[test]
     fn local_shell_starts_in_configured_working_directory() {
-        let directory =
-            std::env::temp_dir().join(format!("oxide-ssh-cwd-{}", SessionId::new().0));
+        let directory = std::env::temp_dir().join(format!("oxide-ssh-cwd-{}", SessionId::new().0));
         std::fs::create_dir(&directory).unwrap();
         let expected = directory.to_string_lossy().into_owned();
         let mut handle = spawn_local_shell(
@@ -288,8 +287,12 @@ mod windows_tests {
         } else {
             b"pwd\r"
         };
-        handle.try_send_input(Bytes::copy_from_slice(command)).unwrap();
-        handle.try_send_input(Bytes::from_static(b"exit\r")).unwrap();
+        handle
+            .try_send_input(Bytes::copy_from_slice(command))
+            .unwrap();
+        handle
+            .try_send_input(Bytes::from_static(b"exit\r"))
+            .unwrap();
         let mut output = Vec::new();
         while std::time::Instant::now() < deadline {
             match events.try_recv() {
@@ -300,7 +303,9 @@ mod windows_tests {
         }
         let output = String::from_utf8_lossy(&output);
         assert!(
-            output.to_ascii_lowercase().contains(&expected.to_ascii_lowercase()),
+            output
+                .to_ascii_lowercase()
+                .contains(&expected.to_ascii_lowercase()),
             "shell output did not contain {expected:?}: {output:?}"
         );
         std::fs::remove_dir_all(directory).unwrap();
@@ -329,8 +334,13 @@ mod tests {
         let mut handle = spawn_local_shell(size(), &expected).unwrap();
         let events = handle.take_events().unwrap();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-        while !matches!(events.recv_blocking().unwrap(), SessionEvent::StateChanged(SessionState::Connected)) {}
-        handle.try_send_input(Bytes::from_static(b"pwd; echo oxide-cwd-marker; exit\n")).unwrap();
+        while !matches!(
+            events.recv_blocking().unwrap(),
+            SessionEvent::StateChanged(SessionState::Connected)
+        ) {}
+        handle
+            .try_send_input(Bytes::from_static(b"pwd; echo oxide-cwd-marker; exit\n"))
+            .unwrap();
         let mut output = Vec::new();
         while std::time::Instant::now() < deadline {
             match events.try_recv() {
@@ -339,7 +349,11 @@ mod tests {
                 _ => std::thread::yield_now(),
             }
         }
-        assert!(output.windows(expected.len()).any(|part| part == expected.as_bytes()));
+        assert!(
+            output
+                .windows(expected.len())
+                .any(|part| part == expected.as_bytes())
+        );
         std::fs::remove_dir_all(directory).unwrap();
     }
     #[test]

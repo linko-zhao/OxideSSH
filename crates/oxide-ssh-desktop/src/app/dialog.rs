@@ -8,7 +8,10 @@ pub(super) enum ConfirmAction {
     DeleteHost(Endpoint),
     DeleteTag(TagId),
     ClearAllCredentials,
-    Paste { tab_id: TabId, text: String },
+    Paste {
+        tab_id: TabId,
+        text: String,
+    },
     /// Window close: disconnects, then removes only this window.
     Osc52Clipboard {
         tab_id: TabId,
@@ -554,9 +557,11 @@ impl DialogPresenter {
                 )
             })
             .child(
-                field()
-                    .label(text(MessageId::EnvironmentVariables))
-                    .child(div().h(px(110.)).child(Input::new(&editor.environment_variables))),
+                field().label(text(MessageId::EnvironmentVariables)).child(
+                    div()
+                        .h(px(110.))
+                        .child(Input::new(&editor.environment_variables)),
+                ),
             )
             .when(secret_is_visible, |form| {
                 form.child(
