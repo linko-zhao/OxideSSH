@@ -39,6 +39,10 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::CursorBlinkDescription => "Blink the cursor by default",
         MessageId::ThemeDescription => "Application color scheme",
         MessageId::TrustedHosts => "Trusted hosts",
+        MessageId::ConfirmBeforeCloseWithSessions => "Confirm before closing sessions",
+        MessageId::ConfirmBeforeCloseWithSessionsDescription => {
+            "Ask before closing tabs, windows, or the app while sessions are active"
+        }
         MessageId::NewTabButtonDescription => "Action performed by the new tab button",
         MessageId::SshCompression => "SSH compression",
         MessageId::SshCompressionDescription => "Compress SSH traffic when available; peers without compression fall back to uncompressed traffic.",

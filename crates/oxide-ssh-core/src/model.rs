@@ -275,7 +275,6 @@ pub enum CursorStyleSetting {
 fn default_ssh_connect_timeout_seconds() -> u64 {
     15
 }
-
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
@@ -293,6 +292,13 @@ pub struct AppSettings {
     pub cursor_blink: bool,
     #[serde(default)]
     pub ssh_compression: bool,
+    #[serde(default = "default_confirm_before_close_with_sessions")]
+    pub confirm_before_close_with_sessions: bool,
+}
+
+
+fn default_confirm_before_close_with_sessions() -> bool {
+    true
 }
 
 fn default_cursor_blink() -> bool {
@@ -309,6 +315,7 @@ impl Default for AppSettings {
             cursor_style: CursorStyleSetting::default(),
             cursor_blink: default_cursor_blink(),
             ssh_compression: false,
+            confirm_before_close_with_sessions: default_confirm_before_close_with_sessions(),
         }
     }
 }
@@ -316,6 +323,16 @@ impl Default for AppSettings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn app_settings_default_close_confirmation_for_legacy_config() {
+        let settings: AppSettings = serde_json::from_str(
+            r#"{"locale":"system","theme":"system","newTabAction":"addConnection"}"#,
+        )
+        .unwrap();
+        assert!(settings.confirm_before_close_with_sessions);
+        assert!(AppSettings::default().confirm_before_close_with_sessions);
+    }
 
     fn valid_profile() -> ConnectionProfile {
         ConnectionProfile {

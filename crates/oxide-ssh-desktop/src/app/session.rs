@@ -480,7 +480,27 @@ impl AppView {
     }
 
     pub(super) fn close_tab(&mut self, tab_id: TabId, cx: &mut Context<Self>) {
-        self.tabs.request_close(tab_id);
+        if self
+            .state
+            .as_ref()
+            .is_none_or(|state| state.settings().confirm_before_close_with_sessions)
+        {
+            self.tabs.request_close(tab_id);
+        } else if self.tabs.begin_close(tab_id) {
+            cx.spawn(async move |weak, cx| {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_secs(2))
+                    .await;
+                weak.update(cx, |this, cx| {
+                    if this.tabs.tab(tab_id).is_some_and(|tab| tab.closing()) {
+                        this.tabs.remove(tab_id);
+                        cx.notify();
+                    }
+                })
+                .ok();
+            })
+            .detach();
+        }
         cx.notify();
     }
 
