@@ -152,6 +152,10 @@ impl AppView {
                             .on_click(cx.listener(|this, checked, _, cx| {
                                 this.set_ssh_compression(*checked, cx);
                             }))
+                            .into_any_element(),
+                        cx,
+                    ),
+                    self.setting_row(
                         MessageId::SshKeepaliveInterval,
                         MessageId::SshKeepaliveInterval,
                         Input::new(&self.ssh_keepalive_interval)

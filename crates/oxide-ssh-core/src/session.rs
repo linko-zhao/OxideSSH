@@ -1936,6 +1936,7 @@ mod tests {
                     pixel_height: 480,
                 },
                 connect_timeout_seconds: 1,
+                ssh_compression: false,
             })
             .unwrap();
         let events = session.take_events().unwrap();
