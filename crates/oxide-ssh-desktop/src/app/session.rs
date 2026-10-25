@@ -372,6 +372,23 @@ impl AppView {
                         self.handle_terminal_bell(cx);
                     }
                     TabNotification::Repaint => repainted = true,
+                    TabNotification::Clipboard(text) => match self
+                        .state
+                        .as_ref()
+                        .map(|state| state.settings().osc52_clipboard)
+                    {
+                        Some(Osc52Clipboard::On) => {
+                            cx.write_to_clipboard(ClipboardItem::new_string(text));
+                        }
+                        Some(Osc52Clipboard::Ask) if self.confirm.is_none() => {
+                            self.confirm = Some(ConfirmAction::Osc52Clipboard {
+                                tab_id,
+                                session_id,
+                                text,
+                            });
+                        }
+                        _ => {}
+                    },
                 }
             }
         }
@@ -424,6 +441,23 @@ impl AppView {
                     self.handle_terminal_bell(cx);
                 }
                 TabNotification::Repaint => repainted = true,
+                TabNotification::Clipboard(text) => match self
+                    .state
+                    .as_ref()
+                    .map(|state| state.settings().osc52_clipboard)
+                {
+                    Some(Osc52Clipboard::On) => {
+                        cx.write_to_clipboard(ClipboardItem::new_string(text));
+                    }
+                    Some(Osc52Clipboard::Ask) if self.confirm.is_none() => {
+                        self.confirm = Some(ConfirmAction::Osc52Clipboard {
+                            tab_id,
+                            session_id,
+                            text,
+                        });
+                    }
+                    _ => {}
+                },
             }
         }
         if repainted && !belled {
@@ -648,6 +682,22 @@ impl AppView {
             ConfirmAction::Paste { tab_id, text } => {
                 if let Some(Err(error)) = self.tabs.tab_mut(tab_id).map(|tab| tab.paste(&text)) {
                     self.status_message = Some(local_error_message_id(error));
+                }
+            }
+            ConfirmAction::Osc52Clipboard {
+                tab_id,
+                session_id,
+                text,
+            } => {
+                let still_authorized = self.state.as_ref().is_some_and(|state| {
+                    state.settings().osc52_clipboard == Osc52Clipboard::Ask
+                }) && self.tabs.tab(tab_id).is_some_and(|tab| {
+                    tab.session_id() == Some(session_id)
+                        && !tab.is_local()
+                        && matches!(tab.state(), TabState::Connected)
+                });
+                if still_authorized {
+                    cx.write_to_clipboard(ClipboardItem::new_string(text));
                 }
             }
             ConfirmAction::Quit => {

@@ -10,6 +10,11 @@ pub(super) enum ConfirmAction {
     ClearAllCredentials,
     Paste { tab_id: TabId, text: String },
     /// Window close: disconnects, then removes only this window.
+    Osc52Clipboard {
+        tab_id: TabId,
+        session_id: SessionId,
+        text: String,
+    },
     Quit,
     /// Cmd+Q / dock Quit: disconnects, then terminates the process.
     QuitApp,
@@ -632,6 +637,9 @@ impl DialogPresenter {
                 MessageId::ClearAllCredentials,
             ),
             ConfirmAction::Paste { .. } => (MessageId::ConfirmLargePaste, MessageId::Paste),
+            ConfirmAction::Osc52Clipboard { .. } => {
+                (MessageId::Osc52ClipboardConfirm, MessageId::Allow)
+            }
             ConfirmAction::Quit | ConfirmAction::QuitApp => {
                 (MessageId::ConfirmQuit, MessageId::Quit)
             }

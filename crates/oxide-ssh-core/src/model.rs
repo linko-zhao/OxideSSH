@@ -301,6 +301,15 @@ pub enum ThemeSetting {
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub enum Osc52Clipboard {
+    #[default]
+    Off,
+    Ask,
+    On,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub enum NewTabAction {
     #[default]
     AddConnection,
@@ -349,6 +358,7 @@ pub struct AppSettings {
     pub terminal_bell: TerminalBell,
     #[serde(default = "default_paste_confirm_threshold")]
     pub paste_confirm_threshold: usize,
+    pub osc52_clipboard: Osc52Clipboard,
 }
 
 pub const fn default_paste_confirm_threshold() -> usize {
@@ -398,6 +408,7 @@ impl Default for AppSettings {
             ssh_keepalive_max_count: default_keepalive_max(),
             terminal_bell: TerminalBell::default(),
             paste_confirm_threshold: default_paste_confirm_threshold(),
+            osc52_clipboard: Osc52Clipboard::default(),
             local_working_directory: String::new(),
         }
     }
@@ -563,6 +574,13 @@ mod tests {
         let settings: AppSettings =
             serde_json::from_str(r#"{"locale":"zh-CN","theme":"dark"}"#).unwrap();
         assert_eq!(settings.paste_confirm_threshold, 4 * 1024);
+    }
+
+    #[test]
+    fn osc52_clipboard_defaults_off_for_legacy_settings() {
+        let settings: AppSettings =
+            serde_json::from_str(r#"{"locale":"zh-CN","theme":"dark"}"#).unwrap();
+        assert_eq!(settings.osc52_clipboard, Osc52Clipboard::Off);
     }
 
     #[test]

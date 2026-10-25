@@ -30,8 +30,9 @@ use gpui::WindowControlArea;
 use oxide_ssh_core::{
     credentials::{CredentialError, CredentialStore},
     model::{
-        AuthConfig, ConnectionProfile, Endpoint, LocaleSetting, NewTabAction, ProfileId, SessionId,
-        Tag, TagColor, TagId, TerminalBell, TerminalSize as CoreTerminalSize, ThemeSetting,
+        AuthConfig, ConnectionProfile, Endpoint, LocaleSetting, NewTabAction, Osc52Clipboard,
+        ProfileId, SessionId, Tag, TagColor, TagId, TerminalBell,
+        TerminalSize as CoreTerminalSize, ThemeSetting,
     },
     session::{
         ConnectRequest, HostKeyDecision, SessionError, SessionEvent, SshService,
@@ -250,6 +251,7 @@ pub struct AppView {
     terminal_bell_select: SettingSelect,
     paste_threshold_select: SettingSelect,
     local_working_directory: Entity<InputState>,
+    osc52_clipboard_select: SettingSelect,
     locale: ResolvedLocale,
     system_locale: Option<String>,
     theme: ResolvedTheme,
@@ -458,6 +460,21 @@ impl AppView {
             false,
             locale,
         );
+        let osc52_clipboard_select = new_setting_select(
+            window,
+            cx,
+            locale,
+            &[
+                MessageId::Osc52ClipboardOff,
+                MessageId::Osc52ClipboardAsk,
+                MessageId::Osc52ClipboardOn,
+            ],
+            match preferences.osc52_clipboard {
+                Osc52Clipboard::Off => 0,
+                Osc52Clipboard::Ask => 1,
+                Osc52Clipboard::On => 2,
+            },
+        );
         let settings_subscriptions = vec![
             cx.subscribe_in(
                 &locale_select,
@@ -599,6 +616,23 @@ impl AppView {
                     }
                 },
             ),
+            cx.subscribe_in(
+                &osc52_clipboard_select,
+                window,
+                |this, _, event: &SelectEvent<SearchableVec<SharedString>>, _, cx| {
+                    let SelectEvent::Confirm(Some(value)) = event else {
+                        return;
+                    };
+                    let setting = if value.as_str() == this.text(MessageId::Osc52ClipboardAsk) {
+                        Osc52Clipboard::Ask
+                    } else if value.as_str() == this.text(MessageId::Osc52ClipboardOn) {
+                        Osc52Clipboard::On
+                    } else {
+                        Osc52Clipboard::Off
+                    };
+                    this.set_osc52_clipboard(setting, cx);
+                },
+            ),
         ];
         Self {
             root,
@@ -628,6 +662,7 @@ impl AppView {
             ssh_keepalive_max_count,
             terminal_bell_select,
             local_working_directory,
+            osc52_clipboard_select,
             locale,
             system_locale,
             theme,
@@ -843,6 +878,29 @@ impl AppView {
                     0..=1024 => 0,
                     1025..=4096 => 1,
                     _ => 2,
+                })),
+                window,
+                cx,
+            );
+        });
+        self.osc52_clipboard_select.update(cx, |select, cx| {
+            select.set_items(
+                setting_select_items(
+                    locale,
+                    &[
+                        MessageId::Osc52ClipboardOff,
+                        MessageId::Osc52ClipboardAsk,
+                        MessageId::Osc52ClipboardOn,
+                    ],
+                ),
+                window,
+                cx,
+            );
+            select.set_selected_index(
+                Some(IndexPath::new(match settings.osc52_clipboard {
+                    Osc52Clipboard::Off => 0,
+                    Osc52Clipboard::Ask => 1,
+                    Osc52Clipboard::On => 2,
                 })),
                 window,
                 cx,
@@ -1086,6 +1144,17 @@ impl AppView {
                 self.bell = false;
             }
         }
+    }
+
+    fn set_osc52_clipboard(&mut self, setting: Osc52Clipboard, cx: &mut Context<Self>) {
+        if self
+            .state
+            .as_mut()
+            .is_some_and(|state| state.set_osc52_clipboard(setting).is_err())
+        {
+            self.status_message = Some(MessageId::StorageCorrupt);
+        }
+        cx.notify();
     }
 
     fn estimated_terminal_size(&self, window: &Window) -> TerminalSize {
