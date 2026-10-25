@@ -188,10 +188,13 @@ impl AppView {
         let Some(tab) = self.tabs.tab(tab_id) else {
             return;
         };
-        let Some(profile) = tab.profile().cloned() else {
+        let Some(mut profile) = tab.profile().cloned() else {
             return;
         };
         let terminal_size = tab.terminal().size();
+        if let Some(state) = &self.state {
+            profile.inherit_keepalive_defaults(state.settings());
+        }
         let request = ConnectRequest {
             profile,
             secret,

@@ -145,6 +145,10 @@ pub struct ConnectionProfile {
     pub auth: AuthConfig,
     #[serde(default)]
     pub tag_ids: Vec<TagId>,
+    #[serde(default)]
+    pub ssh_keepalive_interval_seconds: Option<u64>,
+    #[serde(default)]
+    pub ssh_keepalive_max_count: Option<usize>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
@@ -159,6 +163,8 @@ pub enum ProfileValidationError {
     Port,
     #[error("private key path is empty")]
     PrivateKeyPath,
+    #[error("SSH keepalive values must be positive")]
+    Keepalive,
 }
 
 impl ConnectionProfile {
@@ -198,8 +204,20 @@ impl ConnectionProfile {
         {
             return Err(ProfileValidationError::PrivateKeyPath);
         }
+        if self.ssh_keepalive_interval_seconds == Some(0)
+            || self.ssh_keepalive_max_count == Some(0)
+        {
+            return Err(ProfileValidationError::Keepalive);
+        }
 
         Ok(())
+    }
+
+    pub fn inherit_keepalive_defaults(&mut self, settings: &AppSettings) {
+        self.ssh_keepalive_interval_seconds
+            .get_or_insert(settings.ssh_keepalive_interval_seconds);
+        self.ssh_keepalive_max_count
+            .get_or_insert(settings.ssh_keepalive_max_count);
     }
 }
 
@@ -263,7 +281,7 @@ pub enum NewTabAction {
     LocalTerminal,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
     #[serde(default)]
@@ -272,6 +290,30 @@ pub struct AppSettings {
     pub theme: ThemeSetting,
     #[serde(default)]
     pub new_tab_action: NewTabAction,
+    #[serde(default = "default_keepalive_interval")]
+    pub ssh_keepalive_interval_seconds: u64,
+    #[serde(default = "default_keepalive_max")]
+    pub ssh_keepalive_max_count: usize,
+}
+
+fn default_keepalive_interval() -> u64 {
+    30
+}
+
+fn default_keepalive_max() -> usize {
+    3
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            locale: LocaleSetting::default(),
+            theme: ThemeSetting::default(),
+            new_tab_action: NewTabAction::default(),
+            ssh_keepalive_interval_seconds: default_keepalive_interval(),
+            ssh_keepalive_max_count: default_keepalive_max(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -289,6 +331,8 @@ mod tests {
             username: "oxide".into(),
             auth: AuthConfig::Agent,
             tag_ids: Vec::new(),
+            ssh_keepalive_interval_seconds: None,
+            ssh_keepalive_max_count: None,
         }
     }
 
@@ -341,6 +385,44 @@ mod tests {
             serde_json::from_str(r#"{"locale":"zh-CN","theme":"dark"}"#).unwrap();
         assert_eq!(settings.new_tab_action, NewTabAction::AddConnection);
         assert_eq!(settings.theme, ThemeSetting::Dark);
+    }
+
+    #[test]
+    fn keepalive_defaults_preserve_existing_behavior_and_profile_overrides_are_optional() {
+        let settings: AppSettings =
+            serde_json::from_str(r#"{"locale":"zh-CN","theme":"dark"}"#).unwrap();
+        assert_eq!(settings.ssh_keepalive_interval_seconds, 30);
+        assert_eq!(settings.ssh_keepalive_max_count, 3);
+
+        let mut profile = valid_profile();
+        profile.ssh_keepalive_interval_seconds = Some(12);
+        profile.ssh_keepalive_max_count = Some(5);
+        let mut old_profile = serde_json::to_value(valid_profile()).unwrap();
+        old_profile.as_object_mut().unwrap().remove("sshKeepaliveIntervalSeconds");
+        old_profile.as_object_mut().unwrap().remove("sshKeepaliveMaxCount");
+        let old_profile: ConnectionProfile = serde_json::from_value(old_profile).unwrap();
+        assert_eq!(old_profile.ssh_keepalive_interval_seconds, None);
+        assert_eq!(old_profile.ssh_keepalive_max_count, None);
+        let serialized = serde_json::to_value(profile).unwrap();
+        let round_trip: ConnectionProfile = serde_json::from_value(serialized).unwrap();
+
+        let defaults = AppSettings {
+            ssh_keepalive_interval_seconds: 45,
+            ssh_keepalive_max_count: 4,
+            ..AppSettings::default()
+        };
+        let mut profile = valid_profile();
+        profile.inherit_keepalive_defaults(&defaults);
+        assert_eq!(profile.ssh_keepalive_interval_seconds, Some(45));
+        assert_eq!(profile.ssh_keepalive_max_count, Some(4));
+
+        profile.ssh_keepalive_interval_seconds = Some(12);
+        profile.ssh_keepalive_max_count = Some(5);
+        profile.inherit_keepalive_defaults(&defaults);
+        assert_eq!(profile.ssh_keepalive_interval_seconds, Some(12));
+        assert_eq!(profile.ssh_keepalive_max_count, Some(5));
+        assert_eq!(round_trip.ssh_keepalive_interval_seconds, Some(12));
+        assert_eq!(round_trip.ssh_keepalive_max_count, Some(5));
     }
 
     #[test]
