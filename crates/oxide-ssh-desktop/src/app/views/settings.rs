@@ -156,6 +156,15 @@ impl AppView {
                             cx,
                         ),
                         self.setting_row(
+                            MessageId::TerminalBell,
+                            MessageId::BellDescription,
+                            Select::new(&self.terminal_bell_select)
+                                .w(px(180.))
+                                .with_size(gpui_component::Size::Small)
+                                .into_any_element(),
+                            cx,
+                        ),
+                        self.setting_row(
                             MessageId::NewTabButton,
                             MessageId::NewTabButtonDescription,
                             Select::new(&self.new_tab_action_select)

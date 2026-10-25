@@ -310,6 +310,15 @@ pub enum NewTabAction {
 fn default_ssh_connect_timeout_seconds() -> u64 {
     15
 }
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TerminalBell {
+    #[default]
+    Visual,
+    Sound,
+    Off,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
@@ -335,6 +344,7 @@ pub struct AppSettings {
     pub ssh_keepalive_interval_seconds: u64,
     #[serde(default = "default_keepalive_max")]
     pub ssh_keepalive_max_count: usize,
+    pub terminal_bell: TerminalBell,
 }
 
 fn default_keepalive_interval() -> u64 {
@@ -378,6 +388,7 @@ impl Default for AppSettings {
             ansi_palette: None,
             ssh_keepalive_interval_seconds: default_keepalive_interval(),
             ssh_keepalive_max_count: default_keepalive_max(),
+            terminal_bell: TerminalBell::default(),
         }
     }
 }
@@ -520,6 +531,21 @@ mod tests {
         assert_eq!(profile.ssh_keepalive_max_count, Some(5));
         assert_eq!(round_trip.ssh_keepalive_interval_seconds, Some(12));
         assert_eq!(round_trip.ssh_keepalive_max_count, Some(5));
+    }
+
+    #[test]
+    fn terminal_bell_defaults_to_visual_and_round_trips_all_modes() {
+        let old: AppSettings =
+            serde_json::from_str(r#"{"locale":"zh-CN","theme":"dark"}"#).unwrap();
+        assert_eq!(old.terminal_bell, TerminalBell::Visual);
+        for (json, mode) in [
+            (r#""visual""#, TerminalBell::Visual),
+            (r#""sound""#, TerminalBell::Sound),
+            (r#""off""#, TerminalBell::Off),
+        ] {
+            assert_eq!(serde_json::from_str::<TerminalBell>(json).unwrap(), mode);
+            assert_eq!(serde_json::to_string(&mode).unwrap(), json);
+        }
     }
 
     #[test]

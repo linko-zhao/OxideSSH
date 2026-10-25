@@ -351,6 +351,7 @@ impl AppView {
         }
         let mut notifications = Vec::new();
         let mut repainted = false;
+        let mut belled = false;
         for event in events {
             let batch_notifications = self.tabs.apply_event(tab_id, event);
             for notification in batch_notifications {
@@ -358,12 +359,15 @@ impl AppView {
                     TabNotification::LocalError(error) => {
                         notifications.push(error);
                     }
-                    TabNotification::Bell => self.bell = true,
+                    TabNotification::Bell => {
+                        belled = true;
+                        self.handle_terminal_bell();
+                    }
                     TabNotification::Repaint => repainted = true,
                 }
             }
         }
-        if repainted {
+        if repainted && !belled {
             self.bell = false;
         }
         for error in notifications {
@@ -401,16 +405,20 @@ impl AppView {
         }
         let notifications = self.tabs.apply_event(tab_id, event);
         let mut repainted = false;
+        let mut belled = false;
         for notification in notifications {
             match notification {
                 TabNotification::LocalError(error) => {
                     self.status_message = Some(local_error_message_id(error));
                 }
-                TabNotification::Bell => self.bell = true,
+                TabNotification::Bell => {
+                    belled = true;
+                    self.handle_terminal_bell();
+                }
                 TabNotification::Repaint => repainted = true,
             }
         }
-        if repainted {
+        if repainted && !belled {
             self.bell = false;
         }
         if matches!(
