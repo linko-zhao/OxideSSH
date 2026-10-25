@@ -71,6 +71,11 @@ impl KnownHosts {
         self.schema_version
     }
 }
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum KnownHostsConflictPolicy {
+    KeepExisting,
+    ReplaceExisting,
+}
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -126,6 +131,20 @@ pub enum StorageError {
     UnknownTagRef { profile: ProfileId, tag: TagId },
     #[error("invalid credential reference in profile {id:?}")]
     InvalidCredentialRef { id: ProfileId },
+    #[error("known hosts import contains an invalid host key or fingerprint")]
+    InvalidKnownHostImport,
+    #[error("known hosts import contains duplicate endpoints")]
+    DuplicateKnownHost,
+    #[error("known hosts import file has an unsupported schema version {found}")]
+    UnsupportedKnownHostsImportSchema { found: u64 },
+    #[error("known hosts import file is corrupt")]
+    CorruptKnownHostsImport(#[source] serde_json::Error),
+    #[error("unable to access known hosts import/export file at {path}")]
+    KnownHostsImportExportIo {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
     #[error("host key changed while it was being accepted")]
     HostKeyConflict,
     #[error(transparent)]
@@ -188,6 +207,82 @@ impl AppStore {
         update(&mut config);
         validate_config(&config)?;
         atomic_write(&self.root, &path, &config)
+    }
+
+    pub fn export_known_hosts(&self, path: &Path) -> Result<(), StorageError> {
+        let known_hosts = self.load_known_hosts()?;
+        let directory = path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        atomic_write(directory, path, &known_hosts)
+    }
+
+    pub fn import_known_hosts(
+        &self,
+        path: &Path,
+        policy: KnownHostsConflictPolicy,
+    ) -> Result<(), StorageError> {
+        let bytes = fs::read(path).map_err(|source| StorageError::KnownHostsImportExportIo {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        let imported: KnownHosts =
+            serde_json::from_slice(&bytes).map_err(StorageError::CorruptKnownHostsImport)?;
+        if imported.schema_version != SCHEMA_VERSION {
+            return Err(StorageError::UnsupportedKnownHostsImportSchema {
+                found: u64::from(imported.schema_version),
+            });
+        }
+        let mut incoming = Vec::with_capacity(imported.hosts.len());
+        let mut seen = HashSet::new();
+        for mut host in imported.hosts {
+            let endpoint = canonicalize_endpoint(&host.endpoint())?;
+            host.host = endpoint.host;
+            host.port = endpoint.port;
+            if !seen.insert((host.host.clone(), host.port)) {
+                return Err(StorageError::DuplicateKnownHost);
+            }
+            if host.algorithm.is_empty()
+                || host.public_key.is_empty()
+                || host.fingerprint_sha256.is_empty()
+            {
+                return Err(StorageError::InvalidKnownHostImport);
+            }
+            let key = russh::keys::PublicKey::from_openssh(&host.public_key)
+                .map_err(|_| StorageError::InvalidKnownHostImport)?;
+            if key.algorithm().to_string() != host.algorithm
+                || key.fingerprint(russh::keys::HashAlg::Sha256).to_string()
+                    != host.fingerprint_sha256
+            {
+                return Err(StorageError::InvalidKnownHostImport);
+            }
+            incoming.push(host);
+        }
+        let _guard = self.known_hosts_lock.lock();
+        let destination = self.known_hosts_path();
+        let mut current = read_versioned(&destination, KnownHosts::default)?;
+        for host in incoming {
+            if let Some(existing) = current
+                .hosts
+                .iter_mut()
+                .find(|known| known.host == host.host && known.port == host.port)
+            {
+                if existing.algorithm == host.algorithm
+                    && existing.public_key == host.public_key
+                    && existing.fingerprint_sha256 == host.fingerprint_sha256
+                {
+                    continue;
+                }
+                match policy {
+                    KnownHostsConflictPolicy::KeepExisting => continue,
+                    KnownHostsConflictPolicy::ReplaceExisting => *existing = host,
+                }
+            } else {
+                current.hosts.push(host);
+            }
+        }
+        atomic_write(&self.root, &destination, &current)
     }
 
     pub fn load_known_hosts(&self) -> Result<KnownHosts, StorageError> {
@@ -662,6 +757,84 @@ mod tests {
         let hosts = store.load_known_hosts().unwrap().hosts;
         assert_eq!(hosts.len(), 1);
         assert_eq!(hosts[0].fingerprint_sha256, "SHA256:replacement");
+    }
+
+    #[test]
+    fn known_hosts_import_export_preserves_data_and_requires_conflict_policy() {
+        let directory = tempdir().unwrap();
+        let store = AppStore::open(directory.path().to_path_buf()).unwrap();
+        store.accept_host_key(host("existing.example", 22)).unwrap();
+        let mut incoming = KnownHosts::default();
+        incoming.hosts = vec![host("existing.example", 22), host("new.example", 2200)];
+        for entry in &mut incoming.hosts {
+            entry.public_key =
+                "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILagOJFgwaMNhBWQINinKOXmqS4Gh5NgxgriXwdOoINJ"
+                    .into();
+            entry.fingerprint_sha256 = "SHA256:ldyiXa1JQakitNU5tErauu8DvWQ1dZ7aXu+rm7KQuog".into();
+        }
+        let import_path = directory.path().join("import.json");
+        fs::write(&import_path, serde_json::to_vec(&incoming).unwrap()).unwrap();
+
+        store
+            .import_known_hosts(&import_path, KnownHostsConflictPolicy::KeepExisting)
+            .unwrap();
+        let hosts = store.load_known_hosts().unwrap().hosts;
+        assert_eq!(hosts.len(), 2);
+        assert_eq!(hosts[0].fingerprint_sha256, "SHA256:test");
+        assert_eq!(hosts[1].host, "new.example");
+
+        store
+            .import_known_hosts(&import_path, KnownHostsConflictPolicy::ReplaceExisting)
+            .unwrap();
+        assert_eq!(
+            store.load_known_hosts().unwrap().hosts[0].fingerprint_sha256,
+            "SHA256:ldyiXa1JQakitNU5tErauu8DvWQ1dZ7aXu+rm7KQuog"
+        );
+        let export_path = directory.path().join("export.json");
+        store.export_known_hosts(&export_path).unwrap();
+        let exported: KnownHosts = serde_json::from_slice(&fs::read(export_path).unwrap()).unwrap();
+        assert_eq!(exported, store.load_known_hosts().unwrap());
+    }
+
+    #[test]
+    fn invalid_known_hosts_import_does_not_change_existing_data() {
+        let directory = tempdir().unwrap();
+        let store = AppStore::open(directory.path().to_path_buf()).unwrap();
+        store.accept_host_key(host("existing.example", 22)).unwrap();
+        let before = fs::read(store.known_hosts_path()).unwrap();
+        let import_path = directory.path().join("invalid.json");
+        fs::write(&import_path, "not json").unwrap();
+
+        assert!(matches!(
+            store.import_known_hosts(&import_path, KnownHostsConflictPolicy::ReplaceExisting),
+            Err(StorageError::CorruptKnownHostsImport(_))
+        ));
+        assert_eq!(fs::read(store.known_hosts_path()).unwrap(), before);
+
+        let mut invalid_key = KnownHosts::default();
+        invalid_key.hosts.push(host("tampered.example", 22));
+        fs::write(&import_path, serde_json::to_vec(&invalid_key).unwrap()).unwrap();
+        assert!(matches!(
+            store.import_known_hosts(&import_path, KnownHostsConflictPolicy::KeepExisting),
+            Err(StorageError::InvalidKnownHostImport)
+        ));
+        assert_eq!(fs::read(store.known_hosts_path()).unwrap(), before);
+
+        fs::write(&import_path, r#"{"schemaVersion":2,"hosts":[]}"#).unwrap();
+        assert!(matches!(
+            store.import_known_hosts(&import_path, KnownHostsConflictPolicy::ReplaceExisting),
+            Err(StorageError::UnsupportedKnownHostsImportSchema { found: 2 })
+        ));
+        assert_eq!(fs::read(store.known_hosts_path()).unwrap(), before);
+
+        assert!(matches!(
+            store.import_known_hosts(
+                &directory.path().join("missing.json"),
+                KnownHostsConflictPolicy::ReplaceExisting
+            ),
+            Err(StorageError::KnownHostsImportExportIo { .. })
+        ));
+        assert_eq!(fs::read(store.known_hosts_path()).unwrap(), before);
     }
 
     #[test]

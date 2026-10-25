@@ -120,6 +120,8 @@ OxideSSH uses the OS project-config directory. Typical locations (the recovery s
 
 Writes are atomic (temp file + rename). If the storage root is corrupt, OxideSSH starts in a read-only recovery view and never overwrites the damaged files.
 
+Trusted hosts can be imported or exported from Settings → Security. Import lets you keep current keys or explicitly replace conflicting host keys; malformed files are rejected without changing stored trust data.
+
 ## Project layout
 
 | Crate | Responsibility |
