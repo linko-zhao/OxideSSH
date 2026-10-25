@@ -111,7 +111,8 @@ impl Element for TerminalElement {
             columns: columns.max(2),
             rows: rows.max(1),
         };
-        let terminal_focused = self.view.read(cx).terminal_focus.is_focused(window);
+        let terminal_focused = window.is_window_active()
+            && self.view.read(cx).terminal_focus.is_focused(window);
         self.view.update(cx, |view, cx| {
             view.terminal_cursor_focused = terminal_focused;
             if !terminal_focused {

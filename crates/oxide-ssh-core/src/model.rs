@@ -272,23 +272,45 @@ pub enum CursorStyleSetting {
     Underline,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+fn default_ssh_connect_timeout_seconds() -> u64 {
+    15
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
     #[serde(default)]
     pub locale: LocaleSetting,
     #[serde(default)]
     pub theme: ThemeSetting,
+    #[serde(default = "default_ssh_connect_timeout_seconds")]
+    pub ssh_connect_timeout_seconds: u64,
     #[serde(default)]
     pub new_tab_action: NewTabAction,
     #[serde(default)]
     pub cursor_style: CursorStyleSetting,
     #[serde(default = "default_cursor_blink")]
     pub cursor_blink: bool,
+    #[serde(default)]
+    pub ssh_compression: bool,
 }
 
 fn default_cursor_blink() -> bool {
     true
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            locale: LocaleSetting::default(),
+            theme: ThemeSetting::default(),
+            ssh_connect_timeout_seconds: default_ssh_connect_timeout_seconds(),
+            new_tab_action: NewTabAction::default(),
+            cursor_style: CursorStyleSetting::default(),
+            cursor_blink: default_cursor_blink(),
+            ssh_compression: false,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -351,12 +373,12 @@ mod tests {
     }
 
     #[test]
-    fn settings_without_new_tab_action_defaults_to_add_connection() {
-        // config.json written before newTabAction existed must still load,
-        // otherwise the app falls into the read-only Recovery UI.
+    fn settings_without_new_fields_keep_legacy_defaults() {
         let settings: AppSettings =
             serde_json::from_str(r#"{"locale":"zh-CN","theme":"dark"}"#).unwrap();
         assert_eq!(settings.new_tab_action, NewTabAction::AddConnection);
+        assert!(!settings.ssh_compression);
+        assert_eq!(settings.ssh_connect_timeout_seconds, 15);
         assert_eq!(settings.theme, ThemeSetting::Dark);
         assert_eq!(settings.cursor_style, CursorStyleSetting::Block);
         assert!(settings.cursor_blink);

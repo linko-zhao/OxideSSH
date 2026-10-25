@@ -213,7 +213,7 @@ impl TerminalModel {
     }
 
     pub fn process_output(&mut self, bytes: &[u8]) -> SmallVec<[TerminalAction; 4]> {
-        let previous_cursor_shape = self.term.cursor_style().shape;
+        let previous_cursor_style = self.term.cursor_style();
         let reset = (self.last_output_ended_escape && bytes.first() == Some(&b'c'))
             || bytes.windows(2).any(|sequence| sequence == b"\x1bc");
         if !bytes.is_empty() {
@@ -221,7 +221,9 @@ impl TerminalModel {
         }
         self.processor.advance(&mut self.term, bytes);
         self.processor.stop_sync(&mut self.term);
-        self.remote_cursor_style |= self.term.cursor_style().shape != previous_cursor_shape;
+        let cursor_style = self.term.cursor_style();
+        self.remote_cursor_style |= cursor_style.shape != previous_cursor_style.shape
+            || cursor_style.blinking != previous_cursor_style.blinking;
 
         let mut pending = {
             let mut shared = self.pending_events.lock();

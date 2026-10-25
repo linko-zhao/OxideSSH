@@ -36,6 +36,12 @@ pub enum MessageId {
     ThemeDescription,
     TrustedHosts,
     NewTabButtonDescription,
+    SshConnectTimeout,
+    SshConnectTimeoutDescription,
+    Timeout15Seconds,
+    Timeout30Seconds,
+    Timeout60Seconds,
+    Timeout120Seconds,
     System,
     Light,
     English,
@@ -121,6 +127,8 @@ pub enum MessageId {
     SessionClosed,
     ShellRejected,
     LocalShellFailed,
+    SshCompression,
+    SshCompressionDescription,
 }
 
 impl MessageId {
@@ -163,6 +171,12 @@ impl MessageId {
         Self::ThemeDescription,
         Self::TrustedHosts,
         Self::NewTabButtonDescription,
+        Self::SshConnectTimeout,
+        Self::SshConnectTimeoutDescription,
+        Self::Timeout15Seconds,
+        Self::Timeout30Seconds,
+        Self::Timeout60Seconds,
+        Self::Timeout120Seconds,
         Self::System,
         Self::Light,
         Self::English,
@@ -241,6 +255,8 @@ impl MessageId {
         Self::SessionClosed,
         Self::ShellRejected,
         Self::LocalShellFailed,
+        Self::SshCompression,
+        Self::SshCompressionDescription,
     ];
 }
 

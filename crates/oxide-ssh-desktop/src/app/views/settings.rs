@@ -123,11 +123,35 @@ impl AppView {
                         cx,
                     ),
                     self.setting_row(
+                        MessageId::SshConnectTimeout,
+                        MessageId::SshConnectTimeoutDescription,
+                        Select::new(&self.ssh_connect_timeout_select)
+                            .w(px(180.))
+                            .with_size(gpui_component::Size::Small)
+                            .into_any_element(),
+                        cx,
+                    ),
+                    self.setting_row(
                         MessageId::NewTabButton,
                         MessageId::NewTabButtonDescription,
                         Select::new(&self.new_tab_action_select)
                             .w(px(180.))
                             .with_size(gpui_component::Size::Small)
+                            .into_any_element(),
+                        cx,
+                    ),
+                    self.setting_row(
+                        MessageId::SshCompression,
+                        MessageId::SshCompressionDescription,
+                        Checkbox::new("ssh-compression")
+                            .checked(
+                                self.state
+                                    .as_ref()
+                                    .is_some_and(|state| state.settings().ssh_compression),
+                            )
+                            .on_click(cx.listener(|this, checked, _, cx| {
+                                this.set_ssh_compression(*checked, cx);
+                            }))
                             .into_any_element(),
                         cx,
                     ),

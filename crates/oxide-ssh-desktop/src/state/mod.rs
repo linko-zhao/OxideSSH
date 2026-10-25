@@ -260,6 +260,25 @@ impl AppState {
     }
 
 
+    pub fn set_ssh_compression(&mut self, enabled: bool) -> Result<(), StorageError> {
+        let mut config = self.config.clone();
+        config.settings.ssh_compression = enabled;
+        self.store.save_config(&config)?;
+        self.config = config;
+        Ok(())
+    }
+    pub fn set_ssh_connect_timeout_seconds(&mut self, seconds: u64) -> Result<(), StorageError> {
+        if !(1..=300).contains(&seconds) {
+            return Ok(());
+        }
+        let mut config = self.config.clone();
+        config.settings.ssh_connect_timeout_seconds = seconds;
+        self.store.save_config(&config)?;
+        self.config = config;
+        Ok(())
+    }
+
+
     pub fn reload_config(&mut self) -> Result<(), StorageError> {
         self.config = self.store.load_config()?;
         Ok(())
@@ -456,6 +475,40 @@ mod tests {
     }
 
     #[test]
+    fn loads_schema_one_config_without_ssh_timeout() {
+        let directory = tempdir().unwrap();
+        fs::write(
+            directory.path().join(CONFIG_FILE_NAME),
+            r#"{"schemaVersion":1,"settings":{"locale":"system","theme":"system"},"profiles":[]}"#,
+        )
+        .unwrap();
+        let AppLoadOutcome::Ready(state) = AppState::load(directory.path().to_path_buf()) else {
+            panic!("expected older config to load without recovery");
+        };
+        assert_eq!(state.settings().ssh_connect_timeout_seconds, 15);
+    }
+
+    #[test]
+    fn ssh_connect_timeout_persists_and_old_config_defaults_to_fifteen_seconds() {
+        let directory = tempdir().unwrap();
+        let AppLoadOutcome::Ready(mut state) = AppState::load(directory.path().to_path_buf())
+        else {
+            panic!("expected ready state");
+        };
+        state.set_ssh_connect_timeout_seconds(45).unwrap();
+        state.set_ssh_connect_timeout_seconds(0).unwrap();
+        state.set_ssh_connect_timeout_seconds(301).unwrap();
+        let stored = state.store().load_config().unwrap();
+        assert_eq!(stored.settings.ssh_connect_timeout_seconds, 45);
+        assert_eq!(stored.schema_version(), 1);
+        drop(state);
+        let AppLoadOutcome::Ready(state) = AppState::load(directory.path().to_path_buf()) else {
+            panic!("expected ready state");
+        };
+        assert_eq!(state.settings().ssh_connect_timeout_seconds, 45);
+    }
+
+    #[test]
     fn settings_persist_immediately_and_resolve_system_defaults() {
         let directory = tempdir().unwrap();
         let AppLoadOutcome::Ready(mut state) = AppState::load(directory.path().to_path_buf())
@@ -465,9 +518,11 @@ mod tests {
 
         state.set_locale(LocaleSetting::ZhCn).unwrap();
         state.set_theme(ThemeSetting::Dark).unwrap();
+        state.set_ssh_compression(true).unwrap();
         let stored = state.store().load_config().unwrap();
         assert_eq!(stored.settings.locale, LocaleSetting::ZhCn);
         assert_eq!(stored.settings.theme, ThemeSetting::Dark);
+        assert!(stored.settings.ssh_compression);
         assert_eq!(state.resolved_locale(Some("en-US")), ResolvedLocale::ZhCn);
         assert_eq!(state.resolved_theme(false), ResolvedTheme::Dark);
     }
