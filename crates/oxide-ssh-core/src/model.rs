@@ -295,6 +295,7 @@ pub enum TerminalBell {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
     #[serde(default)]
@@ -319,6 +320,8 @@ fn default_keepalive_interval() -> u64 {
 
 fn default_keepalive_max() -> usize {
     3
+    #[serde(default = "default_confirm_before_close_with_sessions")]
+    pub confirm_before_close_with_sessions: bool,
 }
 
 impl Default for AppSettings {
@@ -334,11 +337,29 @@ impl Default for AppSettings {
         }
     }
     pub terminal_bell: TerminalBell,
+            new_tab_action: NewTabAction::default(),
+            confirm_before_close_with_sessions: default_confirm_before_close_with_sessions(),
+        }
+    }
+}
+
+fn default_confirm_before_close_with_sessions() -> bool {
+    true
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn app_settings_default_close_confirmation_for_legacy_config() {
+        let settings: AppSettings = serde_json::from_str(
+            r#"{"locale":"system","theme":"system","newTabAction":"addConnection"}"#,
+        )
+        .unwrap();
+        assert!(settings.confirm_before_close_with_sessions);
+        assert!(AppSettings::default().confirm_before_close_with_sessions);
+    }
 
     fn valid_profile() -> ConnectionProfile {
         ConnectionProfile {
