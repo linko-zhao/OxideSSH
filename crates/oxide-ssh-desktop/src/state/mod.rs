@@ -496,6 +496,7 @@ mod tests {
         assert!(!state.settings().remember_window_size);
         assert_eq!(state.settings().window_size, None);
     }
+    #[test]
     fn scrollback_setting_persists_and_rejects_out_of_range_values() {
         let directory = tempdir().unwrap();
         let AppLoadOutcome::Ready(mut state) = AppState::load(directory.path().to_path_buf())
