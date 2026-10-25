@@ -239,6 +239,14 @@ impl AppState {
         Ok(())
     }
 
+    pub fn set_new_tab_action(&mut self, action: NewTabAction) -> Result<(), StorageError> {
+        let mut config = self.config.clone();
+        config.settings.new_tab_action = action;
+        self.store.save_config(&config)?;
+        self.config = config;
+        Ok(())
+    }
+
     pub fn set_remember_window_size(&mut self, remember: bool) -> Result<(), StorageError> {
         let mut config = self.config.clone();
         config.settings.remember_window_size = remember;
