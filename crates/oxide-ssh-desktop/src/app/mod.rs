@@ -31,7 +31,7 @@ use oxide_ssh_core::{
     credentials::{CredentialError, CredentialStore},
     model::{
         AuthConfig, ConnectionProfile, Endpoint, LocaleSetting, NewTabAction, ProfileId, SessionId,
-        Tag, TagColor, TagId, TerminalSize as CoreTerminalSize, ThemeSetting,
+        Tag, TagColor, TagId, TerminalBell, TerminalSize as CoreTerminalSize, ThemeSetting,
     },
     session::{
         ConnectRequest, HostKeyDecision, SessionError, SessionEvent, SshService,
@@ -243,6 +243,7 @@ pub struct AppView {
     locale_select: SettingSelect,
     theme_select: SettingSelect,
     new_tab_action_select: SettingSelect,
+    terminal_bell_select: SettingSelect,
     locale: ResolvedLocale,
     system_locale: Option<String>,
     theme: ResolvedTheme,
@@ -253,6 +254,7 @@ pub struct AppView {
     compose_tab: Option<TabId>,
     scroll_accumulator: f32,
     bell: bool,
+    last_bell_sound: Option<std::time::Instant>,
     status_message: Option<MessageId>,
     status_rendered: Option<MessageId>,
     terminal_geometry: Option<TerminalGeometry>,
@@ -362,6 +364,17 @@ impl AppView {
                 NewTabAction::LocalTerminal => 1,
             },
         );
+        let terminal_bell_select = new_setting_select(
+            window,
+            cx,
+            locale,
+            &[MessageId::BellVisual, MessageId::BellSound, MessageId::BellOff],
+            match preferences.terminal_bell {
+                TerminalBell::Visual => 0,
+                TerminalBell::Sound => 1,
+                TerminalBell::Off => 2,
+            },
+        );
         let settings_subscriptions = vec![
             cx.subscribe_in(
                 &locale_select,
@@ -412,6 +425,23 @@ impl AppView {
                     this.set_new_tab_action(setting, cx);
                 },
             ),
+            cx.subscribe_in(
+                &terminal_bell_select,
+                window,
+                |this, _, event: &SelectEvent<SearchableVec<SharedString>>, _, cx| {
+                    let SelectEvent::Confirm(Some(value)) = event else {
+                        return;
+                    };
+                    let setting = if value.as_str() == this.text(MessageId::BellSound) {
+                        TerminalBell::Sound
+                    } else if value.as_str() == this.text(MessageId::BellOff) {
+                        TerminalBell::Off
+                    } else {
+                        TerminalBell::Visual
+                    };
+                    this.set_terminal_bell(setting, cx);
+                },
+            ),
         ];
         Self {
             root,
@@ -434,6 +464,7 @@ impl AppView {
             locale_select,
             theme_select,
             new_tab_action_select,
+            terminal_bell_select,
             locale,
             system_locale,
             theme,
@@ -444,6 +475,7 @@ impl AppView {
             compose_tab: None,
             scroll_accumulator: 0.0,
             bell: false,
+            last_bell_sound: None,
             status_message,
             status_rendered: None,
             terminal_geometry: None,
@@ -566,6 +598,25 @@ impl AppView {
                 cx,
             );
         });
+        self.terminal_bell_select.update(cx, |select, cx| {
+            select.set_items(
+                setting_select_items(
+                    locale,
+                    &[MessageId::BellVisual, MessageId::BellSound, MessageId::BellOff],
+                ),
+                window,
+                cx,
+            );
+            select.set_selected_index(
+                Some(IndexPath::new(match settings.terminal_bell {
+                    TerminalBell::Visual => 0,
+                    TerminalBell::Sound => 1,
+                    TerminalBell::Off => 2,
+                })),
+                window,
+                cx,
+            );
+        });
     }
 
     fn update_input_placeholders(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -649,6 +700,41 @@ impl AppView {
             self.status_message = Some(MessageId::StorageCorrupt);
         }
         cx.notify();
+    }
+
+    fn set_terminal_bell(&mut self, setting: TerminalBell, cx: &mut Context<Self>) {
+        if self
+            .state
+            .as_mut()
+            .is_some_and(|state| state.set_terminal_bell(setting).is_err())
+        {
+            self.status_message = Some(MessageId::StorageCorrupt);
+        }
+        if setting != TerminalBell::Visual {
+            self.bell = false;
+        }
+        cx.notify();
+    }
+
+    fn handle_terminal_bell(&mut self) {
+        match self
+            .state
+            .as_ref()
+            .map(|state| state.settings().terminal_bell)
+            .unwrap_or_default()
+        {
+            TerminalBell::Visual => self.bell = true,
+            TerminalBell::Sound => {
+                let now = std::time::Instant::now();
+                if self.last_bell_sound.is_none_or(|last| {
+                    now.duration_since(last) >= std::time::Duration::from_millis(200)
+                }) {
+                    self.last_bell_sound = Some(now);
+                    play_terminal_bell();
+                }
+            }
+            TerminalBell::Off => self.bell = false,
+        }
     }
 
     fn estimated_terminal_size(&self, window: &Window) -> TerminalSize {
@@ -941,3 +1027,35 @@ impl Drop for AppView {
 }
 
 const STATUS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(8);
+
+fn play_terminal_bell() {
+    #[cfg(target_os = "windows")]
+    {
+        #[link(name = "user32")]
+        unsafe extern "system" {
+            fn MessageBeep(kind: u32) -> i32;
+        }
+        // Windows' default system notification sound.
+        unsafe {
+            MessageBeep(0xFFFFFFFF);
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("afplay")
+            .arg("/System/Library/Sounds/Glass.aiff")
+            .spawn();
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if std::process::Command::new("canberra-gtk-play")
+            .args(["-i", "bell"])
+            .spawn()
+            .is_err()
+        {
+            let _ = std::process::Command::new("paplay")
+                .arg("/usr/share/sounds/freedesktop/stereo/bell.oga")
+                .spawn();
+        }
+    }
+}

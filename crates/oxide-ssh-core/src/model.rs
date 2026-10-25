@@ -263,6 +263,15 @@ pub enum NewTabAction {
     LocalTerminal,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TerminalBell {
+    #[default]
+    Visual,
+    Sound,
+    Off,
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
@@ -272,6 +281,8 @@ pub struct AppSettings {
     pub theme: ThemeSetting,
     #[serde(default)]
     pub new_tab_action: NewTabAction,
+    #[serde(default)]
+    pub terminal_bell: TerminalBell,
 }
 
 #[cfg(test)]
@@ -341,6 +352,21 @@ mod tests {
             serde_json::from_str(r#"{"locale":"zh-CN","theme":"dark"}"#).unwrap();
         assert_eq!(settings.new_tab_action, NewTabAction::AddConnection);
         assert_eq!(settings.theme, ThemeSetting::Dark);
+    }
+
+    #[test]
+    fn terminal_bell_defaults_to_visual_and_round_trips_all_modes() {
+        let old: AppSettings =
+            serde_json::from_str(r#"{"locale":"zh-CN","theme":"dark"}"#).unwrap();
+        assert_eq!(old.terminal_bell, TerminalBell::Visual);
+        for (json, mode) in [
+            (r#""visual""#, TerminalBell::Visual),
+            (r#""sound""#, TerminalBell::Sound),
+            (r#""off""#, TerminalBell::Off),
+        ] {
+            assert_eq!(serde_json::from_str::<TerminalBell>(json).unwrap(), mode);
+            assert_eq!(serde_json::to_string(&mode).unwrap(), json);
+        }
     }
 
     #[test]
