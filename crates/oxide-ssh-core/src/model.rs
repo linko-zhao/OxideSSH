@@ -145,6 +145,10 @@ pub struct ConnectionProfile {
     pub auth: AuthConfig,
     #[serde(default)]
     pub tag_ids: Vec<TagId>,
+    #[serde(default)]
+    pub ssh_keepalive_interval_seconds: Option<u64>,
+    #[serde(default)]
+    pub ssh_keepalive_max_count: Option<usize>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
@@ -159,6 +163,8 @@ pub enum ProfileValidationError {
     Port,
     #[error("private key path is empty")]
     PrivateKeyPath,
+    #[error("SSH keepalive values must be positive")]
+    Keepalive,
 }
 
 impl ConnectionProfile {
@@ -198,8 +204,20 @@ impl ConnectionProfile {
         {
             return Err(ProfileValidationError::PrivateKeyPath);
         }
+        if self.ssh_keepalive_interval_seconds == Some(0)
+            || self.ssh_keepalive_max_count == Some(0)
+        {
+            return Err(ProfileValidationError::Keepalive);
+        }
 
         Ok(())
+    }
+
+    pub fn inherit_keepalive_defaults(&mut self, settings: &AppSettings) {
+        self.ssh_keepalive_interval_seconds
+            .get_or_insert(settings.ssh_keepalive_interval_seconds);
+        self.ssh_keepalive_max_count
+            .get_or_insert(settings.ssh_keepalive_max_count);
     }
 }
 
@@ -270,24 +288,92 @@ pub struct WindowSize {
     pub height: u32,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+fn default_ssh_connect_timeout_seconds() -> u64 {
+    15
+}
+
+fn default_keepalive_interval() -> u64 {
+    30
+}
+
+fn default_keepalive_max() -> usize {
+    3
+}
+
+fn default_confirm_before_close_with_sessions() -> bool {
+    true
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TerminalBell {
+    #[default]
+    Visual,
+    Sound,
+    Off,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
     #[serde(default)]
     pub locale: LocaleSetting,
     #[serde(default)]
     pub theme: ThemeSetting,
+    #[serde(default = "default_ssh_connect_timeout_seconds")]
+    pub ssh_connect_timeout_seconds: u64,
     #[serde(default)]
     pub new_tab_action: NewTabAction,
     #[serde(default)]
     pub remember_window_size: bool,
     #[serde(default)]
     pub window_size: Option<WindowSize>,
+    #[serde(default)]
+    pub ssh_compression: bool,
+    #[serde(default = "default_keepalive_interval")]
+    pub ssh_keepalive_interval_seconds: u64,
+    #[serde(default = "default_keepalive_max")]
+    pub ssh_keepalive_max_count: usize,
+    #[serde(default)]
+    pub terminal_bell: TerminalBell,
+    #[serde(default = "default_confirm_before_close_with_sessions")]
+    pub confirm_before_close_with_sessions: bool,
+    #[serde(default)]
+    pub copy_on_select: bool,
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            locale: LocaleSetting::default(),
+            theme: ThemeSetting::default(),
+            ssh_connect_timeout_seconds: default_ssh_connect_timeout_seconds(),
+            new_tab_action: NewTabAction::default(),
+            remember_window_size: false,
+            window_size: None,
+            ssh_compression: false,
+            ssh_keepalive_interval_seconds: default_keepalive_interval(),
+            ssh_keepalive_max_count: default_keepalive_max(),
+            terminal_bell: TerminalBell::default(),
+            confirm_before_close_with_sessions: default_confirm_before_close_with_sessions(),
+            copy_on_select: false,
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn app_settings_default_close_confirmation_for_legacy_config() {
+        let settings: AppSettings = serde_json::from_str(
+            r#"{"locale":"system","theme":"system","newTabAction":"addConnection"}"#,
+        )
+        .unwrap();
+        assert!(settings.confirm_before_close_with_sessions);
+        assert!(AppSettings::default().confirm_before_close_with_sessions);
+    }
 
     fn valid_profile() -> ConnectionProfile {
         ConnectionProfile {
@@ -300,6 +386,8 @@ mod tests {
             username: "oxide".into(),
             auth: AuthConfig::Agent,
             tag_ids: Vec::new(),
+            ssh_keepalive_interval_seconds: None,
+            ssh_keepalive_max_count: None,
         }
     }
 
@@ -345,12 +433,13 @@ mod tests {
     }
 
     #[test]
-    fn settings_without_new_tab_action_defaults_to_add_connection() {
-        // config.json written before newTabAction existed must still load,
-        // otherwise the app falls into the read-only Recovery UI.
+    fn settings_without_new_fields_keep_legacy_defaults() {
         let settings: AppSettings =
             serde_json::from_str(r#"{"locale":"zh-CN","theme":"dark"}"#).unwrap();
         assert_eq!(settings.new_tab_action, NewTabAction::AddConnection);
+        assert!(!settings.ssh_compression);
+        assert_eq!(settings.ssh_connect_timeout_seconds, 15);
+        assert!(!settings.copy_on_select);
         assert_eq!(settings.theme, ThemeSetting::Dark);
     }
 
@@ -371,6 +460,70 @@ mod tests {
         };
         let encoded = serde_json::to_string(&settings).unwrap();
         assert_eq!(serde_json::from_str::<AppSettings>(&encoded).unwrap(), settings);
+    }
+
+    #[test]
+    fn keepalive_defaults_preserve_existing_behavior_and_profile_overrides_are_optional() {
+        let settings: AppSettings =
+            serde_json::from_str(r#"{"locale":"zh-CN","theme":"dark"}"#).unwrap();
+        assert_eq!(settings.ssh_keepalive_interval_seconds, 30);
+        assert_eq!(settings.ssh_keepalive_max_count, 3);
+
+        let mut profile = valid_profile();
+        profile.ssh_keepalive_interval_seconds = Some(12);
+        profile.ssh_keepalive_max_count = Some(5);
+        let mut old_profile = serde_json::to_value(valid_profile()).unwrap();
+        old_profile.as_object_mut().unwrap().remove("sshKeepaliveIntervalSeconds");
+        old_profile.as_object_mut().unwrap().remove("sshKeepaliveMaxCount");
+        let old_profile: ConnectionProfile = serde_json::from_value(old_profile).unwrap();
+        assert_eq!(old_profile.ssh_keepalive_interval_seconds, None);
+        assert_eq!(old_profile.ssh_keepalive_max_count, None);
+        let serialized = serde_json::to_value(profile).unwrap();
+        let round_trip: ConnectionProfile = serde_json::from_value(serialized).unwrap();
+
+        let defaults = AppSettings {
+            ssh_keepalive_interval_seconds: 45,
+            ssh_keepalive_max_count: 4,
+            ..AppSettings::default()
+        };
+        let mut profile = valid_profile();
+        profile.inherit_keepalive_defaults(&defaults);
+        assert_eq!(profile.ssh_keepalive_interval_seconds, Some(45));
+        assert_eq!(profile.ssh_keepalive_max_count, Some(4));
+
+        profile.ssh_keepalive_interval_seconds = Some(12);
+        profile.ssh_keepalive_max_count = Some(5);
+        profile.inherit_keepalive_defaults(&defaults);
+        assert_eq!(profile.ssh_keepalive_interval_seconds, Some(12));
+        assert_eq!(profile.ssh_keepalive_max_count, Some(5));
+        assert_eq!(round_trip.ssh_keepalive_interval_seconds, Some(12));
+        assert_eq!(round_trip.ssh_keepalive_max_count, Some(5));
+    }
+
+    #[test]
+    fn terminal_bell_defaults_to_visual_and_round_trips_all_modes() {
+        let old: AppSettings =
+            serde_json::from_str(r#"{"locale":"zh-CN","theme":"dark"}"#).unwrap();
+        assert_eq!(old.terminal_bell, TerminalBell::Visual);
+        for (json, mode) in [
+            (r#""visual""#, TerminalBell::Visual),
+            (r#""sound""#, TerminalBell::Sound),
+            (r#""off""#, TerminalBell::Off),
+        ] {
+            assert_eq!(serde_json::from_str::<TerminalBell>(json).unwrap(), mode);
+            assert_eq!(serde_json::to_string(&mode).unwrap(), json);
+        }
+    }
+
+    #[test]
+    fn copy_on_select_round_trips_in_settings() {
+        let settings = AppSettings {
+            copy_on_select: true,
+            ..AppSettings::default()
+        };
+        let encoded = serde_json::to_string(&settings).unwrap();
+        let decoded: AppSettings = serde_json::from_str(&encoded).unwrap();
+        assert!(decoded.copy_on_select);
     }
 
     #[test]

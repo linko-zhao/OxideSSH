@@ -132,6 +132,79 @@ impl AppView {
                         cx,
                     ),
                     self.setting_row(
+                        MessageId::SshConnectTimeout,
+                        MessageId::SshConnectTimeoutDescription,
+                        Select::new(&self.ssh_connect_timeout_select)
+                            .w(px(180.))
+                            .with_size(gpui_component::Size::Small)
+                            .into_any_element(),
+                        cx,
+                    ),
+                    self.setting_row(
+                        MessageId::SshCompression,
+                        MessageId::SshCompressionDescription,
+                        Checkbox::new("ssh-compression")
+                            .checked(
+                                self.state
+                                    .as_ref()
+                                    .is_some_and(|state| state.settings().ssh_compression),
+                            )
+                            .on_click(cx.listener(|this, checked, _, cx| {
+                                this.set_ssh_compression(*checked, cx);
+                            }))
+                            .into_any_element(),
+                        cx,
+                    ),
+                    self.setting_row(
+                        MessageId::SshKeepaliveInterval,
+                        MessageId::SshKeepaliveInterval,
+                        Input::new(&self.ssh_keepalive_interval)
+                            .w(px(180.))
+                            .into_any_element(),
+                        cx,
+                    ),
+                    self.setting_row(
+                        MessageId::SshKeepaliveMaxCount,
+                        MessageId::SshKeepaliveMaxCount,
+                        Input::new(&self.ssh_keepalive_max_count)
+                            .w(px(180.))
+                            .into_any_element(),
+                        cx,
+                    ),
+                    self.setting_row(
+                        MessageId::TerminalBell,
+                        MessageId::BellDescription,
+                        Select::new(&self.terminal_bell_select)
+                            .w(px(180.))
+                            .with_size(gpui_component::Size::Small)
+                            .into_any_element(),
+                        cx,
+                    ),
+                    self.setting_row(
+                        MessageId::ConfirmBeforeCloseWithSessions,
+                        MessageId::ConfirmBeforeCloseWithSessionsDescription,
+                        Checkbox::new("confirm-before-close-with-sessions")
+                            .checked(
+                                self.state
+                                    .as_ref()
+                                    .is_none_or(|state| state.settings().confirm_before_close_with_sessions),
+                            )
+                            .on_click(cx.listener(|this, checked, _, cx| {
+                                this.set_confirm_before_close_with_sessions(*checked, cx);
+                            }))
+                            .into_any_element(),
+                        cx,
+                    ),
+                    self.setting_row(
+                        MessageId::CopyOnSelect,
+                        MessageId::CopyOnSelectDescription,
+                        Checkbox::new("copy-on-select")
+                            .checked(self.state.as_ref().is_some_and(|state| state.settings().copy_on_select))
+                            .on_click(cx.listener(|this, _, _, cx| this.toggle_copy_on_select(cx)))
+                            .into_any_element(),
+                        cx,
+                    ),
+                    self.setting_row(
                         MessageId::RememberWindowSize,
                         MessageId::RememberWindowSizeDescription,
                         Checkbox::new("remember-window-size")

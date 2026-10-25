@@ -77,7 +77,7 @@ fn open_window(root: PathBuf, cx: &mut App) {
             let weak = view.downgrade();
             window.on_window_should_close(cx, move |_, cx| {
                 weak.update(cx, |view, cx| {
-                    if view.has_live_tabs() {
+                    if view.has_live_tabs() && view.confirm_before_close_with_sessions() {
                         view.request_quit(cx);
                         false
                     } else {
