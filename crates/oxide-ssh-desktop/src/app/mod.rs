@@ -30,8 +30,8 @@ use gpui::WindowControlArea;
 use oxide_ssh_core::{
     credentials::{CredentialError, CredentialStore},
     model::{
-        AuthConfig, ConnectionProfile, Endpoint, LocaleSetting, NewTabAction, ProfileId, SessionId,
-        Tag, TagColor, TagId, TerminalSize as CoreTerminalSize, ThemeSetting,
+        AuthConfig, ConnectionProfile, CursorStyleSetting, Endpoint, LocaleSetting, NewTabAction,
+        ProfileId, SessionId, Tag, TagColor, TagId, TerminalSize as CoreTerminalSize, ThemeSetting,
     },
     session::{
         ConnectRequest, HostKeyDecision, SessionError, SessionEvent, SshService,
@@ -243,6 +243,7 @@ pub struct AppView {
     locale_select: SettingSelect,
     theme_select: SettingSelect,
     new_tab_action_select: SettingSelect,
+    cursor_style_select: SettingSelect,
     locale: ResolvedLocale,
     system_locale: Option<String>,
     theme: ResolvedTheme,
@@ -362,6 +363,17 @@ impl AppView {
                 NewTabAction::LocalTerminal => 1,
             },
         );
+        let cursor_style_select = new_setting_select(
+            window,
+            cx,
+            locale,
+            &[MessageId::CursorBlock, MessageId::CursorBeam, MessageId::CursorUnderline],
+            match preferences.cursor_style {
+                CursorStyleSetting::Block => 0,
+                CursorStyleSetting::Beam => 1,
+                CursorStyleSetting::Underline => 2,
+            },
+        );
         let settings_subscriptions = vec![
             cx.subscribe_in(
                 &locale_select,
@@ -412,8 +424,26 @@ impl AppView {
                     this.set_new_tab_action(setting, cx);
                 },
             ),
+            cx.subscribe_in(
+                &cursor_style_select,
+                window,
+                |this, _, event: &SelectEvent<SearchableVec<SharedString>>, _, cx| {
+                    let SelectEvent::Confirm(Some(value)) = event else {
+                        return;
+                    };
+                    let style = if value.as_str() == this.text(MessageId::CursorBeam) {
+                        CursorStyleSetting::Beam
+                    } else if value.as_str() == this.text(MessageId::CursorUnderline) {
+                        CursorStyleSetting::Underline
+                    } else {
+                        CursorStyleSetting::Block
+                    };
+                    this.set_cursor_style(style, cx);
+                },
+            ),
         ];
         Self {
+            cursor_style_select,
             root,
             state,
             credentials,
@@ -647,6 +677,26 @@ impl AppView {
             .is_some_and(|state| state.set_new_tab_action(setting).is_err())
         {
             self.status_message = Some(MessageId::StorageCorrupt);
+        }
+        cx.notify();
+    }
+    fn set_cursor_style(&mut self, setting: CursorStyleSetting, cx: &mut Context<Self>) {
+        if let Some(state) = &mut self.state {
+            let blink = state.settings().cursor_blink;
+            if state.set_cursor_preferences(setting, blink).is_err() {
+                self.status_message = Some(MessageId::StorageCorrupt);
+            }
+        }
+        cx.notify();
+    }
+    fn toggle_cursor_blink(&mut self, cx: &mut Context<Self>) {
+        if let Some(state) = &mut self.state {
+            let settings = state.settings();
+            let style = settings.cursor_style;
+            let blink = !settings.cursor_blink;
+            if state.set_cursor_preferences(style, blink).is_err() {
+                self.status_message = Some(MessageId::StorageCorrupt);
+            }
         }
         cx.notify();
     }

@@ -4,8 +4,8 @@ use std::{collections::HashSet, path::PathBuf, sync::Arc};
 
 use oxide_ssh_core::{
     model::{
-        AppSettings, ConnectionProfile, Endpoint, LocaleSetting, NewTabAction, Tag, TagColor,
-        TagId, ThemeSetting,
+        AppSettings, ConnectionProfile, CursorStyleSetting, Endpoint, LocaleSetting, NewTabAction,
+        Tag, TagColor, TagId, ThemeSetting,
     },
     storage::{AppConfig, AppStore, KnownHostEntry, KnownHosts, StorageError},
 };
@@ -246,6 +246,19 @@ impl AppState {
         self.config = config;
         Ok(())
     }
+    pub fn set_cursor_preferences(
+        &mut self,
+        style: CursorStyleSetting,
+        blink: bool,
+    ) -> Result<(), StorageError> {
+        let mut config = self.config.clone();
+        config.settings.cursor_style = style;
+        config.settings.cursor_blink = blink;
+        self.store.save_config(&config)?;
+        self.config = config;
+        Ok(())
+    }
+
 
     pub fn reload_config(&mut self) -> Result<(), StorageError> {
         self.config = self.store.load_config()?;

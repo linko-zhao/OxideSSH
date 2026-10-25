@@ -251,7 +251,23 @@ impl Element for TerminalElement {
             let cursor_color = rgb(terminal_colors.cursor.to_hex());
             let cursor_x = bounds.left() + cell_width * cursor.point.column.0 as f32;
             let cursor_y = bounds.top() + cell_height * cursor_row.unwrap_or_default() as f32;
-            match cursor.shape {
+            let shape = if model.has_remote_cursor_style() {
+                cursor.shape
+            } else {
+                match view
+                    .state
+                    .as_ref()
+                    .map(|state| state.settings().cursor_style)
+                    .unwrap_or_default()
+                {
+                    CursorStyleSetting::Block => alacritty_terminal::vte::ansi::CursorShape::Block,
+                    CursorStyleSetting::Beam => alacritty_terminal::vte::ansi::CursorShape::Beam,
+                    CursorStyleSetting::Underline => {
+                        alacritty_terminal::vte::ansi::CursorShape::Underline
+                    }
+                }
+            };
+            match shape {
                 alacritty_terminal::vte::ansi::CursorShape::Hidden => Vec::new(),
                 alacritty_terminal::vte::ansi::CursorShape::Beam => vec![fill(
                     Bounds::new(point(cursor_x, cursor_y), size(px(2.), cell_height)),

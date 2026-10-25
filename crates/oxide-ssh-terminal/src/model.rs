@@ -171,6 +171,7 @@ pub struct TerminalModel {
     pending_events: Arc<Mutex<Vec<Event>>>,
     size: TerminalSize,
     default_colors: TerminalColors,
+    remote_cursor_style: bool,
 }
 
 impl TerminalModel {
@@ -203,12 +204,15 @@ impl TerminalModel {
             pending_events,
             size,
             default_colors,
+            remote_cursor_style: false,
         })
     }
 
     pub fn process_output(&mut self, bytes: &[u8]) -> SmallVec<[TerminalAction; 4]> {
+        let previous_cursor_shape = self.term.cursor_style().shape;
         self.processor.advance(&mut self.term, bytes);
         self.processor.stop_sync(&mut self.term);
+        self.remote_cursor_style |= self.term.cursor_style().shape != previous_cursor_shape;
 
         let mut pending = {
             let mut shared = self.pending_events.lock();
@@ -230,12 +234,12 @@ impl TerminalModel {
                 }
                 Event::Bell => actions.push(TerminalAction::Bell),
                 Event::Wakeup => actions.push(TerminalAction::Wakeup),
+                Event::CursorBlinkingChange => actions.push(TerminalAction::Wakeup),
                 Event::MouseCursorDirty
                 | Event::Title(_)
                 | Event::ResetTitle
                 | Event::ClipboardStore(_, _)
                 | Event::ClipboardLoad(_, _)
-                | Event::CursorBlinkingChange
                 | Event::Exit
                 | Event::ChildExit(_) => {}
             }
@@ -280,6 +284,12 @@ impl TerminalModel {
 
     pub fn renderable_content(&self) -> RenderableContent<'_> {
         self.term.renderable_content()
+    }
+    pub fn cursor_blinking(&self) -> bool {
+        self.term.cursor_style().blinking
+    }
+    pub fn has_remote_cursor_style(&self) -> bool {
+        self.remote_cursor_style
     }
 
     pub fn cell_render_style(&self, cell: &Cell) -> CellRenderStyle {
@@ -547,6 +557,17 @@ mod tests {
                 .then_some(indexed.cell.c)
             })
             .collect()
+    }
+
+    #[test]
+    fn remote_cursor_style_updates_blinking_and_wakes_renderer() {
+        let mut model = TerminalModel::new(size(80, 24)).unwrap();
+        assert!(!model.cursor_blinking());
+        assert!(!model.has_remote_cursor_style());
+        let actions = model.process_output(b"\x1b[5 q");
+        assert!(model.cursor_blinking());
+        assert!(model.has_remote_cursor_style());
+        assert!(actions.contains(&TerminalAction::Wakeup));
     }
 
     #[test]

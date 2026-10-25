@@ -263,6 +263,15 @@ pub enum NewTabAction {
     LocalTerminal,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CursorStyleSetting {
+    #[default]
+    Block,
+    Beam,
+    Underline,
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
@@ -272,6 +281,14 @@ pub struct AppSettings {
     pub theme: ThemeSetting,
     #[serde(default)]
     pub new_tab_action: NewTabAction,
+    #[serde(default)]
+    pub cursor_style: CursorStyleSetting,
+    #[serde(default = "default_cursor_blink")]
+    pub cursor_blink: bool,
+}
+
+fn default_cursor_blink() -> bool {
+    true
 }
 
 #[cfg(test)]
@@ -341,6 +358,8 @@ mod tests {
             serde_json::from_str(r#"{"locale":"zh-CN","theme":"dark"}"#).unwrap();
         assert_eq!(settings.new_tab_action, NewTabAction::AddConnection);
         assert_eq!(settings.theme, ThemeSetting::Dark);
+        assert_eq!(settings.cursor_style, CursorStyleSetting::Block);
+        assert!(settings.cursor_blink);
     }
 
     #[test]

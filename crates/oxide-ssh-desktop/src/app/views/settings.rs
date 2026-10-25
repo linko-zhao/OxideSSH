@@ -146,6 +146,30 @@ impl AppView {
                             .into_any_element(),
                         cx,
                     ),
+                    self.setting_row(
+                        MessageId::CursorStyle,
+                        MessageId::CursorStyleDescription,
+                        Select::new(&self.cursor_style_select)
+                            .w(px(180.))
+                            .with_size(gpui_component::Size::Small)
+                            .into_any_element(),
+                        cx,
+                    ),
+                    self.setting_row(
+                        MessageId::CursorBlink,
+                        MessageId::CursorBlinkDescription,
+                        Checkbox::new("cursor-blink")
+                            .checked(
+                                self.state
+                                    .as_ref()
+                                    .is_some_and(|state| state.settings().cursor_blink),
+                            )
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.toggle_cursor_blink(cx);
+                            }))
+                            .into_any_element(),
+                        cx,
+                    ),
                 ],
                 cx,
             ),
