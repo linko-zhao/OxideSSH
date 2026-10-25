@@ -651,6 +651,17 @@ impl AppView {
         cx.notify();
     }
 
+    fn set_ssh_compression(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        if self
+            .state
+            .as_mut()
+            .is_some_and(|state| state.set_ssh_compression(enabled).is_err())
+        {
+            self.status_message = Some(MessageId::StorageCorrupt);
+        }
+        cx.notify();
+    }
+
     fn estimated_terminal_size(&self, window: &Window) -> TerminalSize {
         let bounds = window.bounds();
         // Chrome: sidebar+strip estimate (strip = 28px pill + 2 * CARD_GAP)

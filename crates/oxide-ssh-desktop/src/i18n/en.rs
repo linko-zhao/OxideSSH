@@ -33,6 +33,8 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::ThemeDescription => "Application color scheme",
         MessageId::TrustedHosts => "Trusted hosts",
         MessageId::NewTabButtonDescription => "Action performed by the new tab button",
+        MessageId::SshCompression => "SSH compression",
+        MessageId::SshCompressionDescription => "Compress SSH traffic when available; peers without compression fall back to uncompressed traffic.",
         MessageId::System => "System",
         MessageId::Light => "Light",
         MessageId::English => "English",
