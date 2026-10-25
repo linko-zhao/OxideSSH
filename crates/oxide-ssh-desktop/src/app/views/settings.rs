@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use super::*;
 use gpui_component::select::Select;
 
@@ -194,7 +196,10 @@ impl AppView {
                                         div()
                                             .text_sm()
                                             .text_color(cx.theme().muted_foreground)
-                                            .child(algorithm),
+                                            .child(format!(
+                                                "{}\n{}",
+                                                algorithm, host.fingerprint_sha256
+                                            )),
                                     ),
                             )
                             .child(
@@ -216,6 +221,59 @@ impl AppView {
                             .into_any_element(),
                     );
                 }
+                rows.push(
+                    h_flex()
+                        .gap(px(8.))
+                        .p(px(16.))
+                        .child(
+                            Button::new("export-known-hosts")
+                                .label(self.text(MessageId::ExportKnownHosts))
+                                .on_click(cx.listener(|_this, _, _, cx| {
+                                    let receiver = cx.prompt_for_new_path(
+                                        Path::new("."),
+                                        Some("known_hosts.json"),
+                                    );
+                                    cx.spawn(async move |weak, cx| {
+                                        if let Ok(Ok(Some(path))) = receiver.await {
+                                            weak.update(cx, |this, cx| {
+                                                let result = this.state.as_ref().map(|state| {
+                                                    state.store().export_known_hosts(&path)
+                                                });
+                                                this.status_message = Some(
+                                                    if matches!(result, Some(Ok(()))) {
+                                                        MessageId::KnownHostsExported
+                                                    } else {
+                                                        MessageId::KnownHostsTransferFailed
+                                                    },
+                                                );
+                                                cx.notify();
+                                            }).ok();
+                                        }
+                                    }).detach();
+                                })),
+                        )
+                        .child(
+                            Button::new("import-known-hosts-keep")
+                                .label(self.text(MessageId::ImportKeepExisting))
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.choose_known_hosts_import(
+                                        oxide_ssh_core::storage::KnownHostsConflictPolicy::KeepExisting,
+                                        cx,
+                                    );
+                                })),
+                        )
+                        .child(
+                            Button::new("import-known-hosts-replace")
+                                .label(self.text(MessageId::ImportReplaceExisting))
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.choose_known_hosts_import(
+                                        oxide_ssh_core::storage::KnownHostsConflictPolicy::ReplaceExisting,
+                                        cx,
+                                    );
+                                })),
+                        )
+                        .into_any_element(),
+                );
                 settings_page(self.text(MessageId::Security), rows, cx)
             }
         };
@@ -277,5 +335,39 @@ impl AppView {
                     ),
             )
             .into_any_element()
+    }
+    fn choose_known_hosts_import(
+        &mut self,
+        policy: oxide_ssh_core::storage::KnownHostsConflictPolicy,
+        cx: &mut Context<Self>,
+    ) {
+        let receiver = cx.prompt_for_paths(gpui::PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: Some(self.text(MessageId::ImportKnownHosts).into()),
+        });
+        cx.spawn(async move |weak, cx| {
+            if let Ok(Ok(Some(paths))) = receiver.await
+                && let Some(path) = paths.into_iter().next()
+            {
+                weak.update(cx, |this, cx| {
+                    let result = this.state.as_mut().map(|state| {
+                        let store = state.store().clone();
+                        store
+                            .import_known_hosts(&path, policy)
+                            .and_then(|()| state.reload_known_hosts())
+                    });
+                    this.status_message = Some(if matches!(result, Some(Ok(()))) {
+                        MessageId::KnownHostsImported
+                    } else {
+                        MessageId::KnownHostsTransferFailed
+                    });
+                    cx.notify();
+                })
+                .ok();
+            }
+        })
+        .detach();
     }
 }
