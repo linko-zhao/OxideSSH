@@ -111,5 +111,8 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::SessionClosed => "The session input channel is closed.",
         MessageId::ShellRejected => "The server rejected the shell request.",
         MessageId::LocalShellFailed => "Failed to start the local shell.",
+        MessageId::TerminalFontFamily => "Terminal font",
+        MessageId::TerminalFontSize => "Terminal font size",
+        MessageId::TerminalLineHeight => "Terminal line height",
     }
 }

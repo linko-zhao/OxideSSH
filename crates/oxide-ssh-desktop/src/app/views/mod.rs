@@ -81,9 +81,22 @@ impl AppView {
                     .when(!disconnected, |element| element.key_context("Terminal"))
                     .bg(rgb(self.theme.terminal_colors().background.to_hex()))
                     .text_color(rgb(self.theme.terminal_colors().foreground.to_hex()))
-                    .font_family(TERMINAL_FONT)
-                    .text_size(px(13.))
-                    .line_height(px(17.))
+                    .font_family(
+                        self.state
+                            .as_ref()
+                            .map(|state| state.settings().terminal_font_family.clone())
+                            .unwrap_or_else(|| TERMINAL_FONT.to_owned()),
+                    )
+                    .text_size(px(self
+                        .state
+                        .as_ref()
+                        .map(|state| state.settings().terminal_font_size as f32)
+                        .unwrap_or(13.)))
+                    .line_height(px(self
+                        .state
+                        .as_ref()
+                        .map(|state| state.settings().terminal_line_height as f32)
+                        .unwrap_or(17.)))
                     .track_focus(&self.terminal_focus)
                     .when(!disconnected, |element| {
                         element.on_key_down(cx.listener(Self::handle_key_down))

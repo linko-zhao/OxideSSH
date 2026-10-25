@@ -246,6 +246,20 @@ impl AppState {
         self.config = config;
         Ok(())
     }
+    pub fn set_terminal_settings(
+        &mut self,
+        font_family: String,
+        font_size: u16,
+        line_height: u16,
+    ) -> Result<(), StorageError> {
+        let mut config = self.config.clone();
+        config.settings.terminal_font_family = font_family;
+        config.settings.terminal_font_size = font_size;
+        config.settings.terminal_line_height = line_height;
+        self.store.save_config(&config)?;
+        self.config = config;
+        Ok(())
+    }
 
     pub fn reload_config(&mut self) -> Result<(), StorageError> {
         self.config = self.store.load_config()?;
@@ -452,9 +466,16 @@ mod tests {
 
         state.set_locale(LocaleSetting::ZhCn).unwrap();
         state.set_theme(ThemeSetting::Dark).unwrap();
+        state
+            .set_terminal_settings("Test Mono".into(), 15, 19)
+            .unwrap();
         let stored = state.store().load_config().unwrap();
+        assert_eq!(stored.schema_version(), 1);
         assert_eq!(stored.settings.locale, LocaleSetting::ZhCn);
         assert_eq!(stored.settings.theme, ThemeSetting::Dark);
+        assert_eq!(stored.settings.terminal_font_family, "Test Mono");
+        assert_eq!(stored.settings.terminal_font_size, 15);
+        assert_eq!(stored.settings.terminal_line_height, 19);
         assert_eq!(state.resolved_locale(Some("en-US")), ResolvedLocale::ZhCn);
         assert_eq!(state.resolved_theme(false), ResolvedTheme::Dark);
     }

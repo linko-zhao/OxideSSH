@@ -243,6 +243,9 @@ pub struct AppView {
     locale_select: SettingSelect,
     theme_select: SettingSelect,
     new_tab_action_select: SettingSelect,
+    terminal_font_family: Entity<InputState>,
+    terminal_font_size: Entity<InputState>,
+    terminal_line_height: Entity<InputState>,
     locale: ResolvedLocale,
     system_locale: Option<String>,
     theme: ResolvedTheme,
@@ -326,6 +329,30 @@ impl AppView {
             .as_ref()
             .map(|state| state.settings().clone())
             .unwrap_or_default();
+        let terminal_font_family = new_input(
+            window,
+            cx,
+            MessageId::TerminalFontFamily,
+            &preferences.terminal_font_family,
+            false,
+            locale,
+        );
+        let terminal_font_size = new_input(
+            window,
+            cx,
+            MessageId::TerminalFontSize,
+            &preferences.terminal_font_size.to_string(),
+            false,
+            locale,
+        );
+        let terminal_line_height = new_input(
+            window,
+            cx,
+            MessageId::TerminalLineHeight,
+            &preferences.terminal_line_height.to_string(),
+            false,
+            locale,
+        );
         let locale_select = new_setting_select(
             window,
             cx,
@@ -412,6 +439,33 @@ impl AppView {
                     this.set_new_tab_action(setting, cx);
                 },
             ),
+            cx.subscribe_in(
+                &terminal_font_family,
+                window,
+                |this, _, event: &gpui_component::input::InputEvent, _, cx| {
+                    if matches!(event, gpui_component::input::InputEvent::Blur) {
+                        this.commit_terminal_settings(cx);
+                    }
+                },
+            ),
+            cx.subscribe_in(
+                &terminal_font_size,
+                window,
+                |this, _, event: &gpui_component::input::InputEvent, _, cx| {
+                    if matches!(event, gpui_component::input::InputEvent::Blur) {
+                        this.commit_terminal_settings(cx);
+                    }
+                },
+            ),
+            cx.subscribe_in(
+                &terminal_line_height,
+                window,
+                |this, _, event: &gpui_component::input::InputEvent, _, cx| {
+                    if matches!(event, gpui_component::input::InputEvent::Blur) {
+                        this.commit_terminal_settings(cx);
+                    }
+                },
+            ),
         ];
         Self {
             root,
@@ -434,6 +488,9 @@ impl AppView {
             locale_select,
             theme_select,
             new_tab_action_select,
+            terminal_font_family,
+            terminal_font_size,
+            terminal_line_height,
             locale,
             system_locale,
             theme,
@@ -616,6 +673,26 @@ impl AppView {
         }
     }
 
+    fn commit_terminal_settings(&mut self, cx: &mut Context<Self>) {
+        let family = self.terminal_font_family.read(cx).value().to_string();
+        let size = self.terminal_font_size.read(cx).value().parse::<u16>();
+        let height = self.terminal_line_height.read(cx).value().parse::<u16>();
+        let (Ok(size), Ok(height)) = (size, height) else {
+            return;
+        };
+        if family.trim().is_empty() || size == 0 || height == 0 {
+            return;
+        }
+        if let Some(state) = &mut self.state
+            && state
+                .set_terminal_settings(family.trim().to_owned(), size, height)
+                .is_err()
+        {
+            self.status_message = Some(MessageId::StorageCorrupt);
+        }
+        cx.notify();
+    }
+
     fn set_locale(&mut self, setting: LocaleSetting, window: &mut Window, cx: &mut Context<Self>) {
         if self
             .state
@@ -658,10 +735,38 @@ impl AppView {
         let chrome = 2. * (CARD_GAP + CARD_PADDING);
         let width = (bounds.size.width - px(260. + chrome)).max(px(80.));
         let height = (bounds.size.height - px(28. + 2. * CARD_GAP + chrome)).max(px(40.));
+        let font_size = self
+            .state
+            .as_ref()
+            .map(|state| state.settings().terminal_font_size as f32)
+            .unwrap_or(13.);
         let text_style = window.text_style();
-        let font_size = text_style.font_size.to_pixels(window.rem_size());
-        let cell_width = (font_size * 0.6).max(px(1.));
-        let cell_height = window.line_height().max(px(1.));
+        let font = self
+            .state
+            .as_ref()
+            .map(|state| state.settings().terminal_font_family.clone())
+            .unwrap_or_else(|| terminal::TERMINAL_FONT.to_owned());
+        let run = TextRun {
+            len: 1,
+            font: gpui::Font {
+                family: font.into(),
+                ..text_style.font()
+            },
+            color: text_style.color,
+            background_color: None,
+            underline: None,
+            strikethrough: None,
+        };
+        let sample = window
+            .text_system()
+            .shape_line("M".into(), px(font_size), &[run], None);
+        let cell_width = sample.x_for_index(1).max(px(1.));
+        let line_height = self
+            .state
+            .as_ref()
+            .map(|state| state.settings().terminal_line_height as f32)
+            .unwrap_or(17.);
+        let cell_height = px(line_height).max(px(1.));
         TerminalSize {
             columns: (f32::from(width) / f32::from(cell_width)).floor() as usize,
             rows: (f32::from(height) / f32::from(cell_height)).floor() as usize,

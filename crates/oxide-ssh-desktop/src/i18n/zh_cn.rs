@@ -111,5 +111,8 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::SessionClosed => "会话输入通道已关闭。",
         MessageId::ShellRejected => "服务器拒绝了 Shell 请求。",
         MessageId::LocalShellFailed => "无法启动本机 Shell。",
+        MessageId::TerminalFontFamily => "终端字体",
+        MessageId::TerminalFontSize => "终端字号",
+        MessageId::TerminalLineHeight => "终端行高",
     }
 }

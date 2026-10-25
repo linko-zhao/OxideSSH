@@ -114,6 +114,9 @@ pub enum MessageId {
     SessionClosed,
     ShellRejected,
     LocalShellFailed,
+    TerminalFontFamily,
+    TerminalFontSize,
+    TerminalLineHeight,
 }
 
 impl MessageId {
@@ -227,6 +230,9 @@ impl MessageId {
         Self::SessionClosed,
         Self::ShellRejected,
         Self::LocalShellFailed,
+        Self::TerminalFontFamily,
+        Self::TerminalFontSize,
+        Self::TerminalLineHeight,
     ];
 }
 

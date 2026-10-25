@@ -263,7 +263,7 @@ pub enum NewTabAction {
     LocalTerminal,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
     #[serde(default)]
@@ -272,6 +272,47 @@ pub struct AppSettings {
     pub theme: ThemeSetting,
     #[serde(default)]
     pub new_tab_action: NewTabAction,
+    #[serde(default = "default_terminal_font_family")]
+    pub terminal_font_family: String,
+    #[serde(default = "default_terminal_font_size")]
+    pub terminal_font_size: u16,
+    #[serde(default = "default_terminal_line_height")]
+    pub terminal_line_height: u16,
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            locale: LocaleSetting::default(),
+            theme: ThemeSetting::default(),
+            new_tab_action: NewTabAction::default(),
+            terminal_font_family: default_terminal_font_family(),
+            terminal_font_size: default_terminal_font_size(),
+            terminal_line_height: default_terminal_line_height(),
+        }
+    }
+}
+
+fn default_terminal_font_family() -> String {
+    #[cfg(target_os = "macos")]
+    {
+        "Menlo".into()
+    }
+    #[cfg(target_os = "windows")]
+    {
+        "Cascadia Mono".into()
+    }
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    {
+        "monospace".into()
+    }
+}
+
+fn default_terminal_font_size() -> u16 {
+    13
+}
+fn default_terminal_line_height() -> u16 {
+    17
 }
 
 #[cfg(test)]
@@ -290,6 +331,22 @@ mod tests {
             auth: AuthConfig::Agent,
             tag_ids: Vec::new(),
         }
+    }
+
+    #[test]
+    fn terminal_settings_default_and_deserialize_from_legacy_settings() {
+        let defaults = AppSettings::default();
+        assert_eq!(defaults.terminal_font_size, 13);
+        assert_eq!(defaults.terminal_line_height, 17);
+        assert!(!defaults.terminal_font_family.is_empty());
+        let settings: AppSettings = serde_json::from_str("{}").unwrap();
+        assert_eq!(settings.terminal_font_size, 13);
+        assert_eq!(settings.terminal_line_height, 17);
+        assert!(!settings.terminal_font_family.is_empty());
+        let settings: AppSettings =
+            serde_json::from_str(r#"{"locale":"system","theme":"system"}"#).unwrap();
+        assert_eq!(settings.terminal_font_size, 13);
+        assert_eq!(settings.terminal_line_height, 17);
     }
 
     #[test]
