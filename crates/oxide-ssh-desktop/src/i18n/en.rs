@@ -97,6 +97,7 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::Username => "Username",
         MessageId::AuthMethod => "Authentication method",
         MessageId::Password => "Password",
+        MessageId::EnvironmentVariables => "Remote environment requests (JSON array; server may reject)",
         MessageId::PrivateKey => "Private key",
         MessageId::StartupCommand => "Startup command",
         MessageId::Agent => "SSH agent",

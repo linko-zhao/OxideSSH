@@ -3,7 +3,8 @@
 use std::path::PathBuf;
 
 use oxide_ssh_core::model::{
-    AuthConfig, ConnectionProfile, Endpoint, ProfileId, ProfileValidationError, TagId,
+    AuthConfig, ConnectionProfile, Endpoint, EnvironmentVariable, ProfileId,
+    ProfileValidationError, TagId,
 };
 use secrecy::SecretString;
 
@@ -29,6 +30,7 @@ pub struct ConnectionForm {
     pub startup_command: String,
     pub ssh_keepalive_interval_seconds: String,
     pub ssh_keepalive_max_count: String,
+    pub environment_variables_json: String,
     previous: Option<ConnectionProfile>,
     profile_id: ProfileId,
 }
@@ -50,6 +52,7 @@ impl ConnectionForm {
             ssh_keepalive_max_count: String::new(),
             previous: None,
             profile_id: ProfileId::new(),
+            environment_variables_json: "[]".into(),
         }
     }
 
@@ -89,6 +92,8 @@ impl ConnectionForm {
                 .ssh_keepalive_max_count
                 .map(|value| value.to_string())
                 .unwrap_or_default(),
+            environment_variables_json: serde_json::to_string_pretty(&profile.environment_variables)
+                .expect("serializing environment variables cannot fail"),
             profile_id: profile.id,
             previous: Some(profile),
         }
@@ -129,6 +134,9 @@ impl ConnectionForm {
             };
         let keepalive_interval = parse_override(&self.ssh_keepalive_interval_seconds)?;
         let keepalive_max_count = parse_override(&self.ssh_keepalive_max_count)?;
+        let environment_variables: Vec<EnvironmentVariable> =
+            serde_json::from_str(&self.environment_variables_json)
+                .map_err(|_| FormError::EnvironmentVariable)?;
         let profile = ConnectionProfile {
             id: self.profile_id,
             name: self.name.trim().into(),
@@ -146,6 +154,7 @@ impl ConnectionForm {
                 .map(usize::try_from)
                 .transpose()
                 .map_err(|_| FormError::Keepalive)?,
+            environment_variables,
         };
         profile.validate().map_err(FormError::from)?;
 
@@ -185,6 +194,7 @@ pub enum FormError {
     Port,
     PrivateKeyPath,
     Keepalive,
+    EnvironmentVariable,
 }
 
 impl From<ProfileValidationError> for FormError {
@@ -196,6 +206,7 @@ impl From<ProfileValidationError> for FormError {
             ProfileValidationError::Port => Self::Port,
             ProfileValidationError::PrivateKeyPath => Self::PrivateKeyPath,
             ProfileValidationError::Keepalive => Self::Keepalive,
+            ProfileValidationError::EnvironmentVariable => Self::EnvironmentVariable,
         }
     }
 }
@@ -261,6 +272,26 @@ mod tests {
         edit.ssh_keepalive_max_count = "0".into();
         assert_eq!(edit.save_request().unwrap_err(), FormError::Keepalive);
 
+    }
+
+    #[test]
+    fn environment_variables_round_trip_without_trimming_and_invalid_names_do_not_save() {
+        let mut form = ConnectionForm::new();
+        form.name = "fixture".into();
+        form.host = "host".into();
+        form.username = "oxide".into();
+        form.environment_variables_json =
+            r#"[{"name":"BUILD_ID","value":"  release=blue\nwith newline  "}]"#.into();
+        let profile = form.save_request().unwrap().profile;
+        assert_eq!(profile.environment_variables[0].name, "BUILD_ID");
+        assert_eq!(
+            profile.environment_variables[0].value,
+            "  release=blue\nwith newline  "
+        );
+
+        form.environment_variables_json =
+            r#"[{"name":"BUILD-ID","value":"release"}]"#.into();
+        assert_eq!(form.save_request().unwrap_err(), FormError::EnvironmentVariable);
     }
 
     #[test]

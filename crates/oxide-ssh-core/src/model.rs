@@ -137,6 +137,13 @@ pub struct Endpoint {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct EnvironmentVariable {
+    pub name: String,
+    pub value: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ConnectionProfile {
     pub id: ProfileId,
     pub name: String,
@@ -151,6 +158,8 @@ pub struct ConnectionProfile {
     pub ssh_keepalive_interval_seconds: Option<u64>,
     #[serde(default)]
     pub ssh_keepalive_max_count: Option<usize>,
+    #[serde(default)]
+    pub environment_variables: Vec<EnvironmentVariable>,
 }
 
 #[cfg(test)]
@@ -169,6 +178,7 @@ mod startup_command_tests {
             startup_command: None,
             ssh_keepalive_interval_seconds: None,
             ssh_keepalive_max_count: None,
+            environment_variables: Vec::new(),
         };
         let mut value = serde_json::to_value(profile).unwrap();
         value.as_object_mut().unwrap().remove("startupCommand");
@@ -191,6 +201,8 @@ pub enum ProfileValidationError {
     PrivateKeyPath,
     #[error("SSH keepalive values must be positive")]
     Keepalive,
+    #[error("environment variable name is invalid")]
+    EnvironmentVariable,
 }
 
 impl ConnectionProfile {
@@ -234,6 +246,14 @@ impl ConnectionProfile {
             || self.ssh_keepalive_max_count == Some(0)
         {
             return Err(ProfileValidationError::Keepalive);
+        }
+
+        if self.environment_variables.iter().any(|variable| {
+            let mut bytes = variable.name.bytes();
+            !matches!(bytes.next(), Some(b'A'..=b'Z' | b'a'..=b'z' | b'_'))
+                || !bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+        }) {
+            return Err(ProfileValidationError::EnvironmentVariable);
         }
 
         Ok(())
@@ -502,7 +522,37 @@ mod tests {
             startup_command: None,
             ssh_keepalive_interval_seconds: None,
             ssh_keepalive_max_count: None,
+            environment_variables: Vec::new(),
         }
+    }
+
+    #[test]
+    fn profiles_without_environment_variables_load_and_invalid_names_are_rejected() {
+        let profile: ConnectionProfile = serde_json::from_str(
+            r#"{"id":"00000000-0000-0000-0000-000000000000","name":"host","endpoint":{"host":"example.com","port":22},"username":"oxide","auth":{"method":"agent"}}"#,
+        )
+        .unwrap();
+        assert!(profile.environment_variables.is_empty());
+
+        let mut profile = valid_profile();
+        profile.environment_variables.push(EnvironmentVariable {
+            name: "BUILD-NAME".into(),
+            value: "release".into(),
+        });
+        assert_eq!(
+            profile.validate(),
+            Err(ProfileValidationError::EnvironmentVariable)
+        );
+    }
+
+    #[test]
+    fn valid_environment_variable_names_accept_underscores_and_values_verbatim() {
+        let mut profile = valid_profile();
+        profile.environment_variables.push(EnvironmentVariable {
+            name: "_BUILD_2".into(),
+            value: "  value=with spaces\nand lines  ".into(),
+        });
+        assert_eq!(profile.validate(), Ok(()));
     }
 
     #[test]

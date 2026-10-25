@@ -75,6 +75,7 @@ pub(super) fn form_error_message_id(error: FormError) -> MessageId {
         FormError::Port => MessageId::Port,
         FormError::PrivateKeyPath => MessageId::PrivateKey,
         FormError::Keepalive => MessageId::InvalidKeepalive,
+        FormError::EnvironmentVariable => MessageId::EnvironmentVariables,
     }
 }
 

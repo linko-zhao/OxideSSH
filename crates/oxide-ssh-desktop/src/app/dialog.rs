@@ -119,6 +119,7 @@ struct EditorDialogSnapshot {
     startup_command: Entity<InputState>,
     ssh_keepalive_interval: Entity<InputState>,
     ssh_keepalive_max_count: Entity<InputState>,
+    environment_variables: Entity<InputState>,
     secret: Entity<InputState>,
     /// Registry tags available for assignment, name-sorted.
     tags: Vec<Tag>,
@@ -552,6 +553,11 @@ impl DialogPresenter {
                     ),
                 )
             })
+            .child(
+                field()
+                    .label(text(MessageId::EnvironmentVariables))
+                    .child(div().h(px(110.)).child(Input::new(&editor.environment_variables))),
+            )
             .when(secret_is_visible, |form| {
                 form.child(
                     field()
@@ -1172,6 +1178,7 @@ impl AppView {
                     startup_command: editor.startup_command.clone(),
                     ssh_keepalive_interval: editor.ssh_keepalive_interval.clone(),
                     ssh_keepalive_max_count: editor.ssh_keepalive_max_count.clone(),
+                    environment_variables: editor.environment_variables.clone(),
                     secret: editor.secret.clone(),
                     tags,
                     tag_ids: editor.form.tag_ids.clone(),

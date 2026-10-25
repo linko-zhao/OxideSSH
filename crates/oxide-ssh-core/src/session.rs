@@ -732,6 +732,12 @@ async fn run_session(
         )
         .await
         .map_err(|_| SessionError::PtyRejected)?;
+    for variable in &request.profile.environment_variables {
+        channel
+            .set_env(false, variable.name.clone(), variable.value.clone())
+            .await
+            .map_err(|_| SessionError::ConnectFailed)?;
+    }
     if let Some(command) = request
         .profile
         .startup_command
@@ -1379,6 +1385,7 @@ mod tests {
         resize_events: Sender<TerminalSize>,
         exec_requests: Sender<Bytes>,
         term_events: Sender<String>,
+        env_requests: Arc<Mutex<Vec<(String, String)>>>,
     }
 
     impl server::Server for FixtureServer {
@@ -1423,6 +1430,19 @@ mod tests {
             _session: &mut Session,
         ) -> Result<(), Self::Error> {
             reply.accept().await;
+            Ok(())
+        }
+
+        async fn env_request(
+            &mut self,
+            _channel: ChannelId,
+            variable_name: &str,
+            variable_value: &str,
+            _session: &mut Session,
+        ) -> Result<(), Self::Error> {
+            self.env_requests
+                .lock()
+                .push((variable_name.to_owned(), variable_value.to_owned()));
             Ok(())
         }
 
@@ -1509,6 +1529,7 @@ mod tests {
         resize_events: Receiver<TerminalSize>,
         exec_requests: Receiver<Bytes>,
         term_events: Receiver<String>,
+        env_requests: Arc<Mutex<Vec<(String, String)>>>,
         server_task: tokio::task::JoinHandle<()>,
     }
 
@@ -1555,11 +1576,13 @@ mod tests {
             .await
             .unwrap();
         let port = listener.local_addr().unwrap().port();
+        let env_requests = Arc::new(Mutex::new(Vec::new()));
         let fixture_server = FixtureServer {
             accepted_keys,
             resize_events: resize_sender,
             exec_requests: exec_sender,
             term_events: term_sender,
+            env_requests: env_requests.clone(),
         };
         let server_task = tokio::spawn(async move {
             let mut server = fixture_server;
@@ -1575,6 +1598,7 @@ mod tests {
             resize_events,
             exec_requests,
             term_events,
+            env_requests,
             server_task,
         }
     }
@@ -1593,6 +1617,7 @@ mod tests {
             startup_command: None,
             ssh_keepalive_interval_seconds: None,
             ssh_keepalive_max_count: None,
+            environment_variables: Vec::new(),
         }
     }
 
@@ -1693,6 +1718,70 @@ mod tests {
             session.disconnect();
             (fixture, service)
         });
+    }
+
+    #[test]
+    fn environment_requests_are_sent_with_names_and_values_intact() {
+        let runtime = Arc::new(
+            tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(2)
+                .enable_all()
+                .build()
+                .unwrap(),
+        );
+        let service = runtime.block_on(async {
+            let fixture = start_ssh_fixture().await;
+            let store_directory = tempdir().unwrap();
+            let store = Arc::new(AppStore::open(store_directory.path().to_path_buf()).unwrap());
+            let service = SshService::new(store).unwrap();
+            let mut profile = connection_profile(
+                fixture.port,
+                AuthConfig::Password {
+                    credential_ref: None,
+                },
+            );
+            profile.environment_variables = vec![
+                crate::model::EnvironmentVariable {
+                    name: "BUILD_ID".into(),
+                    value: "release=blue".into(),
+                },
+                crate::model::EnvironmentVariable {
+                    name: "UNICODE_VALUE".into(),
+                    value: "  雪  ".into(),
+                },
+            ];
+            let mut session = service
+                .connect(ConnectRequest {
+                    profile,
+                    secret: Some(SecretString::from("oxide-test")),
+                    initial_size: TerminalSize {
+                        columns: 80,
+                        rows: 24,
+                        pixel_width: 800,
+                        pixel_height: 480,
+                    },
+                })
+                .unwrap();
+            let events = session.take_events().unwrap();
+            wait_for_connected(&session, &events).await.unwrap();
+            tokio::time::timeout(Duration::from_secs(3), async {
+                while fixture.env_requests.lock().len() != 2 {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+            assert_eq!(
+                fixture.env_requests.lock().as_slice(),
+                [
+                    ("BUILD_ID".into(), "release=blue".into()),
+                    ("UNICODE_VALUE".into(), "  雪  ".into()),
+                ]
+            );
+            session.disconnect();
+            service
+        });
+        drop(service);
     }
     #[cfg(unix)]
     #[test]

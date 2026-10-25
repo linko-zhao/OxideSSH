@@ -29,6 +29,7 @@ secrecy.workspace = true
 sys-locale.workspace = true
 uuid.workspace = true
 thiserror.workspace = true
+serde_json.workspace = true
 
 # macOS: sets the Dock icon at runtime so bare `cargo run`/`cargo build`
 # binaries show the app icon without an .app bundle. Versions match gpui's

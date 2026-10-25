@@ -95,6 +95,7 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::Username => "用户名",
         MessageId::AuthMethod => "认证方式",
         MessageId::Password => "密码",
+        MessageId::EnvironmentVariables => "远端环境变量请求（JSON 数组；服务器可能拒绝）",
         MessageId::PrivateKey => "私钥",
         MessageId::StartupCommand => "启动命令",
         MessageId::Agent => "SSH 代理",
