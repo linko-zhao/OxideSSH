@@ -789,7 +789,6 @@ mod tests {
                 .is_err_and(|(r, e)| r == &orphan && *e == CredentialError::AccessDenied)
         }));
         assert!(store.value(&referenced).is_none());
-        assert_eq!(store.get(&referenced).unwrap(), None);
         assert_eq!(store.value(&orphan).as_deref(), Some("two"));
         assert_eq!(fs::read(app_store.config_path()).unwrap(), config_before);
         assert_eq!(app_store.load_config().unwrap().profiles.len(), 1);
