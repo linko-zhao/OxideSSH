@@ -125,6 +125,7 @@ impl Tab {
         size: TerminalSize,
         colors: TerminalColors,
         awaiting_secret: bool,
+        scrollback_lines: usize,
     ) -> Result<Self, TerminalError> {
         Ok(Self {
             id: TabId::new(),
@@ -134,7 +135,7 @@ impl Tab {
             } else {
                 TabState::Connecting
             },
-            terminal: TerminalModel::with_colors(size, colors)?,
+            terminal: TerminalModel::with_scrollback(size, colors, scrollback_lines)?,
             session: None,
             session_id: None,
             closing: false,
@@ -384,13 +385,14 @@ impl Tab {
         &mut self,
         size: TerminalSize,
         colors: TerminalColors,
+        scrollback_lines: usize,
     ) -> Result<(), TerminalError> {
         if let Some(session) = self.session.take() {
             session.disconnect();
         }
         self.session_id = None;
         self.closing = false;
-        self.terminal = TerminalModel::with_colors(size, colors)?;
+        self.terminal = TerminalModel::with_scrollback(size, colors, scrollback_lines)?;
         self.state = TabState::Connecting;
         self.local_error = None;
         Ok(())
@@ -540,16 +542,32 @@ impl ModalQueue {
     }
 }
 
-#[derive(Default)]
 pub struct TabCollection {
     tabs: Vec<Tab>,
     active: Option<TabId>,
     modals: ModalQueue,
+    scrollback_lines: usize,
+}
+
+impl Default for TabCollection {
+    fn default() -> Self {
+        Self {
+            tabs: Vec::new(),
+            active: None,
+            modals: ModalQueue::default(),
+            scrollback_lines: oxide_ssh_core::model::DEFAULT_SCROLLBACK_LINES,
+        }
+    }
 }
 
 impl TabCollection {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Sets capacity for newly created terminals; existing terminals are unchanged.
+    pub fn set_scrollback_lines(&mut self, lines: usize) {
+        self.scrollback_lines = lines;
     }
 
     pub fn open(
@@ -559,8 +577,10 @@ impl TabCollection {
         colors: TerminalColors,
         awaiting_secret: bool,
     ) -> TabId {
-        let tab = Tab::new(TabKind::Ssh(profile), size, colors, awaiting_secret)
-            .expect("TabCollection requires a valid terminal size");
+        let tab = Tab::new(
+            TabKind::Ssh(profile), size, colors, awaiting_secret, self.scrollback_lines,
+        )
+        .expect("TabCollection requires a valid terminal size");
         let id = tab.id();
         self.tabs.push(tab);
         self.active = Some(id);
@@ -572,8 +592,10 @@ impl TabCollection {
 
     /// Opens a local-shell tab: no profile, no secrets, no host keys.
     pub fn open_local(&mut self, size: TerminalSize, colors: TerminalColors) -> TabId {
-        let tab = Tab::new(TabKind::Local, size, colors, false)
-            .expect("TabCollection requires a valid terminal size");
+        let tab = Tab::new(
+            TabKind::Local, size, colors, false, self.scrollback_lines,
+        )
+        .expect("TabCollection requires a valid terminal size");
         let id = tab.id();
         self.tabs.push(tab);
         self.active = Some(id);
@@ -677,8 +699,9 @@ impl TabCollection {
         colors: TerminalColors,
     ) -> Result<(), TerminalError> {
         self.modals.remove_tab(id);
+        let scrollback_lines = self.scrollback_lines;
         let tab = self.tab_mut(id).ok_or(TerminalError::InvalidSize)?;
-        tab.prepare_reconnect(size, colors)
+        tab.prepare_reconnect(size, colors, scrollback_lines)
     }
 
     pub fn modals(&self) -> &ModalQueue {
@@ -759,6 +782,35 @@ mod tests {
             pixel_width: 800,
             pixel_height: 480,
         }
+    }
+
+    #[test]
+    fn new_tabs_use_configured_scrollback_capacity() {
+        let mut tabs = TabCollection::new();
+        tabs.set_scrollback_lines(2);
+        let mut terminal_size = size();
+        terminal_size.rows = 2;
+        let id = tabs.open(profile(), terminal_size, TerminalColors::default(), false);
+        tabs.tab_mut(id)
+            .unwrap()
+            .terminal_mut()
+            .process_output(b"one\r\ntwo\r\nthree\r\nfour\r\nfive");
+        assert_eq!(tabs.tab(id).unwrap().terminal().history_size(), 2);
+    }
+
+    #[test]
+    fn changing_capacity_preserves_already_open_terminal_history() {
+        let mut tabs = TabCollection::new();
+        let mut terminal_size = size();
+        terminal_size.rows = 2;
+        let id = tabs.open(profile(), terminal_size, TerminalColors::default(), false);
+        tabs.tab_mut(id)
+            .unwrap()
+            .terminal_mut()
+            .process_output(b"one\r\ntwo\r\nthree\r\nfour\r\nfive");
+        let history_size = tabs.tab(id).unwrap().terminal().history_size();
+        tabs.set_scrollback_lines(1);
+        assert_eq!(tabs.tab(id).unwrap().terminal().history_size(), history_size);
     }
 
     #[test]

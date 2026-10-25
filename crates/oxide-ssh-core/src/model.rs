@@ -263,7 +263,7 @@ pub enum NewTabAction {
     LocalTerminal,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
     #[serde(default)]
@@ -272,6 +272,25 @@ pub struct AppSettings {
     pub theme: ThemeSetting,
     #[serde(default)]
     pub new_tab_action: NewTabAction,
+    #[serde(default = "default_scrollback_lines")]
+    pub terminal_scrollback_lines: usize,
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            locale: LocaleSetting::default(),
+            theme: ThemeSetting::default(),
+            new_tab_action: NewTabAction::default(),
+            terminal_scrollback_lines: DEFAULT_SCROLLBACK_LINES,
+        }
+    }
+}
+
+pub const DEFAULT_SCROLLBACK_LINES: usize = 10_000;
+
+fn default_scrollback_lines() -> usize {
+    DEFAULT_SCROLLBACK_LINES
 }
 
 #[cfg(test)]
@@ -331,6 +350,24 @@ mod tests {
         let mut profile = valid_profile();
         profile.endpoint.host = "a".repeat(254);
         assert_eq!(profile.validate(), Err(ProfileValidationError::Host));
+    }
+
+    #[test]
+    fn scrollback_setting_defaults_for_old_settings() {
+        let settings: AppSettings =
+            serde_json::from_str(r#"{"locale":"zh-CN","theme":"dark","newTabAction":"localTerminal"}"#).unwrap();
+        assert_eq!(settings.terminal_scrollback_lines, DEFAULT_SCROLLBACK_LINES);
+    }
+
+    #[test]
+    fn scrollback_lines_round_trip() {
+        let settings = AppSettings {
+            terminal_scrollback_lines: 250,
+            ..AppSettings::default()
+        };
+        let encoded = serde_json::to_string(&settings).unwrap();
+        let decoded: AppSettings = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded.terminal_scrollback_lines, 250);
     }
 
     #[test]

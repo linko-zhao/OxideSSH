@@ -116,6 +116,8 @@ pub enum StorageError {
     },
     #[error("invalid host endpoint")]
     InvalidEndpoint,
+    #[error("invalid terminal scrollback line count")]
+    InvalidScrollbackLines,
     #[error("duplicate profile id {id:?}")]
     DuplicateProfile { id: ProfileId },
     #[error("duplicate tag id {id:?}")]
@@ -577,6 +579,23 @@ mod tests {
 
         let loaded = store.load_config().unwrap();
         assert_eq!(loaded.profiles[0].tag_ids, vec![tag.id]);
+    }
+
+    #[test]
+    fn old_config_without_scrollback_keeps_legacy_capacity() {
+        let directory = tempdir().unwrap();
+        fs::write(
+            directory.path().join(CONFIG_FILE_NAME),
+            r#"{"schemaVersion":1,"settings":{"locale":"system","theme":"system"},"profiles":[]}"#,
+        )
+        .unwrap();
+        let store = AppStore::open(directory.path().to_path_buf()).unwrap();
+        let config = store.load_config().unwrap();
+        assert_eq!(config.schema_version(), 1);
+        assert_eq!(
+            config.settings.terminal_scrollback_lines,
+            crate::model::DEFAULT_SCROLLBACK_LINES
+        );
     }
 
     #[test]

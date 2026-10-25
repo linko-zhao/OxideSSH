@@ -247,6 +247,17 @@ impl AppState {
         Ok(())
     }
 
+    pub fn set_terminal_scrollback_lines(&mut self, lines: usize) -> Result<(), StorageError> {
+        if !(1..=1_000_000).contains(&lines) {
+            return Err(StorageError::InvalidScrollbackLines);
+        }
+        let mut config = self.config.clone();
+        config.settings.terminal_scrollback_lines = lines;
+        self.store.save_config(&config)?;
+        self.config = config;
+        Ok(())
+    }
+
     pub fn reload_config(&mut self) -> Result<(), StorageError> {
         self.config = self.store.load_config()?;
         Ok(())
@@ -298,6 +309,25 @@ mod tests {
             auth: AuthConfig::Agent,
             tag_ids: Vec::new(),
         }
+    }
+
+    #[test]
+    fn scrollback_setting_persists_and_rejects_out_of_range_values() {
+        let directory = tempdir().unwrap();
+        let AppLoadOutcome::Ready(mut state) = AppState::load(directory.path().to_path_buf()) else {
+            panic!("expected ready state");
+        };
+
+        assert!(state.set_terminal_scrollback_lines(0).is_err());
+        assert!(state.set_terminal_scrollback_lines(1_000_001).is_err());
+        assert_eq!(
+            state.settings().terminal_scrollback_lines,
+            oxide_ssh_core::model::DEFAULT_SCROLLBACK_LINES
+        );
+        state.set_terminal_scrollback_lines(250).unwrap();
+        state.reload_config().unwrap();
+        assert_eq!(state.settings().terminal_scrollback_lines, 250);
+        assert_eq!(state.store().load_config().unwrap().schema_version(), 1);
     }
 
     #[test]

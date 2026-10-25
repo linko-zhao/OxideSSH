@@ -16,7 +16,7 @@ use gpui_component::{
     checkbox::Checkbox,
     form::{field, v_form},
     h_flex,
-    input::{Input, InputState},
+    input::{Input, InputEvent, InputState},
     radio::{Radio, RadioGroup},
     select::{SearchableVec, SelectEvent, SelectState},
 };
@@ -244,6 +244,7 @@ pub struct AppView {
     theme_select: SettingSelect,
     new_tab_action_select: SettingSelect,
     locale: ResolvedLocale,
+    scrollback_input: Entity<InputState>,
     system_locale: Option<String>,
     theme: ResolvedTheme,
     focus_handle: FocusHandle,
@@ -326,6 +327,14 @@ impl AppView {
             .as_ref()
             .map(|state| state.settings().clone())
             .unwrap_or_default();
+        let scrollback_input = new_input(
+            window,
+            cx,
+            MessageId::ScrollbackLines,
+            &preferences.terminal_scrollback_lines.to_string(),
+            false,
+            locale,
+        );
         let locale_select = new_setting_select(
             window,
             cx,
@@ -412,14 +421,27 @@ impl AppView {
                     this.set_new_tab_action(setting, cx);
                 },
             ),
+            cx.subscribe_in(
+                &scrollback_input,
+                window,
+                |this, input, event: &InputEvent, _, cx| {
+                    if matches!(event, InputEvent::Blur) {
+                        if let Ok(lines) = input.read(cx).value().parse::<usize>() {
+                            this.set_terminal_scrollback_lines(lines, cx);
+                        }
+                    }
+                },
+            ),
         ];
+        let mut tabs = TabCollection::new();
+        tabs.set_scrollback_lines(preferences.terminal_scrollback_lines);
         Self {
             root,
             state,
             credentials,
             coordinator,
             ssh,
-            tabs: TabCollection::new(),
+            tabs,
             search,
             secret,
             connect_secrets: HashMap::new(),
@@ -433,6 +455,7 @@ impl AppView {
             settings_category: SettingsCategory::General,
             locale_select,
             theme_select,
+            scrollback_input,
             new_tab_action_select,
             locale,
             system_locale,
@@ -648,6 +671,22 @@ impl AppView {
         {
             self.status_message = Some(MessageId::StorageCorrupt);
         }
+        cx.notify();
+    }
+    fn set_terminal_scrollback_lines(&mut self, lines: usize, cx: &mut Context<Self>) {
+        if !(1..=1_000_000).contains(&lines) {
+            self.status_message = Some(MessageId::InvalidScrollbackLines);
+            return;
+        }
+        if self
+            .state
+            .as_mut()
+            .is_some_and(|state| state.set_terminal_scrollback_lines(lines).is_err())
+        {
+            self.status_message = Some(MessageId::StorageCorrupt);
+            return;
+        }
+        self.tabs.set_scrollback_lines(lines);
         cx.notify();
     }
 
