@@ -137,6 +137,13 @@ pub struct Endpoint {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct EnvironmentVariable {
+    pub name: String,
+    pub value: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ConnectionProfile {
     pub id: ProfileId,
     pub name: String,
@@ -145,6 +152,8 @@ pub struct ConnectionProfile {
     pub auth: AuthConfig,
     #[serde(default)]
     pub tag_ids: Vec<TagId>,
+    #[serde(default)]
+    pub environment_variables: Vec<EnvironmentVariable>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
@@ -159,6 +168,8 @@ pub enum ProfileValidationError {
     Port,
     #[error("private key path is empty")]
     PrivateKeyPath,
+    #[error("environment variable name is invalid")]
+    EnvironmentVariable,
 }
 
 impl ConnectionProfile {
@@ -197,6 +208,14 @@ impl ConnectionProfile {
             && path.as_os_str().is_empty()
         {
             return Err(ProfileValidationError::PrivateKeyPath);
+        }
+
+        if self.environment_variables.iter().any(|variable| {
+            let mut bytes = variable.name.bytes();
+            !matches!(bytes.next(), Some(b'A'..=b'Z' | b'a'..=b'z' | b'_'))
+                || !bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+        }) {
+            return Err(ProfileValidationError::EnvironmentVariable);
         }
 
         Ok(())
@@ -289,7 +308,37 @@ mod tests {
             username: "oxide".into(),
             auth: AuthConfig::Agent,
             tag_ids: Vec::new(),
+            environment_variables: Vec::new(),
         }
+    }
+
+    #[test]
+    fn profiles_without_environment_variables_load_and_invalid_names_are_rejected() {
+        let profile: ConnectionProfile = serde_json::from_str(
+            r#"{"id":"00000000-0000-0000-0000-000000000000","name":"host","endpoint":{"host":"example.com","port":22},"username":"oxide","auth":{"method":"agent"}}"#,
+        )
+        .unwrap();
+        assert!(profile.environment_variables.is_empty());
+
+        let mut profile = valid_profile();
+        profile.environment_variables.push(EnvironmentVariable {
+            name: "BUILD-NAME".into(),
+            value: "release".into(),
+        });
+        assert_eq!(
+            profile.validate(),
+            Err(ProfileValidationError::EnvironmentVariable)
+        );
+    }
+
+    #[test]
+    fn valid_environment_variable_names_accept_underscores_and_values_verbatim() {
+        let mut profile = valid_profile();
+        profile.environment_variables.push(EnvironmentVariable {
+            name: "_BUILD_2".into(),
+            value: "  value=with spaces\nand lines  ".into(),
+        });
+        assert_eq!(profile.validate(), Ok(()));
     }
 
     #[test]

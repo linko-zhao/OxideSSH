@@ -53,6 +53,7 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::Username => "用户名",
         MessageId::AuthMethod => "认证方式",
         MessageId::Password => "密码",
+        MessageId::EnvironmentVariables => "远端环境变量请求（JSON 数组；服务器可能拒绝）",
         MessageId::PrivateKey => "私钥",
         MessageId::Agent => "SSH 代理",
         MessageId::Remember => "保存到系统凭据库",

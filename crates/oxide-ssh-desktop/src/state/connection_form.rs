@@ -3,7 +3,8 @@
 use std::path::PathBuf;
 
 use oxide_ssh_core::model::{
-    AuthConfig, ConnectionProfile, Endpoint, ProfileId, ProfileValidationError, TagId,
+    AuthConfig, ConnectionProfile, Endpoint, EnvironmentVariable, ProfileId,
+    ProfileValidationError, TagId,
 };
 use secrecy::SecretString;
 
@@ -26,6 +27,7 @@ pub struct ConnectionForm {
     pub secret: String,
     pub remember: bool,
     pub tag_ids: Vec<TagId>,
+    pub environment_variables_json: String,
     previous: Option<ConnectionProfile>,
     profile_id: ProfileId,
 }
@@ -42,8 +44,7 @@ impl ConnectionForm {
             secret: String::new(),
             remember: false,
             tag_ids: Vec::new(),
-            previous: None,
-            profile_id: ProfileId::new(),
+            environment_variables_json: "[]".into(),
         }
     }
 
@@ -74,6 +75,8 @@ impl ConnectionForm {
             secret: String::new(),
             remember,
             tag_ids: profile.tag_ids.clone(),
+            environment_variables_json: serde_json::to_string_pretty(&profile.environment_variables)
+                .expect("serializing environment variables cannot fail"),
             profile_id: profile.id,
             previous: Some(profile),
         }
@@ -112,6 +115,9 @@ impl ConnectionForm {
                 },
                 AuthMethod::Agent => AuthConfig::Agent,
             };
+        let environment_variables: Vec<EnvironmentVariable> =
+            serde_json::from_str(&self.environment_variables_json)
+                .map_err(|_| FormError::EnvironmentVariable)?;
         let profile = ConnectionProfile {
             id: self.profile_id,
             name: self.name.trim().into(),
@@ -122,6 +128,7 @@ impl ConnectionForm {
             username: self.username.trim().into(),
             auth,
             tag_ids: self.tag_ids.clone(),
+            environment_variables,
         };
         profile.validate().map_err(FormError::from)?;
 
@@ -147,6 +154,7 @@ pub enum FormError {
     Username,
     Port,
     PrivateKeyPath,
+    EnvironmentVariable,
 }
 
 impl From<ProfileValidationError> for FormError {
@@ -157,6 +165,7 @@ impl From<ProfileValidationError> for FormError {
             ProfileValidationError::Username => Self::Username,
             ProfileValidationError::Port => Self::Port,
             ProfileValidationError::PrivateKeyPath => Self::PrivateKeyPath,
+            ProfileValidationError::EnvironmentVariable => Self::EnvironmentVariable,
         }
     }
 }
@@ -185,6 +194,25 @@ mod tests {
         let edited = edit.save_request().unwrap();
         assert_eq!(edited.profile.id, id);
         assert!(edited.previous.is_some());
+    }
+    #[test]
+    fn environment_variables_round_trip_without_trimming_and_invalid_names_do_not_save() {
+        let mut form = ConnectionForm::new();
+        form.name = "fixture".into();
+        form.host = "host".into();
+        form.username = "oxide".into();
+        form.environment_variables_json =
+            r#"[{"name":"BUILD_ID","value":"  release=blue\nwith newline  "}]"#.into();
+        let profile = form.save_request().unwrap().profile;
+        assert_eq!(profile.environment_variables[0].name, "BUILD_ID");
+        assert_eq!(
+            profile.environment_variables[0].value,
+            "  release=blue\nwith newline  "
+        );
+
+        form.environment_variables_json =
+            r#"[{"name":"BUILD-ID","value":"release"}]"#.into();
+        assert_eq!(form.save_request().unwrap_err(), FormError::EnvironmentVariable);
     }
 
     #[test]

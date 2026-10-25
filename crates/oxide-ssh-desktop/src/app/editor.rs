@@ -26,6 +26,7 @@ pub(super) struct ConnectionEditor {
     pub(super) port: Entity<InputState>,
     pub(super) username: Entity<InputState>,
     pub(super) private_key_path: Entity<InputState>,
+    pub(super) environment_variables: Entity<InputState>,
     pub(super) secret: Entity<InputState>,
     /// Inline "create tag" field; the name is read when the button is clicked.
     pub(super) tag_name: Entity<InputState>,
@@ -57,6 +58,12 @@ impl ConnectionEditor {
             false,
             locale,
         );
+        let environment_variables = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder(Catalog::text(locale, MessageId::EnvironmentVariables))
+                .default_value(form.environment_variables_json.clone())
+                .multi_line(true)
+        });
         let secret_id = if form.auth_method == AuthMethod::PrivateKey {
             MessageId::Passphrase
         } else {
@@ -72,6 +79,7 @@ impl ConnectionEditor {
             port,
             username,
             private_key_path,
+            environment_variables,
             secret,
             tag_name,
         }
@@ -84,6 +92,8 @@ impl ConnectionEditor {
         self.form.username = self.username.read(cx).value().to_string();
         self.form.private_key_path =
             PathBuf::from(self.private_key_path.read(cx).value().to_string());
+        self.form.environment_variables_json =
+            self.environment_variables.read(cx).value().to_string();
         self.form.secret = self.secret.read(cx).value().to_string();
         self.form.save_request()
     }

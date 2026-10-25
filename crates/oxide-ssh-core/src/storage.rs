@@ -455,8 +455,8 @@ mod tests {
 
     use super::*;
     use crate::model::{
-        AuthConfig, ConnectionProfile, CredentialRef, LocaleSetting, ProfileId, Tag, TagId,
-        ThemeSetting,
+        AuthConfig, ConnectionProfile, CredentialRef, EnvironmentVariable, LocaleSetting, ProfileId,
+        Tag, TagId, ThemeSetting,
     };
 
     fn profile(name: &str) -> ConnectionProfile {
@@ -473,6 +473,7 @@ mod tests {
                 credential_ref: Some(CredentialRef::password(id)),
             },
             tag_ids: Vec::new(),
+            environment_variables: Vec::new(),
         }
     }
 
@@ -494,7 +495,12 @@ mod tests {
         let mut config = AppConfig::default();
         config.settings.locale = LocaleSetting::ZhCn;
         config.settings.theme = ThemeSetting::Dark;
-        config.profiles.push(profile("first"));
+        let mut first = profile("first");
+        first.environment_variables.push(EnvironmentVariable {
+            name: "BUILD_ID".into(),
+            value: "full value = preserved".into(),
+        });
+        config.profiles.push(first);
 
         store.save_config(&config).unwrap();
         config.profiles.push(profile("second"));
@@ -509,24 +515,27 @@ mod tests {
     }
 
     #[test]
-    fn config_without_tags_field_loads_as_empty() {
+    fn config_without_profile_additions_loads_with_schema_one() {
         let directory = tempdir().unwrap();
         let profile = profile("legacy");
         let mut config = AppConfig::default();
         config.profiles.push(profile);
-        // Simulate a config written before the tags feature existed.
+        // Simulate a config written before profile additions existed.
         let text = serde_json::to_string(&config)
             .unwrap()
             .replace(",\"tagIds\":[]", "")
+            .replace(",\"environmentVariables\":[]", "")
             .replace(",\"tags\":[]", "");
-        assert!(!text.contains("tagIds") && !text.contains("\"tags\""));
+        assert!(!text.contains("tagIds") && !text.contains("environmentVariables"));
         fs::write(directory.path().join(CONFIG_FILE_NAME), &text).unwrap();
 
         let store = AppStore::open(directory.path().to_path_buf()).unwrap();
         let config = store.load_config().unwrap();
+        assert_eq!(config.schema_version(), 1);
         assert!(config.tags.is_empty());
         assert_eq!(config.profiles.len(), 1);
         assert!(config.profiles[0].tag_ids.is_empty());
+        assert!(config.profiles[0].environment_variables.is_empty());
     }
 
     #[test]
