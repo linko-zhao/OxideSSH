@@ -298,6 +298,14 @@ impl AppState {
     }
 
 
+    pub fn set_copy_on_select(&mut self, enabled: bool) -> Result<(), StorageError> {
+        let mut config = self.config.clone();
+        config.settings.copy_on_select = enabled;
+        self.store.save_config(&config)?;
+        self.config = config;
+        Ok(())
+    }
+
     pub fn reload_config(&mut self) -> Result<(), StorageError> {
         self.config = self.store.load_config()?;
         Ok(())
@@ -555,6 +563,11 @@ mod tests {
         assert_eq!(stored.settings.locale, LocaleSetting::ZhCn);
         assert_eq!(stored.settings.theme, ThemeSetting::Dark);
         assert!(!stored.settings.confirm_before_close_with_sessions);
+        state.set_copy_on_select(true).unwrap();
+        let stored = state.store().load_config().unwrap();
+        assert_eq!(stored.settings.locale, LocaleSetting::ZhCn);
+        assert_eq!(stored.settings.theme, ThemeSetting::Dark);
+        assert!(stored.settings.copy_on_select);
         assert_eq!(state.resolved_locale(Some("en-US")), ResolvedLocale::ZhCn);
         assert_eq!(state.resolved_theme(false), ResolvedTheme::Dark);
     }

@@ -30,6 +30,8 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::Language => "语言",
         MessageId::LanguageDescription => "应用界面语言",
         MessageId::Theme => "主题",
+        MessageId::CopyOnSelect => "选中即复制",
+        MessageId::CopyOnSelectDescription => "将选中的终端文本复制到剪贴板",
         MessageId::ThemeDescription => "应用界面的颜色方案",
         MessageId::TrustedHosts => "受信任主机",
         MessageId::ConfirmBeforeCloseWithSessions => "关闭活动会话前确认",

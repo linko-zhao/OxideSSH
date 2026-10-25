@@ -327,6 +327,8 @@ pub struct AppSettings {
     pub terminal_bell: TerminalBell,
     #[serde(default = "default_confirm_before_close_with_sessions")]
     pub confirm_before_close_with_sessions: bool,
+    #[serde(default)]
+    pub copy_on_select: bool,
 }
 
 impl Default for AppSettings {
@@ -341,6 +343,7 @@ impl Default for AppSettings {
             ssh_keepalive_max_count: default_keepalive_max(),
             terminal_bell: TerminalBell::default(),
             confirm_before_close_with_sessions: default_confirm_before_close_with_sessions(),
+            copy_on_select: false,
         }
     }
 }
@@ -423,6 +426,7 @@ mod tests {
         assert_eq!(settings.new_tab_action, NewTabAction::AddConnection);
         assert!(!settings.ssh_compression);
         assert_eq!(settings.ssh_connect_timeout_seconds, 15);
+        assert!(!settings.copy_on_select);
         assert_eq!(settings.theme, ThemeSetting::Dark);
     }
 
@@ -477,6 +481,14 @@ mod tests {
             assert_eq!(serde_json::from_str::<TerminalBell>(json).unwrap(), mode);
             assert_eq!(serde_json::to_string(&mode).unwrap(), json);
         }
+    fn copy_on_select_round_trips_in_settings() {
+        let settings = AppSettings {
+            copy_on_select: true,
+            ..AppSettings::default()
+        };
+        let encoded = serde_json::to_string(&settings).unwrap();
+        let decoded: AppSettings = serde_json::from_str(&encoded).unwrap();
+        assert!(decoded.copy_on_select);
     }
 
     #[test]
