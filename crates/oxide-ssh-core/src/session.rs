@@ -711,10 +711,22 @@ async fn run_session(
         )
         .await
         .map_err(|_| SessionError::PtyRejected)?;
-    channel
-        .request_shell(true)
-        .await
-        .map_err(|_| SessionError::ShellRejected)?;
+    if let Some(command) = request
+        .profile
+        .startup_command
+        .as_deref()
+        .filter(|command| !command.trim().is_empty())
+    {
+        channel
+            .exec(true, command.as_bytes())
+            .await
+            .map_err(|_| SessionError::ShellRejected)?;
+    } else {
+        channel
+            .request_shell(true)
+            .await
+            .map_err(|_| SessionError::ShellRejected)?;
+    }
     events
         .send(SessionEvent::StateChanged(SessionState::Connected))
         .await
@@ -1314,6 +1326,7 @@ mod tests {
     struct FixtureServer {
         accepted_keys: Arc<Vec<PublicKey>>,
         resize_events: Sender<TerminalSize>,
+        exec_requests: Sender<Bytes>,
     }
 
     impl server::Server for FixtureServer {
@@ -1391,6 +1404,20 @@ mod tests {
             Ok(())
         }
 
+        async fn exec_request(
+            &mut self,
+            channel: ChannelId,
+            data: &[u8],
+            session: &mut Session,
+        ) -> Result<(), Self::Error> {
+            self.exec_requests
+                .send(Bytes::copy_from_slice(data))
+                .await
+                .unwrap();
+            session.channel_success(channel)?;
+            Ok(())
+        }
+
         async fn window_change_request(
             &mut self,
             _channel: ChannelId,
@@ -1427,6 +1454,7 @@ mod tests {
         #[cfg(unix)]
         agent_key: PrivateKey,
         resize_events: Receiver<TerminalSize>,
+        exec_requests: Receiver<Bytes>,
         server_task: tokio::task::JoinHandle<()>,
     }
 
@@ -1467,6 +1495,7 @@ mod tests {
             ..Default::default()
         });
         let (resize_sender, resize_events) = async_channel::bounded(16);
+        let (exec_sender, exec_requests) = async_channel::bounded(16);
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
             .await
             .unwrap();
@@ -1474,6 +1503,7 @@ mod tests {
         let fixture_server = FixtureServer {
             accepted_keys,
             resize_events: resize_sender,
+            exec_requests: exec_sender,
         };
         let server_task = tokio::spawn(async move {
             let mut server = fixture_server;
@@ -1487,6 +1517,7 @@ mod tests {
             #[cfg(unix)]
             agent_key,
             resize_events,
+            exec_requests,
             server_task,
         }
     }
@@ -1502,6 +1533,7 @@ mod tests {
             username: "oxide".into(),
             auth,
             tag_ids: Vec::new(),
+            startup_command: None,
         }
     }
 
@@ -1570,6 +1602,39 @@ mod tests {
         (directory, Arc::new(SocketAgentConnector { socket }), task)
     }
 
+    #[test]
+    fn profile_startup_command_runs_in_its_ssh_channel() {
+        let runtime = runtime();
+        let (_fixture, _service) = runtime.block_on(async {
+            let fixture = start_ssh_fixture().await;
+            let directory = tempdir().unwrap();
+            let store = Arc::new(AppStore::open(directory.path().to_path_buf()).unwrap());
+            let service = SshService::new(store).unwrap();
+            let mut profile = connection_profile(
+                fixture.port,
+                AuthConfig::Password { credential_ref: None },
+            );
+            profile.startup_command = Some("tmux attach".into());
+            let mut session = service.connect(ConnectRequest {
+                profile,
+                secret: Some(SecretString::from("oxide-test")),
+                initial_size: TerminalSize {
+                    columns: 80,
+                    rows: 24,
+                    pixel_width: 800,
+                    pixel_height: 480,
+                },
+            }).unwrap();
+            let events = session.take_events().unwrap();
+            wait_for_connected(&session, &events).await.unwrap();
+            assert_eq!(
+                fixture.exec_requests.recv().await.unwrap(),
+                Bytes::from_static(b"tmux attach")
+            );
+            session.disconnect();
+            (fixture, service)
+        });
+    }
     #[cfg(unix)]
     #[test]
     fn password_private_key_and_signer_authenticate() {

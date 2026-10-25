@@ -26,6 +26,7 @@ pub struct ConnectionForm {
     pub secret: String,
     pub remember: bool,
     pub tag_ids: Vec<TagId>,
+    pub startup_command: String,
     previous: Option<ConnectionProfile>,
     profile_id: ProfileId,
 }
@@ -42,6 +43,7 @@ impl ConnectionForm {
             secret: String::new(),
             remember: false,
             tag_ids: Vec::new(),
+            startup_command: String::new(),
             previous: None,
             profile_id: ProfileId::new(),
         }
@@ -74,6 +76,7 @@ impl ConnectionForm {
             secret: String::new(),
             remember,
             tag_ids: profile.tag_ids.clone(),
+            startup_command: profile.startup_command.clone().unwrap_or_default(),
             profile_id: profile.id,
             previous: Some(profile),
         }
@@ -122,6 +125,8 @@ impl ConnectionForm {
             username: self.username.trim().into(),
             auth,
             tag_ids: self.tag_ids.clone(),
+            startup_command: (!self.startup_command.trim().is_empty())
+                .then(|| self.startup_command.trim().to_owned()),
         };
         profile.validate().map_err(FormError::from)?;
 
@@ -177,6 +182,7 @@ mod tests {
         let request = add.save_request().unwrap();
         assert_eq!(request.profile.endpoint.port, 22);
         assert_eq!(request.profile.name, "Fixture");
+        assert!(request.profile.startup_command.is_none());
         assert!(request.previous.is_none());
         assert!(request.remember);
 
@@ -185,6 +191,20 @@ mod tests {
         let edited = edit.save_request().unwrap();
         assert_eq!(edited.profile.id, id);
         assert!(edited.previous.is_some());
+    }
+    #[test]
+    fn startup_command_is_saved_and_restored_when_editing_a_profile() {
+        let mut form = ConnectionForm::new();
+        form.name = "Fixture".into();
+        form.host = "example.com".into();
+        form.username = "oxide".into();
+        form.startup_command = "tmux attach".into();
+        let profile = form.save_request().unwrap().profile;
+        assert_eq!(profile.startup_command.as_deref(), Some("tmux attach"));
+        assert_eq!(
+            ConnectionForm::edit(profile).save_request().unwrap().profile.startup_command.as_deref(),
+            Some("tmux attach")
+        );
     }
 
     #[test]

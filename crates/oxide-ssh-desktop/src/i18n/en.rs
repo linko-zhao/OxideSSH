@@ -54,6 +54,7 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::AuthMethod => "Authentication method",
         MessageId::Password => "Password",
         MessageId::PrivateKey => "Private key",
+        MessageId::StartupCommand => "Startup command",
         MessageId::Agent => "SSH agent",
         MessageId::Remember => "Remember in system credential store",
         MessageId::Passphrase => "Passphrase",

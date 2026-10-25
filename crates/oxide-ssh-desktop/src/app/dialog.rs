@@ -109,6 +109,7 @@ struct EditorDialogSnapshot {
     port: Entity<InputState>,
     username: Entity<InputState>,
     private_key_path: Entity<InputState>,
+    startup_command: Entity<InputState>,
     secret: Entity<InputState>,
     /// Registry tags available for assignment, name-sorted.
     tags: Vec<Tag>,
@@ -537,6 +538,11 @@ impl DialogPresenter {
                         .child(Input::new(&editor.secret)),
                 )
             })
+            .child(
+                field()
+                    .label(text(MessageId::StartupCommand))
+                    .child(Input::new(&editor.startup_command)),
+            )
             .when(secret_is_visible, |form| {
                 form.child(
                     field().label(remember_label).child(
@@ -1134,6 +1140,7 @@ impl AppView {
                     port: editor.port.clone(),
                     username: editor.username.clone(),
                     private_key_path: editor.private_key_path.clone(),
+                    startup_command: editor.startup_command.clone(),
                     secret: editor.secret.clone(),
                     tags,
                     tag_ids: editor.form.tag_ids.clone(),
