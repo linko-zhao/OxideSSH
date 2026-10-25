@@ -259,6 +259,7 @@ pub struct AppView {
     scroll_accumulator: f32,
     bell: bool,
     last_bell_sound: Option<std::time::Instant>,
+    bell_generation: u64,
     status_message: Option<MessageId>,
     credential_clear_failures: Vec<String>,
     status_rendered: Option<MessageId>,
@@ -574,6 +575,7 @@ impl AppView {
             scroll_accumulator: 0.0,
             bell: false,
             last_bell_sound: None,
+            bell_generation: 0,
             status_message,
             credential_clear_failures: Vec::new(),
             status_rendered: None,
@@ -952,19 +954,37 @@ impl AppView {
             self.status_message = Some(MessageId::StorageCorrupt);
         }
         if setting != TerminalBell::Visual {
+            self.bell_generation = self.bell_generation.wrapping_add(1);
             self.bell = false;
         }
         cx.notify();
     }
 
-    fn handle_terminal_bell(&mut self) {
+    fn handle_terminal_bell(&mut self, cx: &mut Context<Self>) {
         match self
             .state
             .as_ref()
             .map(|state| state.settings().terminal_bell)
             .unwrap_or_default()
         {
-            TerminalBell::Visual => self.bell = true,
+            TerminalBell::Visual => {
+                self.bell = true;
+                self.bell_generation = self.bell_generation.wrapping_add(1);
+                let generation = self.bell_generation;
+                cx.spawn(async move |weak, cx| {
+                    cx.background_executor()
+                        .timer(std::time::Duration::from_secs(1))
+                        .await;
+                    weak.update(cx, |this, cx| {
+                        if this.bell_generation == generation {
+                            this.bell = false;
+                            cx.notify();
+                        }
+                    })
+                    .ok();
+                })
+                .detach();
+            }
             TerminalBell::Sound => {
                 let now = std::time::Instant::now();
                 if self.last_bell_sound.is_none_or(|last| {
@@ -974,7 +994,10 @@ impl AppView {
                     play_terminal_bell();
                 }
             }
-            TerminalBell::Off => self.bell = false,
+            TerminalBell::Off => {
+                self.bell_generation = self.bell_generation.wrapping_add(1);
+                self.bell = false;
+            }
         }
     }
 

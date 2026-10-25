@@ -361,7 +361,7 @@ impl AppView {
                     }
                     TabNotification::Bell => {
                         belled = true;
-                        self.handle_terminal_bell();
+                        self.handle_terminal_bell(cx);
                     }
                     TabNotification::Repaint => repainted = true,
                 }
@@ -413,7 +413,7 @@ impl AppView {
                 }
                 TabNotification::Bell => {
                     belled = true;
-                    self.handle_terminal_bell();
+                    self.handle_terminal_bell(cx);
                 }
                 TabNotification::Repaint => repainted = true,
             }
