@@ -36,6 +36,17 @@ pub enum MessageId {
     ThemeDescription,
     TrustedHosts,
     NewTabButtonDescription,
+    SshConnectTimeout,
+    SshConnectTimeoutDescription,
+    Timeout15Seconds,
+    Timeout30Seconds,
+    Timeout60Seconds,
+    Timeout120Seconds,
+    SshKeepaliveInterval,
+    SshKeepaliveMaxCount,
+    ProfileKeepaliveInterval,
+    ProfileKeepaliveMaxCount,
+    InvalidKeepalive,
     System,
     Light,
     English,
@@ -117,6 +128,8 @@ pub enum MessageId {
     TerminalFontFamily,
     TerminalFontSize,
     TerminalLineHeight,
+    SshCompression,
+    SshCompressionDescription,
 }
 
 impl MessageId {
@@ -152,6 +165,17 @@ impl MessageId {
         Self::ThemeDescription,
         Self::TrustedHosts,
         Self::NewTabButtonDescription,
+        Self::SshConnectTimeout,
+        Self::SshConnectTimeoutDescription,
+        Self::Timeout15Seconds,
+        Self::Timeout30Seconds,
+        Self::Timeout60Seconds,
+        Self::Timeout120Seconds,
+        Self::SshKeepaliveInterval,
+        Self::SshKeepaliveMaxCount,
+        Self::ProfileKeepaliveInterval,
+        Self::ProfileKeepaliveMaxCount,
+        Self::InvalidKeepalive,
         Self::System,
         Self::Light,
         Self::English,
@@ -233,6 +257,8 @@ impl MessageId {
         Self::TerminalFontFamily,
         Self::TerminalFontSize,
         Self::TerminalLineHeight,
+        Self::SshCompression,
+        Self::SshCompressionDescription,
     ];
 }
 
