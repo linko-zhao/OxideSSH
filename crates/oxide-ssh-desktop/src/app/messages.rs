@@ -43,6 +43,7 @@ pub(super) fn session_error_message_id(error: SessionError) -> MessageId {
         SessionError::PtyRejected => MessageId::PtyRejected,
         SessionError::ShellRejected => MessageId::ShellRejected,
         SessionError::LocalShellFailed => MessageId::LocalShellFailed,
+        SessionError::LocalWorkingDirectoryInvalid => MessageId::LocalWorkingDirectoryInvalid,
     }
 }
 

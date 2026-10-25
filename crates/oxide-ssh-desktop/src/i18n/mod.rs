@@ -36,6 +36,8 @@ pub enum MessageId {
     ThemeDescription,
     TrustedHosts,
     NewTabButtonDescription,
+    LocalWorkingDirectory,
+    LocalWorkingDirectoryDescription,
     System,
     Light,
     English,
@@ -114,6 +116,7 @@ pub enum MessageId {
     SessionClosed,
     ShellRejected,
     LocalShellFailed,
+    LocalWorkingDirectoryInvalid,
 }
 
 impl MessageId {
@@ -149,6 +152,8 @@ impl MessageId {
         Self::ThemeDescription,
         Self::TrustedHosts,
         Self::NewTabButtonDescription,
+        Self::LocalWorkingDirectory,
+        Self::LocalWorkingDirectoryDescription,
         Self::System,
         Self::Light,
         Self::English,
@@ -227,6 +232,7 @@ impl MessageId {
         Self::SessionClosed,
         Self::ShellRejected,
         Self::LocalShellFailed,
+        Self::LocalWorkingDirectoryInvalid,
     ];
 }
 

@@ -16,7 +16,7 @@ use gpui_component::{
     checkbox::Checkbox,
     form::{field, v_form},
     h_flex,
-    input::{Input, InputState},
+    input::{Input, InputEvent, InputState},
     radio::{Radio, RadioGroup},
     select::{SearchableVec, SelectEvent, SelectState},
 };
@@ -243,6 +243,7 @@ pub struct AppView {
     locale_select: SettingSelect,
     theme_select: SettingSelect,
     new_tab_action_select: SettingSelect,
+    local_working_directory: Entity<InputState>,
     locale: ResolvedLocale,
     system_locale: Option<String>,
     theme: ResolvedTheme,
@@ -362,6 +363,14 @@ impl AppView {
                 NewTabAction::LocalTerminal => 1,
             },
         );
+        let local_working_directory = new_input(
+            window,
+            cx,
+            MessageId::LocalWorkingDirectory,
+            &preferences.local_working_directory,
+            false,
+            locale,
+        );
         let settings_subscriptions = vec![
             cx.subscribe_in(
                 &locale_select,
@@ -412,6 +421,21 @@ impl AppView {
                     this.set_new_tab_action(setting, cx);
                 },
             ),
+            cx.subscribe_in(
+                &local_working_directory,
+                window,
+                |this, _, event: &InputEvent, window, cx| {
+                    if matches!(event, InputEvent::Blur) {
+                        let value = this.local_working_directory.read(cx).value().to_string();
+                        if this.state.as_mut().is_some_and(|state| {
+                            state.set_local_working_directory(value).is_err()
+                        }) {
+                            this.status_message = Some(MessageId::StorageCorrupt);
+                        }
+                        cx.notify();
+                    }
+                },
+            ),
         ];
         Self {
             root,
@@ -434,6 +458,7 @@ impl AppView {
             locale_select,
             theme_select,
             new_tab_action_select,
+            local_working_directory,
             locale,
             system_locale,
             theme,

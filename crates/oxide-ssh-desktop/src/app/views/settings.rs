@@ -131,6 +131,14 @@ impl AppView {
                             .into_any_element(),
                         cx,
                     ),
+                    self.setting_row(
+                        MessageId::LocalWorkingDirectory,
+                        MessageId::LocalWorkingDirectoryDescription,
+                        Input::new(&self.local_working_directory)
+                            .w(px(280.))
+                            .into_any_element(),
+                        cx,
+                    ),
                 ],
                 cx,
             ),

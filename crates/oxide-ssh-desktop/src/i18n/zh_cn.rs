@@ -33,6 +33,8 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::ThemeDescription => "应用界面的颜色方案",
         MessageId::TrustedHosts => "受信任主机",
         MessageId::NewTabButtonDescription => "点击新建标签按钮时执行的操作",
+        MessageId::LocalWorkingDirectory => "本地终端工作目录",
+        MessageId::LocalWorkingDirectoryDescription => "留空则使用用户主目录。",
         MessageId::System => "跟随系统",
         MessageId::Light => "浅色",
         MessageId::English => "英语",
@@ -111,5 +113,6 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::SessionClosed => "会话输入通道已关闭。",
         MessageId::ShellRejected => "服务器拒绝了 Shell 请求。",
         MessageId::LocalShellFailed => "无法启动本机 Shell。",
+        MessageId::LocalWorkingDirectoryInvalid => "配置的本地工作目录不存在或无法访问。",
     }
 }

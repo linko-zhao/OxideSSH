@@ -26,8 +26,11 @@ use crate::{
 ///
 /// Shell selection: `$SHELL` (Unix, falling back to `/bin/sh`); on Windows
 /// `pwsh.exe` → `powershell.exe` → `%COMSPEC%` → `cmd.exe`.
-/// The shell starts in the user's home directory.
-pub fn spawn_local_shell(initial_size: TerminalSize) -> Result<LocalSessionHandle, SessionError> {
+/// An empty working directory preserves the platform home directory default.
+pub fn spawn_local_shell(
+    initial_size: TerminalSize,
+    working_directory: &str,
+) -> Result<LocalSessionHandle, SessionError> {
     if !initial_size.is_valid() {
         return Err(SessionError::InvalidProfile);
     }
@@ -36,13 +39,24 @@ pub fn spawn_local_shell(initial_size: TerminalSize) -> Result<LocalSessionHandl
         .openpty(pty_size(initial_size))
         .map_err(|_| SessionError::LocalShellFailed)?;
     let mut command = CommandBuilder::new(default_shell());
-    if let Some(home) = home_dir() {
-        command.cwd(home);
+    if working_directory.is_empty() {
+        if let Some(home) = home_dir() {
+            command.cwd(home);
+        }
+    } else {
+        let directory = std::path::Path::new(working_directory);
+        if !directory.is_dir() || std::fs::read_dir(directory).is_err() {
+            return Err(SessionError::LocalWorkingDirectoryInvalid);
+        }
+        command.cwd(working_directory);
     }
-    let mut child = pair
-        .slave
-        .spawn_command(command)
-        .map_err(|_| SessionError::LocalShellFailed)?;
+    let mut child = pair.slave.spawn_command(command).map_err(|_| {
+        if working_directory.is_empty() {
+            SessionError::LocalShellFailed
+        } else {
+            SessionError::LocalWorkingDirectoryInvalid
+        }
+    })?;
     drop(pair.slave);
     let mut reader = pair
         .master
@@ -243,6 +257,54 @@ mod windows_tests {
 
         std::fs::remove_dir_all(&dir).ok();
     }
+
+    #[test]
+    fn local_shell_starts_in_configured_working_directory() {
+        let directory =
+            std::env::temp_dir().join(format!("oxide-ssh-cwd-{}", SessionId::new().0));
+        std::fs::create_dir(&directory).unwrap();
+        let expected = directory.to_string_lossy().into_owned();
+        let mut handle = spawn_local_shell(
+            TerminalSize {
+                columns: 80,
+                rows: 24,
+                pixel_width: 800,
+                pixel_height: 480,
+            },
+            &expected,
+        )
+        .unwrap();
+        let events = handle.take_events().unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while !matches!(
+            events.recv_blocking().unwrap(),
+            SessionEvent::StateChanged(SessionState::Connected)
+        ) {}
+        handle
+            .try_send_input(Bytes::from_static(b"\x1b[1;1R"))
+            .unwrap();
+        let command: &[u8] = if default_shell().to_ascii_lowercase().contains("cmd") {
+            b"cd\r"
+        } else {
+            b"pwd\r"
+        };
+        handle.try_send_input(Bytes::copy_from_slice(command)).unwrap();
+        handle.try_send_input(Bytes::from_static(b"exit\r")).unwrap();
+        let mut output = Vec::new();
+        while std::time::Instant::now() < deadline {
+            match events.try_recv() {
+                Ok(SessionEvent::Output(bytes)) => output.extend_from_slice(&bytes),
+                Ok(SessionEvent::Exited { .. }) => break,
+                _ => std::thread::yield_now(),
+            }
+        }
+        let output = String::from_utf8_lossy(&output);
+        assert!(
+            output.to_ascii_lowercase().contains(&expected.to_ascii_lowercase()),
+            "shell output did not contain {expected:?}: {output:?}"
+        );
+        std::fs::remove_dir_all(directory).unwrap();
+    }
 }
 
 #[cfg(all(test, unix))]
@@ -259,10 +321,31 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
+    #[test]
+    fn local_shell_starts_in_configured_working_directory() {
+        let directory = std::env::temp_dir().join(format!("oxide-ssh-cwd-{}", SessionId::new().0));
+        std::fs::create_dir(&directory).unwrap();
+        let expected = directory.to_string_lossy().into_owned();
+        let mut handle = spawn_local_shell(size(), &expected).unwrap();
+        let events = handle.take_events().unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while !matches!(events.recv_blocking().unwrap(), SessionEvent::StateChanged(SessionState::Connected)) {}
+        handle.try_send_input(Bytes::from_static(b"pwd; echo oxide-cwd-marker; exit\n")).unwrap();
+        let mut output = Vec::new();
+        while std::time::Instant::now() < deadline {
+            match events.try_recv() {
+                Ok(SessionEvent::Output(bytes)) => output.extend_from_slice(&bytes),
+                Ok(SessionEvent::Exited { .. }) => break,
+                _ => std::thread::yield_now(),
+            }
+        }
+        assert!(output.windows(expected.len()).any(|part| part == expected.as_bytes()));
+        std::fs::remove_dir_all(directory).unwrap();
+    }
     #[test]
     fn local_shell_echoes_and_exits() {
-        let mut handle = spawn_local_shell(size()).expect("spawn /bin/sh");
+        let mut handle = spawn_local_shell(size(), "");
+
         let events = handle.take_events().expect("events");
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         // Wait for Connected, then drive the shell.
@@ -293,5 +376,42 @@ mod tests {
         }
         assert!(saw_marker, "shell output never arrived");
         assert_eq!(exit_status, Some(Some(0)));
+    }
+}
+#[cfg(test)]
+mod working_directory_tests {
+    use super::*;
+
+    #[test]
+    fn rejects_missing_working_directory() {
+        let directory =
+            std::env::temp_dir().join(format!("oxide-ssh-missing-{}", SessionId::new().0));
+        let size = TerminalSize {
+            columns: 80,
+            rows: 24,
+            pixel_width: 800,
+            pixel_height: 480,
+        };
+        assert!(matches!(
+            spawn_local_shell(size, directory.to_str().unwrap()),
+            Err(SessionError::LocalWorkingDirectoryInvalid)
+        ));
+    }
+
+    #[test]
+    fn rejects_file_as_working_directory() {
+        let file = std::env::temp_dir().join(format!("oxide-ssh-file-{}", SessionId::new().0));
+        std::fs::write(&file, b"not a directory").unwrap();
+        let size = TerminalSize {
+            columns: 80,
+            rows: 24,
+            pixel_width: 800,
+            pixel_height: 480,
+        };
+        assert!(matches!(
+            spawn_local_shell(size, file.to_str().unwrap()),
+            Err(SessionError::LocalWorkingDirectoryInvalid)
+        ));
+        std::fs::remove_file(file).unwrap();
     }
 }

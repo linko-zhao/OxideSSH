@@ -271,6 +271,8 @@ pub struct AppSettings {
     #[serde(default)]
     pub theme: ThemeSetting,
     #[serde(default)]
+    pub local_working_directory: String,
+    #[serde(default)]
     pub new_tab_action: NewTabAction,
 }
 
@@ -367,5 +369,13 @@ mod tests {
             profile.validate(),
             Err(ProfileValidationError::PrivateKeyPath)
         );
+    }
+
+    #[test]
+    fn old_settings_default_local_working_directory() {
+        let settings: AppSettings =
+            serde_json::from_str(r#"{"locale":"system","theme":"system","newTabAction":"addConnection"}"#)
+                .unwrap();
+        assert!(settings.local_working_directory.is_empty());
     }
 }

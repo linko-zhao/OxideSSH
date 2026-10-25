@@ -33,6 +33,8 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::ThemeDescription => "Application color scheme",
         MessageId::TrustedHosts => "Trusted hosts",
         MessageId::NewTabButtonDescription => "Action performed by the new tab button",
+        MessageId::LocalWorkingDirectory => "Local terminal working directory",
+        MessageId::LocalWorkingDirectoryDescription => "Leave empty to use your home directory.",
         MessageId::System => "System",
         MessageId::Light => "Light",
         MessageId::English => "English",
@@ -111,5 +113,6 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::SessionClosed => "The session input channel is closed.",
         MessageId::ShellRejected => "The server rejected the shell request.",
         MessageId::LocalShellFailed => "Failed to start the local shell.",
+        MessageId::LocalWorkingDirectoryInvalid => "The configured local working directory does not exist or cannot be accessed.",
     }
 }
