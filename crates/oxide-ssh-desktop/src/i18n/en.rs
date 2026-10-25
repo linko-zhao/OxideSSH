@@ -68,6 +68,8 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::Osc52ClipboardOn => "On",
         MessageId::Osc52ClipboardConfirm => "Allow this remote application to replace the system clipboard?",
         MessageId::Allow => "Allow",
+        MessageId::SshTerm => "SSH TERM",
+        MessageId::SshTermDescription => "Terminal type requested for remote PTYs",
         MessageId::System => "System",
         MessageId::Light => "Light",
         MessageId::English => "English",

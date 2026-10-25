@@ -211,6 +211,11 @@ impl AppView {
             connect_timeout_seconds: self.state.as_ref().map_or(15, |state| {
                 state.settings().ssh_connect_timeout_seconds
             }),
+            term: self
+                .state
+                .as_ref()
+                .map(|state| state.settings().ssh_term.clone())
+                .unwrap_or_else(oxide_ssh_core::model::default_ssh_term),
         };
         let result = self
             .ssh

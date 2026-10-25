@@ -247,6 +247,17 @@ impl AppState {
 
         Ok(())
     }
+    pub fn set_ssh_term(&mut self, term: &str) -> Result<(), StorageError> {
+        let term = term.trim();
+        if !oxide_ssh_core::model::valid_ssh_term(term) {
+            return Ok(());
+        }
+        let mut config = self.config.clone();
+        config.settings.ssh_term = term.to_owned();
+        self.store.save_config(&config)?;
+        self.config = config;
+        Ok(())
+    }
 
     pub fn set_osc52_clipboard(&mut self, setting: Osc52Clipboard) -> Result<(), StorageError> {
         let mut config = self.config.clone();
@@ -690,7 +701,10 @@ mod tests {
         state.set_locale(LocaleSetting::ZhCn).unwrap();
         state.set_theme(ThemeSetting::Dark).unwrap();
         state.set_ssh_compression(true).unwrap();
+        state.set_ssh_term("tmux-256color").unwrap();
+        state.set_ssh_term("").unwrap();
         let stored = state.store().load_config().unwrap();
+        assert_eq!(stored.schema_version(), 1);
         assert_eq!(stored.settings.locale, LocaleSetting::ZhCn);
         assert_eq!(stored.settings.theme, ThemeSetting::Dark);
         assert!(stored.settings.ssh_compression);
@@ -716,6 +730,7 @@ mod tests {
         assert_eq!(stored.settings.locale, LocaleSetting::ZhCn);
         assert_eq!(stored.settings.theme, ThemeSetting::Dark);
         assert!(stored.settings.copy_on_select);
+        assert_eq!(stored.settings.ssh_term, "tmux-256color");
         assert_eq!(state.resolved_locale(Some("en-US")), ResolvedLocale::ZhCn);
         assert_eq!(state.resolved_theme(false), ResolvedTheme::Dark);
     }

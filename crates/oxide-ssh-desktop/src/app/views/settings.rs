@@ -140,6 +140,14 @@ impl AppView {
                             cx,
                         ),
                         self.setting_row(
+                            MessageId::SshTerm,
+                            MessageId::SshTermDescription,
+                            Input::new(&self.ssh_term_input)
+                                .w(px(180.))
+                                .into_any_element(),
+                            cx,
+                        ),
+                        self.setting_row(
                             MessageId::SshKeepaliveInterval,
                             MessageId::SshKeepaliveInterval,
                             Input::new(&self.ssh_keepalive_interval)

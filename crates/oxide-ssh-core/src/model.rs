@@ -334,7 +334,6 @@ pub enum TerminalBell {
     Sound,
     Off,
 }
-
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
@@ -371,6 +370,46 @@ pub struct AppSettings {
     pub paste_confirm_threshold: usize,
     pub osc52_clipboard: Osc52Clipboard,
     pub copy_on_select: bool,
+    #[serde(default = "default_ssh_term")]
+    pub ssh_term: String,
+}
+
+pub fn default_ssh_term() -> String {
+    "xterm-256color".into()
+}
+
+
+pub fn valid_ssh_term(term: &str) -> bool {
+    !term.is_empty()
+        && term.len() <= 64
+        && term
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"._+-".contains(&byte))
+}
+
+pub fn effective_ssh_term(term: &str) -> &str {
+    if valid_ssh_term(term) {
+        term
+    } else {
+        "xterm-256color"
+    }
+}
+#[cfg(test)]
+mod term_tests {
+    use super::*;
+
+    #[test]
+    fn missing_term_defaults_and_invalid_values_are_rejected() {
+        let settings: AppSettings =
+            serde_json::from_str(r#"{"locale":"zh-CN","theme":"dark"}"#).unwrap();
+        assert_eq!(settings.ssh_term, "xterm-256color");
+        assert_eq!(AppSettings::default().ssh_term, "xterm-256color");
+        assert!(valid_ssh_term("tmux-256color"));
+        assert!(!valid_ssh_term(""));
+        assert!(!valid_ssh_term("bad term"));
+        assert_eq!(effective_ssh_term(""), "xterm-256color");
+        assert_eq!(effective_ssh_term("bad term"), "xterm-256color");
+    }
 }
 
 pub const fn default_paste_confirm_threshold() -> usize {
@@ -425,6 +464,7 @@ impl Default for AppSettings {
             osc52_clipboard: Osc52Clipboard::default(),
             local_working_directory: String::new(),
             copy_on_select: false,
+            ssh_term: default_ssh_term(),
         }
     }
 }

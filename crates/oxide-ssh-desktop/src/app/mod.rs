@@ -252,6 +252,7 @@ pub struct AppView {
     paste_threshold_select: SettingSelect,
     local_working_directory: Entity<InputState>,
     osc52_clipboard_select: SettingSelect,
+    ssh_term_input: Entity<InputState>,
     locale: ResolvedLocale,
     system_locale: Option<String>,
     theme: ResolvedTheme,
@@ -359,6 +360,14 @@ impl AppView {
                     .join(","),
             )
         });
+        let ssh_term_input = new_input(
+            window,
+            cx,
+            MessageId::SshTerm,
+            &preferences.ssh_term,
+            false,
+            locale,
+        );
         let locale_select = new_setting_select(
             window,
             cx,
@@ -635,6 +644,16 @@ impl AppView {
                     this.set_osc52_clipboard(setting, cx);
                 },
             ),
+            cx.subscribe_in(
+                &ssh_term_input,
+                window,
+                |this, input, event: &InputEvent, _, cx| {
+                    if matches!(event, InputEvent::Blur) {
+                        let term = input.read(cx).value().to_string();
+                        this.set_ssh_term(&term, cx);
+                    }
+                },
+            ),
         ];
         let bounds_subscription = cx.observe_window_bounds(window, |this, window, cx| {
             if let Some(state) = &mut this.state {
@@ -692,6 +711,7 @@ impl AppView {
             bell: false,
             last_bell_sound: None,
             bell_generation: 0,
+            ssh_term_input,
             status_message,
             credential_clear_failures: Vec::new(),
             status_rendered: None,
@@ -1015,6 +1035,16 @@ impl AppView {
             .state
             .as_mut()
             .is_some_and(|state| state.set_ssh_connect_timeout_seconds(seconds).is_err())
+        {
+            self.status_message = Some(MessageId::StorageCorrupt);
+        }
+        cx.notify();
+    }
+    fn set_ssh_term(&mut self, term: &str, cx: &mut Context<Self>) {
+        if self
+            .state
+            .as_mut()
+            .is_some_and(|state| state.set_ssh_term(term).is_err())
         {
             self.status_message = Some(MessageId::StorageCorrupt);
         }

@@ -66,6 +66,8 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::Osc52ClipboardOn => "开启",
         MessageId::Osc52ClipboardConfirm => "允许此远程应用替换系统剪贴板吗？",
         MessageId::Allow => "允许",
+        MessageId::SshTerm => "SSH TERM 类型",
+        MessageId::SshTermDescription => "远端 PTY 请求的终端类型",
         MessageId::System => "跟随系统",
         MessageId::Light => "浅色",
         MessageId::English => "英语",
