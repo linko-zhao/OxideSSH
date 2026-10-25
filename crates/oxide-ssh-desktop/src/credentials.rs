@@ -368,6 +368,7 @@ mod tests {
                 credential_ref: None,
             },
             tag_ids: Vec::new(),
+            environment_variables: Vec::new(),
         }
     }
 

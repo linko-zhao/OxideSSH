@@ -749,6 +749,7 @@ mod tests {
             username: "oxide".into(),
             auth: AuthConfig::Agent,
             tag_ids: Vec::new(),
+            environment_variables: Vec::new(),
         }
     }
 
