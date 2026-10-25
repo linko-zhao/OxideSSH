@@ -7,7 +7,11 @@ pub(super) enum ConfirmAction {
     DeleteProfile(ProfileId),
     DeleteHost(Endpoint),
     DeleteTag(TagId),
-    /// Window close: disconnects, then removes only this window.
+    Osc52Clipboard {
+        tab_id: TabId,
+        session_id: SessionId,
+        text: String,
+    },
     Quit,
     /// Cmd+Q / dock Quit: disconnects, then terminates the process.
     QuitApp,
@@ -605,6 +609,9 @@ impl DialogPresenter {
             ConfirmAction::DeleteProfile(_) => (MessageId::ConfirmDeleteProfile, MessageId::Delete),
             ConfirmAction::DeleteHost(_) => (MessageId::ConfirmDeleteHost, MessageId::Delete),
             ConfirmAction::DeleteTag(_) => (MessageId::ConfirmDeleteTag, MessageId::Delete),
+            ConfirmAction::Osc52Clipboard { .. } => {
+                (MessageId::Osc52ClipboardConfirm, MessageId::Allow)
+            }
             ConfirmAction::Quit | ConfirmAction::QuitApp => {
                 (MessageId::ConfirmQuit, MessageId::Quit)
             }

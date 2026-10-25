@@ -4,8 +4,8 @@ use std::{collections::HashSet, path::PathBuf, sync::Arc};
 
 use oxide_ssh_core::{
     model::{
-        AppSettings, ConnectionProfile, Endpoint, LocaleSetting, NewTabAction, Tag, TagColor,
-        TagId, ThemeSetting,
+        AppSettings, ConnectionProfile, Endpoint, LocaleSetting, NewTabAction, Osc52Clipboard,
+        Tag, TagColor, TagId, ThemeSetting,
     },
     storage::{AppConfig, AppStore, KnownHostEntry, KnownHosts, StorageError},
 };
@@ -244,6 +244,15 @@ impl AppState {
         config.settings.new_tab_action = action;
         self.store.save_config(&config)?;
         self.config = config;
+
+        Ok(())
+    }
+
+    pub fn set_osc52_clipboard(&mut self, setting: Osc52Clipboard) -> Result<(), StorageError> {
+        let mut config = self.config.clone();
+        config.settings.osc52_clipboard = setting;
+        self.store.save_config(&config)?;
+        self.config = config;
         Ok(())
     }
 
@@ -452,9 +461,12 @@ mod tests {
 
         state.set_locale(LocaleSetting::ZhCn).unwrap();
         state.set_theme(ThemeSetting::Dark).unwrap();
+        state.set_osc52_clipboard(Osc52Clipboard::Ask).unwrap();
         let stored = state.store().load_config().unwrap();
         assert_eq!(stored.settings.locale, LocaleSetting::ZhCn);
         assert_eq!(stored.settings.theme, ThemeSetting::Dark);
+        assert_eq!(stored.settings.osc52_clipboard, Osc52Clipboard::Ask);
+        assert_eq!(stored.schema_version(), 1);
         assert_eq!(state.resolved_locale(Some("en-US")), ResolvedLocale::ZhCn);
         assert_eq!(state.resolved_theme(false), ResolvedTheme::Dark);
     }

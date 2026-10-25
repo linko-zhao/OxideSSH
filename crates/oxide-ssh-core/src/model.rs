@@ -257,6 +257,15 @@ pub enum ThemeSetting {
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub enum Osc52Clipboard {
+    #[default]
+    Off,
+    Ask,
+    On,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub enum NewTabAction {
     #[default]
     AddConnection,
@@ -272,6 +281,8 @@ pub struct AppSettings {
     pub theme: ThemeSetting,
     #[serde(default)]
     pub new_tab_action: NewTabAction,
+    #[serde(default)]
+    pub osc52_clipboard: Osc52Clipboard,
 }
 
 #[cfg(test)]
@@ -341,6 +352,13 @@ mod tests {
             serde_json::from_str(r#"{"locale":"zh-CN","theme":"dark"}"#).unwrap();
         assert_eq!(settings.new_tab_action, NewTabAction::AddConnection);
         assert_eq!(settings.theme, ThemeSetting::Dark);
+    }
+
+    #[test]
+    fn osc52_clipboard_defaults_off_for_legacy_settings() {
+        let settings: AppSettings =
+            serde_json::from_str(r#"{"locale":"zh-CN","theme":"dark"}"#).unwrap();
+        assert_eq!(settings.osc52_clipboard, Osc52Clipboard::Off);
     }
 
     #[test]

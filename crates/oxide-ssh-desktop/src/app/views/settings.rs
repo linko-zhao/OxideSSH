@@ -131,6 +131,15 @@ impl AppView {
                             .into_any_element(),
                         cx,
                     ),
+                    self.setting_row(
+                        MessageId::Osc52Clipboard,
+                        MessageId::Osc52ClipboardDescription,
+                        Select::new(&self.osc52_clipboard_select)
+                            .w(px(180.))
+                            .with_size(gpui_component::Size::Small)
+                            .into_any_element(),
+                        cx,
+                    ),
                 ],
                 cx,
             ),

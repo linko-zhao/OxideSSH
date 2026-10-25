@@ -54,10 +54,11 @@ pub enum TabLocalError {
     InvalidTerminalSize,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TabNotification {
     Repaint,
     Bell,
+    Clipboard(String),
     LocalError(TabLocalError),
 }
 
@@ -349,6 +350,11 @@ impl Tab {
                     }
                 }
                 TerminalAction::Bell => notifications.push(TabNotification::Bell),
+                TerminalAction::Clipboard(text) => {
+                    if matches!(&self.kind, TabKind::Ssh(_)) {
+                        notifications.push(TabNotification::Clipboard(text));
+                    }
+                }
                 TerminalAction::Wakeup => notifications.push(TabNotification::Repaint),
             }
         }
