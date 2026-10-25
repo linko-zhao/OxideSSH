@@ -145,6 +145,29 @@ pub struct ConnectionProfile {
     pub auth: AuthConfig,
     #[serde(default)]
     pub tag_ids: Vec<TagId>,
+    #[serde(default)]
+    pub startup_command: Option<String>,
+}
+#[cfg(test)]
+mod startup_command_tests {
+    use super::*;
+
+    #[test]
+    fn old_profiles_load_without_a_startup_command() {
+        let profile = ConnectionProfile {
+            id: ProfileId::new(),
+            name: "old".into(),
+            endpoint: Endpoint { host: "example.com".into(), port: 22 },
+            username: "user".into(),
+            auth: AuthConfig::Agent,
+            tag_ids: Vec::new(),
+            startup_command: None,
+        };
+        let mut value = serde_json::to_value(profile).unwrap();
+        value.as_object_mut().unwrap().remove("startupCommand");
+        let profile: ConnectionProfile = serde_json::from_value(value).unwrap();
+        assert_eq!(profile.startup_command, None);
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
@@ -319,6 +342,7 @@ mod tests {
             username: "oxide".into(),
             auth: AuthConfig::Agent,
             tag_ids: Vec::new(),
+            startup_command: None,
         }
     }
 

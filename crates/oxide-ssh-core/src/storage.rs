@@ -473,6 +473,7 @@ mod tests {
                 credential_ref: Some(CredentialRef::password(id)),
             },
             tag_ids: Vec::new(),
+            startup_command: None,
         }
     }
 
@@ -494,8 +495,9 @@ mod tests {
         let mut config = AppConfig::default();
         config.settings.locale = LocaleSetting::ZhCn;
         config.settings.theme = ThemeSetting::Dark;
-        config.profiles.push(profile("first"));
-
+        let mut first = profile("first");
+        first.startup_command = Some("tmux attach".into());
+        config.profiles.push(first);
         store.save_config(&config).unwrap();
         config.profiles.push(profile("second"));
         store.save_config(&config).unwrap();

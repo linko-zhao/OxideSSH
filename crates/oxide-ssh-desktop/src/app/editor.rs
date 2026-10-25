@@ -26,6 +26,7 @@ pub(super) struct ConnectionEditor {
     pub(super) port: Entity<InputState>,
     pub(super) username: Entity<InputState>,
     pub(super) private_key_path: Entity<InputState>,
+    pub(super) startup_command: Entity<InputState>,
     pub(super) secret: Entity<InputState>,
     /// Inline "create tag" field; the name is read when the button is clicked.
     pub(super) tag_name: Entity<InputState>,
@@ -62,6 +63,14 @@ impl ConnectionEditor {
         } else {
             MessageId::Password
         };
+        let startup_command = new_input(
+            window,
+            cx,
+            MessageId::StartupCommand,
+            &form.startup_command,
+            false,
+            locale,
+        );
         let secret = new_input(window, cx, secret_id, "", true, locale);
         let tag_name = new_input(window, cx, MessageId::NewTag, "", false, locale);
         Self {
@@ -72,6 +81,7 @@ impl ConnectionEditor {
             port,
             username,
             private_key_path,
+            startup_command,
             secret,
             tag_name,
         }
@@ -84,6 +94,7 @@ impl ConnectionEditor {
         self.form.username = self.username.read(cx).value().to_string();
         self.form.private_key_path =
             PathBuf::from(self.private_key_path.read(cx).value().to_string());
+        self.form.startup_command = self.startup_command.read(cx).value().to_string();
         self.form.secret = self.secret.read(cx).value().to_string();
         self.form.save_request()
     }
