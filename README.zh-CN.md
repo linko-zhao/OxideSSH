@@ -34,12 +34,12 @@ OxideSSH 是用 Rust 编写的桌面 SSH 客户端，采用原生 GPU 渲染界�
 
 ### 终端
 - 基于 Alacritty 的终端仿真，保留 10,000 行回滚历史。
-- 鼠标选择与复制/粘贴，支持 bracketed paste（粘贴上限 1 MiB）以及 Ctrl/Alt/Shift 组合键。
+- 鼠标选择与复制/粘贴，支持 bracketed paste、大段粘贴确认阈值配置、1 MiB 粘贴上限及 Ctrl/Alt/Shift 组合键。
 - 支持 IME 文本输入、宽字符，终端尺寸变化会同步到远端会话。
 - 主题（浅色 / 深色 / 跟随系统）与英文 / 简体中文界面。
 
 ### 桌面集成
-- Windows 与 macOS 使用集成标签页和窗口控制按钮的自绘标题栏；Linux 保留系统原生窗口装饰。
+- **设置** — 分类设置页面提供语言、新建标签页行为、大段粘贴确认阈值、外观和受信任主机，包含中英文文案。
 - macOS：Cmd+Q 退出、Dock 图标，以及“新建窗口”菜单项。
 - Windows 提供 `.msi` 安装包，macOS 提供 `.app` / `.dmg`。
 

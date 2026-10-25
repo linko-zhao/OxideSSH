@@ -272,6 +272,12 @@ pub struct AppSettings {
     pub theme: ThemeSetting,
     #[serde(default)]
     pub new_tab_action: NewTabAction,
+    #[serde(default = "default_paste_confirm_threshold")]
+    pub paste_confirm_threshold: usize,
+}
+
+pub const fn default_paste_confirm_threshold() -> usize {
+    4 * 1024
 }
 
 #[cfg(test)]
@@ -341,6 +347,13 @@ mod tests {
             serde_json::from_str(r#"{"locale":"zh-CN","theme":"dark"}"#).unwrap();
         assert_eq!(settings.new_tab_action, NewTabAction::AddConnection);
         assert_eq!(settings.theme, ThemeSetting::Dark);
+    }
+
+    #[test]
+    fn old_settings_default_paste_confirmation_threshold() {
+        let settings: AppSettings =
+            serde_json::from_str(r#"{"locale":"zh-CN","theme":"dark"}"#).unwrap();
+        assert_eq!(settings.paste_confirm_threshold, 4 * 1024);
     }
 
     #[test]

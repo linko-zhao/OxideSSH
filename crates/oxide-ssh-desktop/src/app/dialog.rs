@@ -7,6 +7,7 @@ pub(super) enum ConfirmAction {
     DeleteProfile(ProfileId),
     DeleteHost(Endpoint),
     DeleteTag(TagId),
+    Paste { tab_id: TabId, text: String },
     /// Window close: disconnects, then removes only this window.
     Quit,
     /// Cmd+Q / dock Quit: disconnects, then terminates the process.
@@ -605,6 +606,7 @@ impl DialogPresenter {
             ConfirmAction::DeleteProfile(_) => (MessageId::ConfirmDeleteProfile, MessageId::Delete),
             ConfirmAction::DeleteHost(_) => (MessageId::ConfirmDeleteHost, MessageId::Delete),
             ConfirmAction::DeleteTag(_) => (MessageId::ConfirmDeleteTag, MessageId::Delete),
+            ConfirmAction::Paste { .. } => (MessageId::ConfirmLargePaste, MessageId::Paste),
             ConfirmAction::Quit | ConfirmAction::QuitApp => {
                 (MessageId::ConfirmQuit, MessageId::Quit)
             }

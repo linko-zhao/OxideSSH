@@ -247,6 +247,14 @@ impl AppState {
         Ok(())
     }
 
+    pub fn set_paste_confirm_threshold(&mut self, threshold: usize) -> Result<(), StorageError> {
+        let mut config = self.config.clone();
+        config.settings.paste_confirm_threshold = threshold;
+        self.store.save_config(&config)?;
+        self.config = config;
+        Ok(())
+    }
+
     pub fn reload_config(&mut self) -> Result<(), StorageError> {
         self.config = self.store.load_config()?;
         Ok(())
@@ -300,6 +308,19 @@ mod tests {
         }
     }
 
+    #[test]
+    fn paste_confirmation_threshold_persists() {
+        let directory = tempdir().unwrap();
+        let AppLoadOutcome::Ready(mut state) = AppState::load(directory.path().to_path_buf())
+        else {
+            panic!("expected ready state");
+        };
+        state.set_paste_confirm_threshold(8192).unwrap();
+        let AppLoadOutcome::Ready(reloaded) = AppState::load(directory.path().to_path_buf()) else {
+            panic!("expected ready state");
+        };
+        assert_eq!(reloaded.settings().paste_confirm_threshold, 8192);
+    }
     #[test]
     fn untagged_filter_is_exclusive_with_tag_selection() {
         let directory = tempdir().unwrap();

@@ -243,6 +243,7 @@ pub struct AppView {
     locale_select: SettingSelect,
     theme_select: SettingSelect,
     new_tab_action_select: SettingSelect,
+    paste_threshold_select: SettingSelect,
     locale: ResolvedLocale,
     system_locale: Option<String>,
     theme: ResolvedTheme,
@@ -362,6 +363,21 @@ impl AppView {
                 NewTabAction::LocalTerminal => 1,
             },
         );
+        let paste_threshold_select = new_setting_select(
+            window,
+            cx,
+            locale,
+            &[
+                MessageId::PasteThreshold1KiB,
+                MessageId::PasteThreshold4KiB,
+                MessageId::PasteThreshold16KiB,
+            ],
+            match preferences.paste_confirm_threshold {
+                0..=1024 => 0,
+                1025..=4096 => 1,
+                _ => 2,
+            },
+        );
         let settings_subscriptions = vec![
             cx.subscribe_in(
                 &locale_select,
@@ -412,6 +428,28 @@ impl AppView {
                     this.set_new_tab_action(setting, cx);
                 },
             ),
+            cx.subscribe_in(
+                &paste_threshold_select,
+                window,
+                |this, _, event: &SelectEvent<SearchableVec<SharedString>>, _, cx| {
+                    let SelectEvent::Confirm(Some(value)) = event else {
+                        return;
+                    };
+                    let threshold = if value.as_str() == this.text(MessageId::PasteThreshold1KiB) {
+                        1024
+                    } else if value.as_str() == this.text(MessageId::PasteThreshold16KiB) {
+                        16 * 1024
+                    } else {
+                        4 * 1024
+                    };
+                    if this.state.as_mut().is_some_and(|state| {
+                        state.set_paste_confirm_threshold(threshold).is_err()
+                    }) {
+                        this.status_message = Some(MessageId::StorageCorrupt);
+                    }
+                    cx.notify();
+                },
+            ),
         ];
         Self {
             root,
@@ -432,6 +470,7 @@ impl AppView {
             main_view: MainView::Workspace,
             settings_category: SettingsCategory::General,
             locale_select,
+            paste_threshold_select,
             theme_select,
             new_tab_action_select,
             locale,
@@ -561,6 +600,29 @@ impl AppView {
                 Some(IndexPath::new(match settings.new_tab_action {
                     NewTabAction::AddConnection => 0,
                     NewTabAction::LocalTerminal => 1,
+                })),
+                window,
+                cx,
+            );
+        });
+        self.paste_threshold_select.update(cx, |select, cx| {
+            select.set_items(
+                setting_select_items(
+                    locale,
+                    &[
+                        MessageId::PasteThreshold1KiB,
+                        MessageId::PasteThreshold4KiB,
+                        MessageId::PasteThreshold16KiB,
+                    ],
+                ),
+                window,
+                cx,
+            );
+            select.set_selected_index(
+                Some(IndexPath::new(match settings.paste_confirm_threshold {
+                    0..=1024 => 0,
+                    1025..=4096 => 1,
+                    _ => 2,
                 })),
                 window,
                 cx,
