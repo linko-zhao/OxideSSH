@@ -131,6 +131,15 @@ impl AppView {
                             cx,
                         ),
                         self.setting_row(
+                            MessageId::SshConnectTimeout,
+                            MessageId::SshConnectTimeoutDescription,
+                            Select::new(&self.ssh_connect_timeout_select)
+                                .w(px(180.))
+                                .with_size(gpui_component::Size::Small)
+                                .into_any_element(),
+                            cx,
+                        ),
+                        self.setting_row(
                             MessageId::NewTabButton,
                             MessageId::NewTabButtonDescription,
                             Select::new(&self.new_tab_action_select)

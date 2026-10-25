@@ -286,6 +286,9 @@ pub enum NewTabAction {
     LocalTerminal,
 }
 
+fn default_ssh_connect_timeout_seconds() -> u64 {
+    15
+}
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
@@ -293,6 +296,8 @@ pub struct AppSettings {
     pub locale: LocaleSetting,
     #[serde(default)]
     pub theme: ThemeSetting,
+    #[serde(default = "default_ssh_connect_timeout_seconds")]
+    pub ssh_connect_timeout_seconds: u64,
     #[serde(default)]
     pub new_tab_action: NewTabAction,
     #[serde(default)]
@@ -332,6 +337,7 @@ impl Default for AppSettings {
         Self {
             locale: LocaleSetting::default(),
             theme: ThemeSetting::default(),
+            ssh_connect_timeout_seconds: default_ssh_connect_timeout_seconds(),
             new_tab_action: NewTabAction::default(),
             ssh_compression: false,
             confirm_before_close_with_sessions: default_confirm_before_close_with_sessions(),
@@ -342,6 +348,17 @@ impl Default for AppSettings {
 
 fn default_confirm_before_close_with_sessions() -> bool {
     true
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            locale: LocaleSetting::default(),
+            theme: ThemeSetting::default(),
+            ssh_connect_timeout_seconds: default_ssh_connect_timeout_seconds(),
+            new_tab_action: NewTabAction::default(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -420,6 +437,7 @@ mod tests {
             serde_json::from_str(r#"{"locale":"zh-CN","theme":"dark"}"#).unwrap();
         assert_eq!(settings.new_tab_action, NewTabAction::AddConnection);
         assert!(!settings.ssh_compression);
+        assert_eq!(settings.ssh_connect_timeout_seconds, 15);
         assert_eq!(settings.theme, ThemeSetting::Dark);
     }
 

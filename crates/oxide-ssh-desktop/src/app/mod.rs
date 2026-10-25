@@ -242,6 +242,7 @@ pub struct AppView {
     settings_category: SettingsCategory,
     locale_select: SettingSelect,
     theme_select: SettingSelect,
+    ssh_connect_timeout_select: SettingSelect,
     new_tab_action_select: SettingSelect,
     ansi_palette_input: Entity<InputState>,
     locale: ResolvedLocale,
@@ -373,6 +374,23 @@ impl AppView {
                 ThemeSetting::Dark => 2,
             },
         );
+        let ssh_connect_timeout_select = new_setting_select(
+            window,
+            cx,
+            locale,
+            &[
+                MessageId::Timeout15Seconds,
+                MessageId::Timeout30Seconds,
+                MessageId::Timeout60Seconds,
+                MessageId::Timeout120Seconds,
+            ],
+            match preferences.ssh_connect_timeout_seconds {
+                30 => 1,
+                60 => 2,
+                120 => 3,
+                _ => 0,
+            },
+        );
         let new_tab_action_select = new_setting_select(
             window,
             cx,
@@ -419,6 +437,25 @@ impl AppView {
                 },
             ),
             cx.subscribe_in(
+                &ssh_connect_timeout_select,
+                window,
+                |this, _, event: &SelectEvent<SearchableVec<SharedString>>, _, cx| {
+                    let SelectEvent::Confirm(Some(value)) = event else {
+                        return;
+                    };
+                    let seconds = if value.as_str() == this.text(MessageId::Timeout30Seconds) {
+                        30
+                    } else if value.as_str() == this.text(MessageId::Timeout60Seconds) {
+                        60
+                    } else if value.as_str() == this.text(MessageId::Timeout120Seconds) {
+                        120
+                    } else {
+                        15
+                    };
+                    this.set_ssh_connect_timeout_seconds(seconds, cx);
+                },
+            ),
+            cx.subscribe_in(
                 &new_tab_action_select,
                 window,
                 |this, _, event: &SelectEvent<SearchableVec<SharedString>>, _, cx| {
@@ -454,6 +491,7 @@ impl AppView {
             settings_category: SettingsCategory::General,
             locale_select,
             theme_select,
+            ssh_connect_timeout_select,
             new_tab_action_select,
             ansi_palette_input,
             locale,
@@ -589,6 +627,31 @@ impl AppView {
                 cx,
             );
         });
+        self.ssh_connect_timeout_select.update(cx, |select, cx| {
+            select.set_items(
+                setting_select_items(
+                    locale,
+                    &[
+                        MessageId::Timeout15Seconds,
+                        MessageId::Timeout30Seconds,
+                        MessageId::Timeout60Seconds,
+                        MessageId::Timeout120Seconds,
+                    ],
+                ),
+                window,
+                cx,
+            );
+            select.set_selected_index(
+                Some(IndexPath::new(match settings.ssh_connect_timeout_seconds {
+                    30 => 1,
+                    60 => 2,
+                    120 => 3,
+                    _ => 0,
+                })),
+                window,
+                cx,
+            );
+        });
         self.new_tab_action_select.update(cx, |select, cx| {
             select.set_items(
                 setting_select_items(
@@ -690,6 +753,17 @@ impl AppView {
         }
         cx.notify();
     }
+    fn set_ssh_connect_timeout_seconds(&mut self, seconds: u64, cx: &mut Context<Self>) {
+        if self
+            .state
+            .as_mut()
+            .is_some_and(|state| state.set_ssh_connect_timeout_seconds(seconds).is_err())
+        {
+            self.status_message = Some(MessageId::StorageCorrupt);
+        }
+        cx.notify();
+    }
+
 
     fn set_ssh_compression(&mut self, enabled: bool, cx: &mut Context<Self>) {
         if self
