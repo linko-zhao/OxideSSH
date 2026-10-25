@@ -201,6 +201,9 @@ impl AppView {
                 pixel_width: terminal_size.pixel_width,
                 pixel_height: terminal_size.pixel_height,
             },
+            connect_timeout_seconds: self.state.as_ref().map_or(15, |state| {
+                state.settings().ssh_connect_timeout_seconds
+            }),
         };
         let result = self
             .ssh
