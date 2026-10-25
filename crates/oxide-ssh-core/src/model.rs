@@ -350,16 +350,6 @@ fn default_confirm_before_close_with_sessions() -> bool {
     true
 }
 
-impl Default for AppSettings {
-    fn default() -> Self {
-        Self {
-            locale: LocaleSetting::default(),
-            theme: ThemeSetting::default(),
-            ssh_connect_timeout_seconds: default_ssh_connect_timeout_seconds(),
-            new_tab_action: NewTabAction::default(),
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests {
