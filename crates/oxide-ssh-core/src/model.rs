@@ -299,8 +299,34 @@ pub struct AppSettings {
     pub ssh_compression: bool,
     #[serde(default = "default_confirm_before_close_with_sessions")]
     pub confirm_before_close_with_sessions: bool,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_ansi_palette"
+    )]
+    pub ansi_palette: Option<[u32; 16]>,
 }
 
+fn deserialize_ansi_palette<'de, D>(deserializer: D) -> Result<Option<[u32; 16]>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let values = serde_json::Value::deserialize(deserializer)?;
+    let Some(values) = values.as_array() else {
+        return Ok(None);
+    };
+    if values.len() != 16 {
+        return Ok(None);
+    }
+    let mut palette = [0; 16];
+    for (index, value) in values.iter().enumerate() {
+        let Some(color) = value.as_u64().filter(|color| *color <= 0x00ff_ffff) else {
+            return Ok(None);
+        };
+        palette[index] = color as u32;
+    }
+    Ok(Some(palette))
+}
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
@@ -309,6 +335,7 @@ impl Default for AppSettings {
             new_tab_action: NewTabAction::default(),
             ssh_compression: false,
             confirm_before_close_with_sessions: default_confirm_before_close_with_sessions(),
+            ansi_palette: None,
         }
     }
 }
@@ -394,6 +421,21 @@ mod tests {
         assert_eq!(settings.new_tab_action, NewTabAction::AddConnection);
         assert!(!settings.ssh_compression);
         assert_eq!(settings.theme, ThemeSetting::Dark);
+    }
+
+    #[test]
+    fn malformed_ansi_palette_falls_back_to_theme_defaults() {
+        let settings: AppSettings =
+            serde_json::from_str(r#"{"ansiPalette":[4294967295]}"#).unwrap();
+        assert_eq!(settings.ansi_palette, None);
+    }
+
+    #[test]
+    fn missing_ansi_palette_preserves_legacy_settings() {
+        let settings: AppSettings =
+            serde_json::from_str(r#"{"locale":"en-US","theme":"dark","newTabAction":"addConnection"}"#)
+                .unwrap();
+        assert_eq!(settings.ansi_palette, None);
     }
 
     #[test]

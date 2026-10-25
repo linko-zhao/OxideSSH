@@ -645,6 +645,23 @@ mod tests {
         assert!(visible_text(&model).contains("red"));
     }
 
+
+    #[test]
+    fn standard_and_bright_ansi_output_use_configured_palette() {
+        let custom = RgbColor::new(0x12, 0x34, 0x56);
+        let mut colors = TerminalColors::default();
+        colors.ansi[1] = custom;
+        colors.ansi[9] = RgbColor::new(0x65, 0x43, 0x21);
+        let mut model = TerminalModel::with_colors(size(20, 2), colors).unwrap();
+        model.process_output(b"\x1b[31mstandard\x1b[91mbright");
+        let styles: Vec<_> = model
+            .renderable_content()
+            .display_iter
+            .filter(|indexed| matches!(indexed.cell.c, 's' | 'b'))
+            .map(|indexed| model.cell_render_style(indexed.cell).foreground)
+            .collect();
+        assert_eq!(styles, [custom, RgbColor::new(0x65, 0x43, 0x21)]);
+    }
     #[test]
     fn wide_cjk_cells_survive_resize() {
         let mut model = TerminalModel::new(size(10, 2)).unwrap();

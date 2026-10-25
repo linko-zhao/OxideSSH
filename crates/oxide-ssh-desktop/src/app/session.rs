@@ -58,7 +58,7 @@ impl AppView {
                 let _ = self.tabs.open(
                     profile,
                     self.estimated_terminal_size(window),
-                    self.theme.terminal_colors(),
+                    self.terminal_colors(),
                     needs_secret,
                 );
                 cx.notify();
@@ -69,7 +69,7 @@ impl AppView {
         let tab_id = self.tabs.open(
             profile,
             self.estimated_terminal_size(window),
-            self.theme.terminal_colors(),
+            self.terminal_colors(),
             needs_secret,
         );
         if !needs_secret {
@@ -236,7 +236,7 @@ impl AppView {
         self.main_view = MainView::Sessions;
         let tab_id = self.tabs.open_local(
             self.estimated_terminal_size(window),
-            self.theme.terminal_colors(),
+            self.terminal_colors(),
         );
         self.start_local_session(tab_id, cx);
         cx.notify();
@@ -443,7 +443,7 @@ impl AppView {
             .prepare_reconnect(
                 tab_id,
                 self.estimated_terminal_size(window),
-                self.theme.terminal_colors(),
+                self.terminal_colors(),
             )
             .is_err()
         {

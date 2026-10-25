@@ -83,7 +83,7 @@ mod session;
 
 mod terminal;
 
-use self::terminal::TerminalGeometry;
+use self::terminal::{RgbColorExt, TerminalGeometry};
 
 mod views;
 
@@ -243,6 +243,7 @@ pub struct AppView {
     locale_select: SettingSelect,
     theme_select: SettingSelect,
     new_tab_action_select: SettingSelect,
+    ansi_palette_input: Entity<InputState>,
     locale: ResolvedLocale,
     system_locale: Option<String>,
     theme: ResolvedTheme,
@@ -262,7 +263,15 @@ pub struct AppView {
     _settings_subscriptions: Vec<gpui::Subscription>,
 }
 
+
 impl AppView {
+    pub(super) fn terminal_colors(&self) -> oxide_ssh_terminal::TerminalColors {
+        self.theme.terminal_colors(
+            self.state
+                .as_ref()
+                .and_then(|state| state.settings().ansi_palette),
+        )
+    }
     pub fn new(
         root: PathBuf,
         outcome: AppLoadOutcome,
@@ -326,6 +335,17 @@ impl AppView {
             .as_ref()
             .map(|state| state.settings().clone())
             .unwrap_or_default();
+        let ansi_palette_input = cx.new(|cx| {
+            InputState::new(window, cx).default_value(
+                theme
+                    .terminal_colors(preferences.ansi_palette)
+                    .ansi
+                    .iter()
+                    .map(|color| format!("{:06x}", color.to_hex()))
+                    .collect::<Vec<_>>()
+                    .join(","),
+            )
+        });
         let locale_select = new_setting_select(
             window,
             cx,
@@ -434,6 +454,7 @@ impl AppView {
             locale_select,
             theme_select,
             new_tab_action_select,
+            ansi_palette_input,
             locale,
             system_locale,
             theme,
@@ -485,11 +506,15 @@ impl AppView {
     }
 
     fn refresh_preferences(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(state) = &self.state else {
+        let Some((locale, theme, has_custom_ansi_palette)) = self.state.as_ref().map(|state| {
+            (
+                state.resolved_locale(self.system_locale.as_deref()),
+                state.resolved_theme(is_dark(window.appearance())),
+                state.settings().ansi_palette.is_some(),
+            )
+        }) else {
             return;
         };
-        let locale = state.resolved_locale(self.system_locale.as_deref());
-        let theme = state.resolved_theme(is_dark(window.appearance()));
         if self.locale != locale {
             self.locale = locale;
             gpui_component::set_locale(match locale {
@@ -502,7 +527,15 @@ impl AppView {
         if self.theme != theme {
             self.theme = theme;
             apply_theme(theme, window, cx);
-            self.tabs.set_terminal_colors(self.theme.terminal_colors());
+            self.tabs.set_terminal_colors(self.terminal_colors());
+            if !has_custom_ansi_palette {
+                let value = self.terminal_colors().ansi.iter()
+                    .map(|color| format!("{:06x}", color.to_hex()))
+                    .collect::<Vec<_>>().join(",");
+                self.ansi_palette_input.update(cx, |input, cx| {
+                    input.set_value(value, window, cx);
+                });
+            }
         }
     }
 
@@ -675,6 +708,41 @@ impl AppView {
         }) {
             self.status_message = Some(MessageId::StorageCorrupt);
         }
+    }
+
+    fn save_ansi_palette(&mut self, _: &mut Window, cx: &mut Context<Self>) {
+        let parsed = self.ansi_palette_input.read(cx).value().split(',')
+            .map(|entry| {
+                let value = entry.trim().trim_start_matches('#');
+                (value.len() == 6).then(|| u32::from_str_radix(value, 16).ok()).flatten()
+            })
+            .collect::<Option<Vec<_>>>();
+        let Some(values) = parsed.filter(|values| values.len() == 16) else {
+            return;
+        };
+        let palette: [u32; 16] = values.try_into().expect("length checked");
+        if self.state.as_mut().is_some_and(|state| state.set_ansi_palette(Some(palette)).is_err()) {
+            self.status_message = Some(MessageId::StorageCorrupt);
+            return;
+        }
+        self.tabs.set_terminal_colors(self.terminal_colors());
+        cx.notify();
+    }
+
+    fn reset_ansi_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let value = self.theme.terminal_colors(None).ansi.iter()
+            .map(|color| format!("{:06x}", color.to_hex()))
+            .collect::<Vec<_>>().join(",");
+        if self
+            .state
+            .as_mut()
+            .is_some_and(|state| state.set_ansi_palette(None).is_err())
+        {
+            self.status_message = Some(MessageId::StorageCorrupt);
+            return;
+        }
+        self.ansi_palette_input.update(cx, |input, cx| input.set_value(value, window, cx));
+        self.tabs.set_terminal_colors(self.terminal_colors());
         cx.notify();
     }
 

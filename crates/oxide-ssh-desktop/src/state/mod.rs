@@ -266,6 +266,19 @@ impl AppState {
     }
 
 
+    pub fn set_ansi_palette(&mut self, palette: Option<[u32; 16]>) -> Result<(), StorageError> {
+        if palette
+            .is_some_and(|colors| colors.iter().any(|color| color & 0xff00_0000 != 0))
+        {
+            return Ok(());
+        }
+        let mut config = self.config.clone();
+        config.settings.ansi_palette = palette;
+        self.store.save_config(&config)?;
+        self.config = config;
+        Ok(())
+    }
+
     pub fn reload_config(&mut self) -> Result<(), StorageError> {
         self.config = self.store.load_config()?;
         Ok(())
@@ -380,6 +393,31 @@ mod tests {
         state.set_search_query("web");
         state.toggle_tag_filter(db.id);
         assert!(state.filtered_profiles().is_empty());
+    }
+
+    #[test]
+    fn ansi_palette_is_persisted_and_invalid_values_are_ignored() {
+        let directory = tempdir().unwrap();
+        let AppLoadOutcome::Ready(mut state) = AppState::load(directory.path().to_path_buf())
+        else {
+            panic!("expected ready state");
+        };
+        let mut palette = [0x112233; 16];
+        palette[1] = 0x123456;
+        state.set_ansi_palette(Some(palette)).unwrap();
+        assert_eq!(state.settings().ansi_palette, Some(palette));
+
+        let mut invalid = palette;
+        invalid[0] = 0x1_000000;
+        state.set_ansi_palette(Some(invalid)).unwrap();
+        assert_eq!(state.settings().ansi_palette, Some(palette));
+
+        let AppLoadOutcome::Ready(reloaded) = AppState::load(directory.path().to_path_buf())
+        else {
+            panic!("expected ready state");
+        };
+        assert_eq!(reloaded.settings().ansi_palette, Some(palette));
+        assert_eq!(reloaded.config.schema_version(), 1);
     }
 
     #[test]

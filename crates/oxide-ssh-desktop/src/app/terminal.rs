@@ -116,7 +116,7 @@ impl Element for TerminalElement {
             };
         };
         let model = tab.terminal();
-        let terminal_colors = view.theme.terminal_colors();
+        let terminal_colors = view.terminal_colors();
         let selection_color = terminal_selection_color(view.theme);
         let content = model.renderable_content();
         let selection = content.selection;
