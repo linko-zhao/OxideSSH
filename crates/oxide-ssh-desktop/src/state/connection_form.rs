@@ -27,6 +27,8 @@ pub struct ConnectionForm {
     pub remember: bool,
     pub tag_ids: Vec<TagId>,
     pub startup_command: String,
+    pub ssh_keepalive_interval_seconds: String,
+    pub ssh_keepalive_max_count: String,
     previous: Option<ConnectionProfile>,
     profile_id: ProfileId,
 }
@@ -44,6 +46,8 @@ impl ConnectionForm {
             remember: false,
             tag_ids: Vec::new(),
             startup_command: String::new(),
+            ssh_keepalive_interval_seconds: String::new(),
+            ssh_keepalive_max_count: String::new(),
             previous: None,
             profile_id: ProfileId::new(),
         }
@@ -77,6 +81,14 @@ impl ConnectionForm {
             remember,
             tag_ids: profile.tag_ids.clone(),
             startup_command: profile.startup_command.clone().unwrap_or_default(),
+            ssh_keepalive_interval_seconds: profile
+                .ssh_keepalive_interval_seconds
+                .map(|value| value.to_string())
+                .unwrap_or_default(),
+            ssh_keepalive_max_count: profile
+                .ssh_keepalive_max_count
+                .map(|value| value.to_string())
+                .unwrap_or_default(),
             profile_id: profile.id,
             previous: Some(profile),
         }
@@ -115,6 +127,8 @@ impl ConnectionForm {
                 },
                 AuthMethod::Agent => AuthConfig::Agent,
             };
+        let keepalive_interval = parse_override(&self.ssh_keepalive_interval_seconds)?;
+        let keepalive_max_count = parse_override(&self.ssh_keepalive_max_count)?;
         let profile = ConnectionProfile {
             id: self.profile_id,
             name: self.name.trim().into(),
@@ -127,6 +141,11 @@ impl ConnectionForm {
             tag_ids: self.tag_ids.clone(),
             startup_command: (!self.startup_command.trim().is_empty())
                 .then(|| self.startup_command.trim().to_owned()),
+            ssh_keepalive_interval_seconds: keepalive_interval,
+            ssh_keepalive_max_count: keepalive_max_count
+                .map(usize::try_from)
+                .transpose()
+                .map_err(|_| FormError::Keepalive)?,
         };
         profile.validate().map_err(FormError::from)?;
 
@@ -137,6 +156,19 @@ impl ConnectionForm {
             remember: self.remember && self.auth_method != AuthMethod::Agent,
         })
     }
+}
+
+fn parse_override(value: &str) -> Result<Option<u64>, FormError> {
+    if value.trim().is_empty() {
+        return Ok(None);
+    }
+    value
+        .trim()
+        .parse::<u64>()
+        .ok()
+        .filter(|value| *value > 0)
+        .map(Some)
+        .ok_or(FormError::Keepalive)
 }
 
 impl Default for ConnectionForm {
@@ -152,6 +184,7 @@ pub enum FormError {
     Username,
     Port,
     PrivateKeyPath,
+    Keepalive,
 }
 
 impl From<ProfileValidationError> for FormError {
@@ -162,6 +195,7 @@ impl From<ProfileValidationError> for FormError {
             ProfileValidationError::Username => Self::Username,
             ProfileValidationError::Port => Self::Port,
             ProfileValidationError::PrivateKeyPath => Self::PrivateKeyPath,
+            ProfileValidationError::Keepalive => Self::Keepalive,
         }
     }
 }
@@ -205,6 +239,28 @@ mod tests {
             ConnectionForm::edit(profile).save_request().unwrap().profile.startup_command.as_deref(),
             Some("tmux attach")
         );
+    }
+
+
+    #[test]
+    fn keepalive_form_overrides_round_trip_and_blank_inherits() {
+        let mut form = ConnectionForm::new();
+        form.name = "fixture".into();
+        form.host = "example.com".into();
+        form.username = "oxide".into();
+        assert_eq!(form.save_request().unwrap().profile.ssh_keepalive_interval_seconds, None);
+        form.ssh_keepalive_interval_seconds = "12".into();
+        form.ssh_keepalive_max_count = "5".into();
+        let saved = form.save_request().unwrap().profile;
+        assert_eq!(saved.ssh_keepalive_interval_seconds, Some(12));
+        assert_eq!(saved.ssh_keepalive_max_count, Some(5));
+        let mut edit = ConnectionForm::edit(saved);
+        assert_eq!(edit.ssh_keepalive_interval_seconds, "12");
+        edit.ssh_keepalive_interval_seconds.clear();
+        assert_eq!(edit.save_request().unwrap().profile.ssh_keepalive_interval_seconds, None);
+        edit.ssh_keepalive_max_count = "0".into();
+        assert_eq!(edit.save_request().unwrap_err(), FormError::Keepalive);
+
     }
 
     #[test]

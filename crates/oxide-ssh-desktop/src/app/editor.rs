@@ -27,6 +27,8 @@ pub(super) struct ConnectionEditor {
     pub(super) username: Entity<InputState>,
     pub(super) private_key_path: Entity<InputState>,
     pub(super) startup_command: Entity<InputState>,
+    pub(super) ssh_keepalive_interval: Entity<InputState>,
+    pub(super) ssh_keepalive_max_count: Entity<InputState>,
     pub(super) secret: Entity<InputState>,
     /// Inline "create tag" field; the name is read when the button is clicked.
     pub(super) tag_name: Entity<InputState>,
@@ -58,6 +60,22 @@ impl ConnectionEditor {
             false,
             locale,
         );
+        let ssh_keepalive_interval = new_input(
+            window,
+            cx,
+            MessageId::ProfileKeepaliveInterval,
+            &form.ssh_keepalive_interval_seconds,
+            false,
+            locale,
+        );
+        let ssh_keepalive_max_count = new_input(
+            window,
+            cx,
+            MessageId::ProfileKeepaliveMaxCount,
+            &form.ssh_keepalive_max_count,
+            false,
+            locale,
+        );
         let secret_id = if form.auth_method == AuthMethod::PrivateKey {
             MessageId::Passphrase
         } else {
@@ -82,6 +100,8 @@ impl ConnectionEditor {
             username,
             private_key_path,
             startup_command,
+            ssh_keepalive_interval,
+            ssh_keepalive_max_count,
             secret,
             tag_name,
         }
@@ -96,6 +116,10 @@ impl ConnectionEditor {
             PathBuf::from(self.private_key_path.read(cx).value().to_string());
         self.form.startup_command = self.startup_command.read(cx).value().to_string();
         self.form.secret = self.secret.read(cx).value().to_string();
+        self.form.ssh_keepalive_interval_seconds =
+            self.ssh_keepalive_interval.read(cx).value().to_string();
+        self.form.ssh_keepalive_max_count =
+            self.ssh_keepalive_max_count.read(cx).value().to_string();
         self.form.save_request()
     }
 }

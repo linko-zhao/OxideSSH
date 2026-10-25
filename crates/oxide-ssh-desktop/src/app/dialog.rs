@@ -111,6 +111,8 @@ struct EditorDialogSnapshot {
     username: Entity<InputState>,
     private_key_path: Entity<InputState>,
     startup_command: Entity<InputState>,
+    ssh_keepalive_interval: Entity<InputState>,
+    ssh_keepalive_max_count: Entity<InputState>,
     secret: Entity<InputState>,
     /// Registry tags available for assignment, name-sorted.
     tags: Vec<Tag>,
@@ -345,6 +347,8 @@ impl DialogPresenter {
         let host_label = text(MessageId::Host);
         let port_label = text(MessageId::Port);
         let username_label = text(MessageId::Username);
+        let keepalive_interval_label = text(MessageId::ProfileKeepaliveInterval);
+        let keepalive_max_count_label = text(MessageId::ProfileKeepaliveMaxCount);
         let auth_label = text(MessageId::AuthMethod);
         let private_key_label = text(MessageId::PrivateKey);
         let password_label = text(MessageId::Password);
@@ -508,6 +512,16 @@ impl DialogPresenter {
                 field()
                     .label(username_label)
                     .child(Input::new(&editor.username)),
+            )
+            .child(
+                field()
+                    .label(keepalive_interval_label)
+                    .child(Input::new(&editor.ssh_keepalive_interval)),
+            )
+            .child(
+                field()
+                    .label(keepalive_max_count_label)
+                    .child(Input::new(&editor.ssh_keepalive_max_count)),
             )
             .child(
                 field().label(auth_label).child(
@@ -1146,6 +1160,8 @@ impl AppView {
                     username: editor.username.clone(),
                     private_key_path: editor.private_key_path.clone(),
                     startup_command: editor.startup_command.clone(),
+                    ssh_keepalive_interval: editor.ssh_keepalive_interval.clone(),
+                    ssh_keepalive_max_count: editor.ssh_keepalive_max_count.clone(),
                     secret: editor.secret.clone(),
                     tags,
                     tag_ids: editor.form.tag_ids.clone(),

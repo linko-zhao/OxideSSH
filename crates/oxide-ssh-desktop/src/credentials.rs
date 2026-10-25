@@ -519,6 +519,8 @@ mod tests {
             },
             tag_ids: Vec::new(),
             startup_command: None,
+            ssh_keepalive_interval_seconds: None,
+            ssh_keepalive_max_count: None,
         }
     }
 

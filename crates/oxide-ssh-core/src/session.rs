@@ -656,8 +656,10 @@ async fn run_session(
     let endpoint = canonicalize_endpoint(&request.profile.endpoint)
         .map_err(|_| SessionError::InvalidProfile)?;
     let mut config = client::Config {
-        keepalive_interval: Some(Duration::from_secs(30)),
-        keepalive_max: 3,
+        keepalive_interval: Some(Duration::from_secs(
+            request.profile.ssh_keepalive_interval_seconds.unwrap_or(30),
+        )),
+        keepalive_max: request.profile.ssh_keepalive_max_count.unwrap_or(3),
         inactivity_timeout: None,
         nodelay: true,
         ..Default::default()
@@ -908,6 +910,21 @@ mod tests {
     use tempfile::{TempDir, tempdir};
 
     use super::*;
+
+    #[test]
+    fn ssh_client_configuration_uses_resolved_keepalive_values() {
+        let mut profile = connection_profile(22, AuthConfig::Agent);
+        let defaults = ssh_client_config(&profile);
+        assert_eq!(defaults.keepalive_interval, Some(Duration::from_secs(30)));
+        assert_eq!(defaults.keepalive_max, 3);
+
+        profile.ssh_keepalive_interval_seconds = Some(11);
+        profile.ssh_keepalive_max_count = Some(6);
+        let configured = ssh_client_config(&profile);
+        assert_eq!(configured.keepalive_interval, Some(Duration::from_secs(11)));
+        assert_eq!(configured.keepalive_max, 6);
+    }
+
     fn runtime() -> Arc<Runtime> {
         Arc::new(
             tokio::runtime::Builder::new_current_thread()
@@ -1565,6 +1582,8 @@ mod tests {
             auth,
             tag_ids: Vec::new(),
             startup_command: None,
+            ssh_keepalive_interval_seconds: None,
+            ssh_keepalive_max_count: None,
         }
     }
 
