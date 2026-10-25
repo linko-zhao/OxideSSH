@@ -16,9 +16,9 @@ use gpui_component::{
     checkbox::Checkbox,
     form::{field, v_form},
     h_flex,
-    input::{Input, InputState},
-    radio::{Radio, RadioGroup},
+    input::{Input, InputEvent, InputState},
     select::{SearchableVec, SelectEvent, SelectState},
+    radio::{Radio, RadioGroup},
 };
 // The custom title bar only renders where the system title bar is transparent.
 #[cfg(target_os = "macos")]
@@ -30,8 +30,9 @@ use gpui::WindowControlArea;
 use oxide_ssh_core::{
     credentials::{CredentialError, CredentialStore},
     model::{
-        AuthConfig, ConnectionProfile, Endpoint, LocaleSetting, NewTabAction, ProfileId, SessionId,
-        Tag, TagColor, TagId, TerminalSize as CoreTerminalSize, ThemeSetting,
+        AuthConfig, ConnectionProfile, Endpoint, LocaleSetting, NewTabAction, Osc52Clipboard,
+        ProfileId, SessionId, Tag, TagColor, TagId, TerminalBell,
+        TerminalSize as CoreTerminalSize, ThemeSetting,
     },
     session::{
         ConnectRequest, HostKeyDecision, SessionError, SessionEvent, SshService,
@@ -242,7 +243,12 @@ pub struct AppView {
     settings_category: SettingsCategory,
     locale_select: SettingSelect,
     theme_select: SettingSelect,
+    ssh_connect_timeout_select: SettingSelect,
     new_tab_action_select: SettingSelect,
+    osc52_clipboard_select: SettingSelect,
+    ssh_keepalive_interval: Entity<InputState>,
+    ssh_keepalive_max_count: Entity<InputState>,
+    terminal_bell_select: SettingSelect,
     locale: ResolvedLocale,
     system_locale: Option<String>,
     theme: ResolvedTheme,
@@ -253,10 +259,13 @@ pub struct AppView {
     compose_tab: Option<TabId>,
     scroll_accumulator: f32,
     bell: bool,
+    last_bell_sound: Option<std::time::Instant>,
+    bell_generation: u64,
     status_message: Option<MessageId>,
     status_rendered: Option<MessageId>,
     terminal_geometry: Option<TerminalGeometry>,
     terminal_selecting: bool,
+    terminal_selection_dragged: bool,
     quitting: bool,
     _search_subscription: gpui::Subscription,
     _settings_subscriptions: Vec<gpui::Subscription>,
@@ -352,6 +361,23 @@ impl AppView {
                 ThemeSetting::Dark => 2,
             },
         );
+        let ssh_connect_timeout_select = new_setting_select(
+            window,
+            cx,
+            locale,
+            &[
+                MessageId::Timeout15Seconds,
+                MessageId::Timeout30Seconds,
+                MessageId::Timeout60Seconds,
+                MessageId::Timeout120Seconds,
+            ],
+            match preferences.ssh_connect_timeout_seconds {
+                30 => 1,
+                60 => 2,
+                120 => 3,
+                _ => 0,
+            },
+        );
         let new_tab_action_select = new_setting_select(
             window,
             cx,
@@ -360,6 +386,48 @@ impl AppView {
             match preferences.new_tab_action {
                 NewTabAction::AddConnection => 0,
                 NewTabAction::LocalTerminal => 1,
+            },
+        );
+        let osc52_clipboard_select = new_setting_select(
+            window,
+            cx,
+            locale,
+            &[
+                MessageId::Osc52ClipboardOff,
+                MessageId::Osc52ClipboardAsk,
+                MessageId::Osc52ClipboardOn,
+            ],
+            match preferences.osc52_clipboard {
+                Osc52Clipboard::Off => 0,
+                Osc52Clipboard::Ask => 1,
+                Osc52Clipboard::On => 2,
+            },
+        );
+        let ssh_keepalive_interval = new_input(
+            window,
+            cx,
+            MessageId::SshKeepaliveInterval,
+            &preferences.ssh_keepalive_interval_seconds.to_string(),
+            false,
+            locale,
+        );
+        let ssh_keepalive_max_count = new_input(
+            window,
+            cx,
+            MessageId::SshKeepaliveMaxCount,
+            &preferences.ssh_keepalive_max_count.to_string(),
+            false,
+            locale,
+        );
+        let terminal_bell_select = new_setting_select(
+            window,
+            cx,
+            locale,
+            &[MessageId::BellVisual, MessageId::BellSound, MessageId::BellOff],
+            match preferences.terminal_bell {
+                TerminalBell::Visual => 0,
+                TerminalBell::Sound => 1,
+                TerminalBell::Off => 2,
             },
         );
         let settings_subscriptions = vec![
@@ -398,6 +466,25 @@ impl AppView {
                 },
             ),
             cx.subscribe_in(
+                &ssh_connect_timeout_select,
+                window,
+                |this, _, event: &SelectEvent<SearchableVec<SharedString>>, _, cx| {
+                    let SelectEvent::Confirm(Some(value)) = event else {
+                        return;
+                    };
+                    let seconds = if value.as_str() == this.text(MessageId::Timeout30Seconds) {
+                        30
+                    } else if value.as_str() == this.text(MessageId::Timeout60Seconds) {
+                        60
+                    } else if value.as_str() == this.text(MessageId::Timeout120Seconds) {
+                        120
+                    } else {
+                        15
+                    };
+                    this.set_ssh_connect_timeout_seconds(seconds, cx);
+                },
+            ),
+            cx.subscribe_in(
                 &new_tab_action_select,
                 window,
                 |this, _, event: &SelectEvent<SearchableVec<SharedString>>, _, cx| {
@@ -410,6 +497,58 @@ impl AppView {
                         NewTabAction::AddConnection
                     };
                     this.set_new_tab_action(setting, cx);
+                },
+            ),
+            cx.subscribe_in(
+                &ssh_keepalive_interval,
+                window,
+                |this, _, event: &InputEvent, _, cx| {
+                    if matches!(event, InputEvent::Blur) {
+                        this.commit_ssh_keepalive(cx);
+                    }
+                },
+            ),
+            cx.subscribe_in(
+                &ssh_keepalive_max_count,
+                window,
+                |this, _, event: &InputEvent, _, cx| {
+                    if matches!(event, InputEvent::Blur) {
+                        this.commit_ssh_keepalive(cx);
+                    }
+                },
+            ),
+            cx.subscribe_in(
+                &terminal_bell_select,
+                window,
+                |this, _, event: &SelectEvent<SearchableVec<SharedString>>, _, cx| {
+                    let SelectEvent::Confirm(Some(value)) = event else {
+                        return;
+                    };
+                    let setting = if value.as_str() == this.text(MessageId::BellSound) {
+                        TerminalBell::Sound
+                    } else if value.as_str() == this.text(MessageId::BellOff) {
+                        TerminalBell::Off
+                    } else {
+                        TerminalBell::Visual
+                    };
+                    this.set_terminal_bell(setting, cx);
+                },
+            ),
+            cx.subscribe_in(
+                &osc52_clipboard_select,
+                window,
+                |this, _, event: &SelectEvent<SearchableVec<SharedString>>, _, cx| {
+                    let SelectEvent::Confirm(Some(value)) = event else {
+                        return;
+                    };
+                    let setting = if value.as_str() == this.text(MessageId::Osc52ClipboardAsk) {
+                        Osc52Clipboard::Ask
+                    } else if value.as_str() == this.text(MessageId::Osc52ClipboardOn) {
+                        Osc52Clipboard::On
+                    } else {
+                        Osc52Clipboard::Off
+                    };
+                    this.set_osc52_clipboard(setting, cx);
                 },
             ),
         ];
@@ -433,7 +572,12 @@ impl AppView {
             settings_category: SettingsCategory::General,
             locale_select,
             theme_select,
+            ssh_connect_timeout_select,
             new_tab_action_select,
+            osc52_clipboard_select,
+            ssh_keepalive_interval,
+            ssh_keepalive_max_count,
+            terminal_bell_select,
             locale,
             system_locale,
             theme,
@@ -444,10 +588,13 @@ impl AppView {
             compose_tab: None,
             scroll_accumulator: 0.0,
             bell: false,
+            last_bell_sound: None,
+            bell_generation: 0,
             status_message,
             status_rendered: None,
             terminal_geometry: None,
             terminal_selecting: false,
+            terminal_selection_dragged: false,
             quitting: false,
             _search_subscription: search_subscription,
             _settings_subscriptions: settings_subscriptions,
@@ -554,6 +701,31 @@ impl AppView {
                 cx,
             );
         });
+        self.ssh_connect_timeout_select.update(cx, |select, cx| {
+            select.set_items(
+                setting_select_items(
+                    locale,
+                    &[
+                        MessageId::Timeout15Seconds,
+                        MessageId::Timeout30Seconds,
+                        MessageId::Timeout60Seconds,
+                        MessageId::Timeout120Seconds,
+                    ],
+                ),
+                window,
+                cx,
+            );
+            select.set_selected_index(
+                Some(IndexPath::new(match settings.ssh_connect_timeout_seconds {
+                    30 => 1,
+                    60 => 2,
+                    120 => 3,
+                    _ => 0,
+                })),
+                window,
+                cx,
+            );
+        });
         self.new_tab_action_select.update(cx, |select, cx| {
             select.set_items(
                 setting_select_items(
@@ -567,6 +739,48 @@ impl AppView {
                 Some(IndexPath::new(match settings.new_tab_action {
                     NewTabAction::AddConnection => 0,
                     NewTabAction::LocalTerminal => 1,
+                })),
+                window,
+                cx,
+            );
+        });
+        self.terminal_bell_select.update(cx, |select, cx| {
+            select.set_items(
+                setting_select_items(
+                    locale,
+                    &[MessageId::BellVisual, MessageId::BellSound, MessageId::BellOff],
+                ),
+                window,
+                cx,
+            );
+            select.set_selected_index(
+                Some(IndexPath::new(match settings.terminal_bell {
+                    TerminalBell::Visual => 0,
+                    TerminalBell::Sound => 1,
+                    TerminalBell::Off => 2,
+                })),
+                window,
+                cx,
+            );
+        });
+        self.osc52_clipboard_select.update(cx, |select, cx| {
+            select.set_items(
+                setting_select_items(
+                    locale,
+                    &[
+                        MessageId::Osc52ClipboardOff,
+                        MessageId::Osc52ClipboardAsk,
+                        MessageId::Osc52ClipboardOn,
+                    ],
+                ),
+                window,
+                cx,
+            );
+            select.set_selected_index(
+                Some(IndexPath::new(match settings.osc52_clipboard {
+                    Osc52Clipboard::Off => 0,
+                    Osc52Clipboard::Ask => 1,
+                    Osc52Clipboard::On => 2,
                 })),
                 window,
                 cx,
@@ -597,6 +811,8 @@ impl AppView {
                 (&editor.port, MessageId::Port),
                 (&editor.username, MessageId::Username),
                 (&editor.private_key_path, MessageId::PrivateKey),
+                (&editor.ssh_keepalive_interval, MessageId::ProfileKeepaliveInterval),
+                (&editor.ssh_keepalive_max_count, MessageId::ProfileKeepaliveMaxCount),
                 (
                     &editor.secret,
                     if editor.form.auth_method == AuthMethod::PrivateKey {
@@ -655,6 +871,17 @@ impl AppView {
         }
         cx.notify();
     }
+    fn set_ssh_connect_timeout_seconds(&mut self, seconds: u64, cx: &mut Context<Self>) {
+        if self
+            .state
+            .as_mut()
+            .is_some_and(|state| state.set_ssh_connect_timeout_seconds(seconds).is_err())
+        {
+            self.status_message = Some(MessageId::StorageCorrupt);
+        }
+        cx.notify();
+    }
+
 
     fn set_ssh_compression(&mut self, enabled: bool, cx: &mut Context<Self>) {
         if self
@@ -667,12 +894,108 @@ impl AppView {
         cx.notify();
     }
 
+    fn commit_ssh_keepalive(&mut self, cx: &mut Context<Self>) {
+        let interval = self
+            .ssh_keepalive_interval
+            .read(cx)
+            .value()
+            .trim()
+            .parse::<u64>()
+            .ok()
+            .filter(|value| *value > 0);
+        let max_count = self
+            .ssh_keepalive_max_count
+            .read(cx)
+            .value()
+            .trim()
+            .parse::<usize>()
+            .ok()
+            .filter(|value| *value > 0);
+        if let (Some(interval), Some(max_count)) = (interval, max_count)
+            && self
+                .state
+                .as_mut()
+                .is_some_and(|state| state.set_ssh_keepalive(interval, max_count).is_err())
+        {
+            self.status_message = Some(MessageId::StorageCorrupt);
+        } else if interval.is_none() || max_count.is_none() {
+            self.status_message = Some(MessageId::InvalidKeepalive);
+        }
+        cx.notify();
+    }
+
+    fn set_terminal_bell(&mut self, setting: TerminalBell, cx: &mut Context<Self>) {
+        if self
+            .state
+            .as_mut()
+            .is_some_and(|state| state.set_terminal_bell(setting).is_err())
+        {
+            self.status_message = Some(MessageId::StorageCorrupt);
+        }
+        if setting != TerminalBell::Visual {
+            self.bell_generation = self.bell_generation.wrapping_add(1);
+            self.bell = false;
+        }
+        cx.notify();
+    }
+
+    fn handle_terminal_bell(&mut self, cx: &mut Context<Self>) {
+        match self
+            .state
+            .as_ref()
+            .map(|state| state.settings().terminal_bell)
+            .unwrap_or_default()
+        {
+            TerminalBell::Visual => {
+                self.bell = true;
+                self.bell_generation = self.bell_generation.wrapping_add(1);
+                let generation = self.bell_generation;
+                cx.spawn(async move |weak, cx| {
+                    cx.background_executor()
+                        .timer(std::time::Duration::from_secs(1))
+                        .await;
+                    weak.update(cx, |this, cx| {
+                        if this.bell_generation == generation {
+                            this.bell = false;
+                            cx.notify();
+                        }
+                    })
+                    .ok();
+                })
+                .detach();
+            }
+            TerminalBell::Sound => {
+                let now = std::time::Instant::now();
+                if self.last_bell_sound.is_none_or(|last| {
+                    now.duration_since(last) >= std::time::Duration::from_millis(200)
+                }) {
+                    self.last_bell_sound = Some(now);
+                    play_terminal_bell();
+                }
+            }
+            TerminalBell::Off => {
+                self.bell_generation = self.bell_generation.wrapping_add(1);
+                self.bell = false;
+            }
+        }
+    }
     fn set_confirm_before_close_with_sessions(&mut self, confirm: bool, cx: &mut Context<Self>) {
         if self.state.as_mut().is_some_and(|state| {
             state
                 .set_confirm_before_close_with_sessions(confirm)
                 .is_err()
         }) {
+            self.status_message = Some(MessageId::StorageCorrupt);
+        }
+        cx.notify();
+    }
+
+    fn set_osc52_clipboard(&mut self, setting: Osc52Clipboard, cx: &mut Context<Self>) {
+        if self
+            .state
+            .as_mut()
+            .is_some_and(|state| state.set_osc52_clipboard(setting).is_err())
+        {
             self.status_message = Some(MessageId::StorageCorrupt);
         }
         cx.notify();
@@ -864,6 +1187,20 @@ impl AppView {
         }
     }
 
+    fn toggle_copy_on_select(&mut self, cx: &mut Context<Self>) {
+        if self
+            .state
+            .as_mut()
+            .is_some_and(|state| {
+                let enabled = !state.settings().copy_on_select;
+                state.set_copy_on_select(enabled).is_err()
+            })
+        {
+            self.status_message = Some(MessageId::StorageCorrupt);
+        }
+        cx.notify();
+    }
+
     fn on_paste(&mut self, _: &Paste, window: &mut Window, cx: &mut Context<Self>) {
         if self.focus_handle.is_focused(window) {
             self.paste_terminal(cx);
@@ -968,3 +1305,35 @@ impl Drop for AppView {
 }
 
 const STATUS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(8);
+
+fn play_terminal_bell() {
+    #[cfg(target_os = "windows")]
+    {
+        #[link(name = "user32")]
+        unsafe extern "system" {
+            fn MessageBeep(kind: u32) -> i32;
+        }
+        // Windows' default system notification sound.
+        unsafe {
+            MessageBeep(0xFFFFFFFF);
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("afplay")
+            .arg("/System/Library/Sounds/Glass.aiff")
+            .spawn();
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if std::process::Command::new("canberra-gtk-play")
+            .args(["-i", "bell"])
+            .spawn()
+            .is_err()
+        {
+            let _ = std::process::Command::new("paplay")
+                .arg("/usr/share/sounds/freedesktop/stereo/bell.oga")
+                .spawn();
+        }
+    }
+}
