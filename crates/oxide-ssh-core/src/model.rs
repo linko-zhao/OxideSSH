@@ -368,6 +368,10 @@ pub struct AppSettings {
     #[serde(default)]
     pub local_working_directory: String,
     #[serde(default)]
+    pub local_shell_path: String,
+    #[serde(default)]
+    pub local_shell_args: Vec<String>,
+    #[serde(default)]
     pub new_tab_action: NewTabAction,
     #[serde(default)]
     pub remember_window_size: bool,
@@ -476,6 +480,8 @@ impl Default for AppSettings {
             locale: LocaleSetting::default(),
             theme: ThemeSetting::default(),
             ssh_connect_timeout_seconds: default_ssh_connect_timeout_seconds(),
+            local_shell_path: String::new(),
+            local_shell_args: Vec::new(),
             new_tab_action: NewTabAction::default(),
             remember_window_size: false,
             window_size: None,
@@ -638,6 +644,8 @@ mod tests {
         assert_eq!(settings.ssh_connect_timeout_seconds, 15);
         assert!(!settings.copy_on_select);
         assert_eq!(settings.theme, ThemeSetting::Dark);
+        assert!(settings.local_shell_path.is_empty());
+        assert!(settings.local_shell_args.is_empty());
     }
 
     #[test]
