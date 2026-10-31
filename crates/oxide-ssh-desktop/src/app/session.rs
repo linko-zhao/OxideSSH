@@ -56,9 +56,9 @@ impl AppView {
                 // in-memory prompt instead of blocking the connection.
                 let needs_secret = requires_one_time_secret(&profile);
                 let _ = self.tabs.open(
-                    profile,
+                    profile.clone(),
                     self.estimated_terminal_size(window),
-                    self.terminal_colors(),
+                    self.profile_terminal_colors(&profile),
                     needs_secret,
                 );
                 cx.notify();
@@ -67,9 +67,9 @@ impl AppView {
         };
         let needs_secret = requires_one_time_secret(&profile) && secret.is_none();
         let tab_id = self.tabs.open(
-            profile,
+            profile.clone(),
             self.estimated_terminal_size(window),
-            self.terminal_colors(),
+            self.profile_terminal_colors(&profile),
             needs_secret,
         );
         if !needs_secret {
@@ -517,7 +517,10 @@ impl AppView {
             .prepare_reconnect(
                 tab_id,
                 self.estimated_terminal_size(window),
-                self.terminal_colors(),
+                profile
+                    .as_ref()
+                    .map(|profile| self.profile_terminal_colors(profile))
+                    .unwrap_or_else(|| self.terminal_colors()),
             )
             .is_err()
         {

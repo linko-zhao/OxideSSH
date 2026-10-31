@@ -66,6 +66,17 @@ impl AppView {
             return div().into_any_element();
         };
         let state = self.tabs.tab(tab_id).map(|tab| *tab.state());
+        let profile_font_size = self
+            .tabs
+            .tab(tab_id)
+            .and_then(|tab| tab.profile())
+            .and_then(|profile| profile.terminal_font_size);
+        let font_size = self
+            .state
+            .as_ref()
+            .map(|state| state.settings().terminal_font_size as f32)
+            .unwrap_or(13.);
+        let font_size = profile_font_size.map(f32::from).unwrap_or(font_size);
         match state {
             Some(TabState::Connecting)
             | Some(TabState::Connected)
@@ -89,11 +100,7 @@ impl AppView {
                             .map(|state| state.settings().terminal_font_family.clone())
                             .unwrap_or_else(|| TERMINAL_FONT.to_owned()),
                     )
-                    .text_size(px(self
-                        .state
-                        .as_ref()
-                        .map(|state| state.settings().terminal_font_size as f32)
-                        .unwrap_or(13.)))
+                    .text_size(px(font_size))
                     .line_height(px(self
                         .state
                         .as_ref()

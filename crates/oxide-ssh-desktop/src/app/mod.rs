@@ -297,6 +297,16 @@ impl AppView {
                 .and_then(|state| state.settings().ansi_palette),
         )
     }
+    pub(super) fn profile_terminal_colors(
+        &self,
+        profile: &ConnectionProfile,
+    ) -> oxide_ssh_terminal::TerminalColors {
+        self.theme.terminal_colors(profile.ansi_palette.or_else(|| {
+            self.state
+                .as_ref()
+                .and_then(|state| state.settings().ansi_palette)
+        }))
+    }
     pub fn new(
         root: PathBuf,
         outcome: AppLoadOutcome,
