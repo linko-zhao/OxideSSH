@@ -113,6 +113,23 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::Quit => "Quit",
         MessageId::NewWindow => "New Window",
         MessageId::StorageCorrupt => "A configuration file is corrupt and was not overwritten.",
+        MessageId::ConfigBackup => "Create configuration backup",
+        MessageId::ConfigExport => "Export configuration",
+        MessageId::ConfigImport => "Restore/import configuration",
+        MessageId::ConfigSecretsNote => {
+            "Export files omit passwords and private-key passphrases stored in the OS keyring, and never contain private-key file contents. Imported profiles require credentials to be entered again."
+        }
+        MessageId::ConfigImportSuccess => {
+            "Configuration restored. Credentials must be entered again."
+        }
+        MessageId::ConfigImportFailure => {
+            "Configuration import failed; the existing configuration was not changed."
+        }
+        MessageId::ConfigExportSuccess => "Configuration exported without keyring credentials.",
+        MessageId::ConfigExportFailure => "Configuration export failed.",
+        MessageId::ConfigImportReloadFailure => {
+            "Configuration was restored, but this window couldn't reload it; restart the app to apply changes."
+        }
         MessageId::ExportKnownHosts => "Export trusted hosts",
         MessageId::ImportKnownHosts => "Import trusted hosts",
         MessageId::ImportKeepExisting => "Import (keep existing keys)",

@@ -194,6 +194,35 @@ impl AppStore {
         Ok(config)
     }
 
+    pub fn export_config(&self, path: &Path) -> Result<(), StorageError> {
+        let mut config = self.load_config()?;
+        clear_credential_refs(&mut config);
+        let root = path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        atomic_write(root, path, &config)
+    }
+
+    pub fn import_config(&self, path: &Path) -> Result<(), StorageError> {
+        let bytes = fs::read(path).map_err(|source| StorageError::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        let mut config: AppConfig =
+            serde_json::from_slice(&bytes).map_err(|source| StorageError::Corrupt {
+                path: path.to_path_buf(),
+                source,
+            })?;
+        validate_config(&config)?;
+        clear_credential_refs(&mut config);
+        self.save_config(&config)
+    }
+
+    pub fn backup_config(&self, path: &Path) -> Result<(), StorageError> {
+        self.export_config(path)
+    }
+
     pub fn save_config(&self, config: &AppConfig) -> Result<(), StorageError> {
         let _guard = self.config_lock.lock();
         let path = self.config_path();
@@ -437,6 +466,16 @@ fn prune_dangling_tag_refs(config: &mut AppConfig) {
     }
 }
 
+fn clear_credential_refs(config: &mut AppConfig) {
+    for profile in &mut config.profiles {
+        match &mut profile.auth {
+            AuthConfig::Password { credential_ref } => *credential_ref = None,
+            AuthConfig::PrivateKey { passphrase_ref, .. } => *passphrase_ref = None,
+            AuthConfig::Agent => {}
+        }
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SchemaProbe {
@@ -586,6 +625,95 @@ mod tests {
             fingerprint_sha256: "SHA256:test".into(),
             accepted_at_unix: 1,
         }
+    }
+
+    #[test]
+    fn config_export_import_preserves_data_but_drops_credentials() {
+        let source_dir = tempdir().unwrap();
+        let target_dir = tempdir().unwrap();
+        let source = AppStore::open(source_dir.path().to_path_buf()).unwrap();
+        let mut config = AppConfig::default();
+        config.settings.locale = LocaleSetting::ZhCn;
+        config.settings.theme = ThemeSetting::Dark;
+        let tag = Tag::new("Migration");
+        config.tags.push(tag.clone());
+        let mut migration_profile = profile("migration");
+        migration_profile.tag_ids.push(tag.id);
+        config.profiles.push(migration_profile);
+        source.save_config(&config).unwrap();
+        let file = target_dir.path().join("export.json");
+        source.export_config(&file).unwrap();
+        let backup = target_dir.path().join("backup.json");
+        source.backup_config(&backup).unwrap();
+        assert_eq!(fs::read(&backup).unwrap(), fs::read(&file).unwrap());
+        let target = AppStore::open(target_dir.path().join("store")).unwrap();
+        target.import_config(&file).unwrap();
+        let reopened = AppStore::open(target_dir.path().join("store")).unwrap();
+        let imported = reopened.load_config().unwrap();
+        assert_eq!(imported.profiles.len(), 1);
+        assert_eq!(imported.profiles[0].name, "migration");
+        assert_eq!(imported.settings.locale, LocaleSetting::ZhCn);
+        assert_eq!(imported.settings.theme, ThemeSetting::Dark);
+        assert_eq!(imported.tags, vec![tag.clone()]);
+        assert_eq!(imported.profiles[0].tag_ids, vec![tag.id]);
+        assert!(matches!(
+            imported.profiles[0].auth,
+            AuthConfig::Password {
+                credential_ref: None
+            }
+        ));
+        let legacy = target_dir.path().join("legacy.json");
+        fs::write(&legacy, serde_json::to_vec(&config).unwrap()).unwrap();
+        target.import_config(&legacy).unwrap();
+        assert!(matches!(
+            target.load_config().unwrap().profiles[0].auth,
+            AuthConfig::Password {
+                credential_ref: None
+            }
+        ));
+    }
+
+    #[test]
+    fn invalid_import_does_not_replace_existing_config() {
+        let directory = tempdir().unwrap();
+        let store = AppStore::open(directory.path().join("store")).unwrap();
+        let mut config = AppConfig::default();
+        config.profiles.push(profile("keep"));
+        store.save_config(&config).unwrap();
+        let bad = directory.path().join("bad.json");
+        let mut incompatible = serde_json::to_value(&config).unwrap();
+        incompatible["schemaVersion"] = serde_json::json!(99);
+        fs::write(&bad, serde_json::to_vec(&incompatible).unwrap()).unwrap();
+        assert!(matches!(
+            store.import_config(&bad),
+            Err(StorageError::UnsupportedSchema { found: 99, .. })
+        ));
+        fs::write(&bad, b"not json").unwrap();
+        assert!(store.import_config(&bad).is_err());
+        assert_eq!(store.load_config().unwrap().profiles[0].name, "keep");
+    }
+
+    #[test]
+    fn import_rejects_unknown_tag_references_without_replacing_config() {
+        let directory = tempdir().unwrap();
+        let store = AppStore::open(directory.path().join("store")).unwrap();
+        let mut existing = AppConfig::default();
+        existing.profiles.push(profile("keep"));
+        store.save_config(&existing).unwrap();
+        let persisted = fs::read(store.config_path()).unwrap();
+
+        let mut invalid = AppConfig::default();
+        let mut invalid_profile = profile("invalid");
+        invalid_profile.tag_ids.push(TagId::new());
+        invalid.profiles.push(invalid_profile);
+        let import = directory.path().join("invalid.json");
+        fs::write(&import, serde_json::to_vec(&invalid).unwrap()).unwrap();
+
+        assert!(matches!(
+            store.import_config(&import),
+            Err(StorageError::UnknownTagRef { .. })
+        ));
+        assert_eq!(fs::read(store.config_path()).unwrap(), persisted);
     }
 
     #[test]

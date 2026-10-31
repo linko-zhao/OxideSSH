@@ -541,6 +541,110 @@ impl AppView {
                         )
                         .into_any_element(),
                 );
+                if let Some(store) = self.state.as_ref().map(|state| state.store().clone()) {
+                    rows.push(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(px(12.))
+                            .p(px(20.))
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child(self.text(MessageId::ConfigSecretsNote)),
+                            )
+                            .child(
+                                h_flex()
+                                    .gap(px(8.))
+                                    .child(
+                                        Button::new("config-export")
+                                            .label(self.text(MessageId::ConfigExport))
+                                            .on_click(cx.listener({
+                                                let store = store.clone();
+                                                move |_this, _, _, cx| {
+                                                    let store = store.clone();
+                                                    cx.spawn(async move |weak, cx| {
+                                                        if let Some(file) = rfd::AsyncFileDialog::new()
+                                                            .add_filter("JSON", &["json"])
+                                                            .save_file()
+                                                            .await
+                                                        {
+                                                            let result = store.export_config(&file.path().to_path_buf());
+                                                            weak.update(cx, |this, cx| {
+                                                                this.status_message = Some(if result.is_ok() {
+                                                                    MessageId::ConfigExportSuccess
+                                                                } else {
+                                                                    MessageId::ConfigExportFailure
+                                                                });
+                                                                cx.notify();
+                                                            }).ok();
+                                                        }
+                                                    }).detach();
+                                                }
+                                            })),
+                                    )
+                                    .child(
+                                        Button::new("config-backup")
+                                            .label(self.text(MessageId::ConfigBackup))
+                                            .on_click(cx.listener({
+                                                let store = store.clone();
+                                                move |_this, _, _, cx| {
+                                                    let store = store.clone();
+                                                    cx.spawn(async move |weak, cx| {
+                                                        if let Some(file) = rfd::AsyncFileDialog::new()
+                                                            .add_filter("JSON", &["json"])
+                                                            .save_file()
+                                                            .await
+                                                        {
+                                                            let result = store.backup_config(&file.path().to_path_buf());
+                                                            weak.update(cx, |this, cx| {
+                                                                this.status_message = Some(if result.is_ok() {
+                                                                    MessageId::ConfigExportSuccess
+                                                                } else {
+                                                                    MessageId::ConfigExportFailure
+                                                                });
+                                                                cx.notify();
+                                                            }).ok();
+                                                        }
+                                                    }).detach();
+                                                }
+                                            })),
+                                    )
+                                    .child(
+                                        Button::new("config-import")
+                                            .label(self.text(MessageId::ConfigImport))
+                                            .on_click(cx.listener({
+                                                let store = store.clone();
+                                                move |_this, _, window, cx| {
+                                                    let store = store.clone();
+                                                    cx.spawn_in(window, async move |weak, cx| {
+                                                        if let Some(file) = rfd::AsyncFileDialog::new()
+                                                            .add_filter("JSON", &["json"])
+                                                            .pick_file()
+                                                            .await
+                                                        {
+                                                            let result = store.import_config(&file.path().to_path_buf());
+                                                            weak.update_in(cx, |this, window, cx| {
+                                                                this.status_message = match result {
+                                                                    Err(_) => Some(MessageId::ConfigImportFailure),
+                                                                    Ok(()) if this.state.as_mut().is_some_and(|state| state.reload_config().is_ok()) => {
+                                                                        this.refresh_preferences(window, cx);
+                                                                        Some(MessageId::ConfigImportSuccess)
+                                                                    }
+                                                                    Ok(()) => Some(MessageId::ConfigImportReloadFailure),
+                                                                };
+                                                                cx.notify();
+                                                            }).ok();
+                                                        }
+                                                    }).detach();
+                                                }
+                                            })),
+                                    ),
+                            )
+                            .into_any_element(),
+                    );
+                }
                 settings_page(self.text(MessageId::Security), rows, cx)
             }
         };
