@@ -338,6 +338,9 @@ pub enum NewTabAction {
     LocalTerminal,
 }
 
+fn default_ssh_connect_timeout_seconds() -> u64 {
+    15
+}
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WindowSize {
@@ -345,9 +348,6 @@ pub struct WindowSize {
     pub height: u32,
 }
 
-fn default_ssh_connect_timeout_seconds() -> u64 {
-    15
-}
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TerminalBell {
@@ -373,6 +373,12 @@ pub struct AppSettings {
     pub local_shell_args: Vec<String>,
     #[serde(default)]
     pub new_tab_action: NewTabAction,
+    #[serde(default = "default_terminal_font_family")]
+    pub terminal_font_family: String,
+    #[serde(default = "default_terminal_font_size")]
+    pub terminal_font_size: u16,
+    #[serde(default = "default_terminal_line_height")]
+    pub terminal_line_height: u16,
     #[serde(default)]
     pub remember_window_size: bool,
     #[serde(default)]
@@ -483,13 +489,16 @@ impl Default for AppSettings {
             local_shell_path: String::new(),
             local_shell_args: Vec::new(),
             new_tab_action: NewTabAction::default(),
-            remember_window_size: false,
-            window_size: None,
             ssh_compression: false,
-            confirm_before_close_with_sessions: default_confirm_before_close_with_sessions(),
-            ansi_palette: None,
             ssh_keepalive_interval_seconds: default_keepalive_interval(),
             ssh_keepalive_max_count: default_keepalive_max(),
+            terminal_font_family: default_terminal_font_family(),
+            terminal_font_size: default_terminal_font_size(),
+            terminal_line_height: default_terminal_line_height(),
+            remember_window_size: false,
+            window_size: None,
+            confirm_before_close_with_sessions: default_confirm_before_close_with_sessions(),
+            ansi_palette: None,
             terminal_bell: TerminalBell::default(),
             paste_confirm_threshold: default_paste_confirm_threshold(),
             osc52_clipboard: Osc52Clipboard::default(),
@@ -499,6 +508,28 @@ impl Default for AppSettings {
             terminal_scrollback_lines: DEFAULT_SCROLLBACK_LINES,
         }
     }
+}
+
+fn default_terminal_font_family() -> String {
+    #[cfg(target_os = "macos")]
+    {
+        "Menlo".into()
+    }
+    #[cfg(target_os = "windows")]
+    {
+        "Cascadia Mono".into()
+    }
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    {
+        "monospace".into()
+    }
+}
+
+fn default_terminal_font_size() -> u16 {
+    13
+}
+fn default_terminal_line_height() -> u16 {
+    17
 }
 
 fn default_confirm_before_close_with_sessions() -> bool {
@@ -541,6 +572,22 @@ mod tests {
             ssh_keepalive_max_count: None,
             environment_variables: Vec::new(),
         }
+    }
+
+    #[test]
+    fn terminal_settings_default_and_deserialize_from_legacy_settings() {
+        let defaults = AppSettings::default();
+        assert_eq!(defaults.terminal_font_size, 13);
+        assert_eq!(defaults.terminal_line_height, 17);
+        assert!(!defaults.terminal_font_family.is_empty());
+        let settings: AppSettings = serde_json::from_str("{}").unwrap();
+        assert_eq!(settings.terminal_font_size, 13);
+        assert_eq!(settings.terminal_line_height, 17);
+        assert!(!settings.terminal_font_family.is_empty());
+        let settings: AppSettings =
+            serde_json::from_str(r#"{"locale":"system","theme":"system"}"#).unwrap();
+        assert_eq!(settings.terminal_font_size, 13);
+        assert_eq!(settings.terminal_line_height, 17);
     }
 
     #[test]

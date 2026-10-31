@@ -2062,6 +2062,20 @@ mod tests {
                 .unwrap();
             let events = session.take_events().unwrap();
             wait_for_connected(&session, &events).await.unwrap();
+            let initial =
+                tokio::time::timeout(Duration::from_secs(5), fixture.resize_events.recv())
+                    .await
+                    .unwrap()
+                    .unwrap();
+            assert_eq!(
+                initial,
+                TerminalSize {
+                    columns: 80,
+                    rows: 24,
+                    pixel_width: 800,
+                    pixel_height: 480,
+                }
+            );
             assert_eq!(fixture.term_events.recv().await.unwrap(), "tmux-256color");
             let expected = TerminalSize {
                 columns: 132,

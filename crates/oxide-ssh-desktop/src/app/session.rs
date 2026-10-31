@@ -179,12 +179,16 @@ impl AppView {
         self.start_session_inner(tab_id, secret, cx);
     }
 
-    fn start_session_inner(
+    pub(super) fn start_session_inner(
         &mut self,
         tab_id: TabId,
         secret: Option<SecretString>,
         cx: &mut Context<Self>,
     ) {
+        if self.terminal_geometry.is_none() {
+            self.pending_sessions.insert(tab_id, secret);
+            return;
+        }
         let Some(tab) = self.tabs.tab(tab_id) else {
             return;
         };
@@ -253,7 +257,13 @@ impl AppView {
         cx.notify();
     }
 
-    fn start_local_session(&mut self, tab_id: TabId, cx: &mut Context<Self>) {
+    pub(super) fn start_local_session(&mut self, tab_id: TabId, cx: &mut Context<Self>) {
+        if self.terminal_geometry.is_none() {
+            if !self.pending_local_sessions.contains(&tab_id) {
+                self.pending_local_sessions.push(tab_id);
+            }
+            return;
+        }
         let Some(tab) = self.tabs.tab(tab_id) else {
             return;
         };
@@ -273,7 +283,7 @@ impl AppView {
             },
             (!settings.local_shell_path.is_empty()).then_some(settings.local_shell_path.as_str()),
             &settings.local_shell_args,
-            &working_directory
+            &working_directory,
         );
         match result {
             Ok(session) => {

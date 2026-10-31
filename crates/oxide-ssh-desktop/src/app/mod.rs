@@ -247,6 +247,9 @@ pub struct AppView {
     theme_select: SettingSelect,
     ssh_connect_timeout_select: SettingSelect,
     new_tab_action_select: SettingSelect,
+    terminal_font_family: Entity<InputState>,
+    terminal_font_size: Entity<InputState>,
+    terminal_line_height: Entity<InputState>,
     ansi_palette_input: Entity<InputState>,
     ssh_keepalive_interval: Entity<InputState>,
     ssh_keepalive_max_count: Entity<InputState>,
@@ -272,6 +275,8 @@ pub struct AppView {
     credential_clear_failures: Vec<String>,
     status_rendered: Option<MessageId>,
     terminal_geometry: Option<TerminalGeometry>,
+    pending_sessions: HashMap<TabId, Option<SecretString>>,
+    pending_local_sessions: Vec<TabId>,
     terminal_selecting: bool,
     terminal_selection_dragged: bool,
     quitting: bool,
@@ -351,6 +356,30 @@ impl AppView {
             .as_ref()
             .map(|state| state.settings().clone())
             .unwrap_or_default();
+        let terminal_font_family = new_input(
+            window,
+            cx,
+            MessageId::TerminalFontFamily,
+            &preferences.terminal_font_family,
+            false,
+            locale,
+        );
+        let terminal_font_size = new_input(
+            window,
+            cx,
+            MessageId::TerminalFontSize,
+            &preferences.terminal_font_size.to_string(),
+            false,
+            locale,
+        );
+        let terminal_line_height = new_input(
+            window,
+            cx,
+            MessageId::TerminalLineHeight,
+            &preferences.terminal_line_height.to_string(),
+            false,
+            locale,
+        );
         let local_shell_path = new_input(
             window,
             cx,
@@ -587,6 +616,33 @@ impl AppView {
                     },
                 ),
                 cx.subscribe_in(
+                    &terminal_font_family,
+                    window,
+                    |this, _, event: &gpui_component::input::InputEvent, _, cx| {
+                        if matches!(event, gpui_component::input::InputEvent::Blur) {
+                            this.commit_terminal_settings(cx);
+                        }
+                    },
+                ),
+                cx.subscribe_in(
+                    &terminal_font_size,
+                    window,
+                    |this, _, event: &gpui_component::input::InputEvent, _, cx| {
+                        if matches!(event, gpui_component::input::InputEvent::Blur) {
+                            this.commit_terminal_settings(cx);
+                        }
+                    },
+                ),
+                cx.subscribe_in(
+                    &terminal_line_height,
+                    window,
+                    |this, _, event: &gpui_component::input::InputEvent, _, cx| {
+                        if matches!(event, gpui_component::input::InputEvent::Blur) {
+                            this.commit_terminal_settings(cx);
+                        }
+                    },
+                ),
+                cx.subscribe_in(
                     &ssh_keepalive_interval,
                     window,
                     |this, _, event: &InputEvent, _, cx| {
@@ -748,6 +804,9 @@ impl AppView {
             ssh_connect_timeout_select,
             scrollback_input,
             new_tab_action_select,
+            terminal_font_family,
+            terminal_font_size,
+            terminal_line_height,
             ansi_palette_input,
             ssh_keepalive_interval,
             ssh_keepalive_max_count,
@@ -771,6 +830,8 @@ impl AppView {
             credential_clear_failures: Vec::new(),
             status_rendered: None,
             terminal_geometry: None,
+            pending_sessions: HashMap::new(),
+            pending_local_sessions: Vec::new(),
             terminal_selecting: false,
             terminal_selection_dragged: false,
             quitting: false,
@@ -1066,6 +1127,26 @@ impl AppView {
         }
     }
 
+    fn commit_terminal_settings(&mut self, cx: &mut Context<Self>) {
+        let family = self.terminal_font_family.read(cx).value().to_string();
+        let size = self.terminal_font_size.read(cx).value().parse::<u16>();
+        let height = self.terminal_line_height.read(cx).value().parse::<u16>();
+        let (Ok(size), Ok(height)) = (size, height) else {
+            return;
+        };
+        if family.trim().is_empty() || size == 0 || height == 0 {
+            return;
+        }
+        if let Some(state) = &mut self.state
+            && state
+                .set_terminal_settings(family.trim().to_owned(), size, height)
+                .is_err()
+        {
+            self.status_message = Some(MessageId::StorageCorrupt);
+        }
+        cx.notify();
+    }
+
     fn set_locale(&mut self, setting: LocaleSetting, window: &mut Window, cx: &mut Context<Self>) {
         if self
             .state
@@ -1165,6 +1246,7 @@ impl AppView {
         }) {
             self.status_message = Some(MessageId::StorageCorrupt);
         }
+        cx.notify();
     }
 
     fn save_ansi_palette(&mut self, _: &mut Window, cx: &mut Context<Self>) {
@@ -1218,7 +1300,6 @@ impl AppView {
         self.tabs.set_terminal_colors(self.terminal_colors());
         cx.notify();
     }
-
     fn commit_ssh_keepalive(&mut self, cx: &mut Context<Self>) {
         let interval = self
             .ssh_keepalive_interval
@@ -1343,16 +1424,52 @@ impl AppView {
     }
 
     fn estimated_terminal_size(&self, window: &Window) -> TerminalSize {
+        if let Some(geometry) = self.terminal_geometry {
+            return TerminalSize {
+                columns: geometry.columns,
+                rows: geometry.rows,
+                pixel_width: u32::from(geometry.bounds.size.width),
+                pixel_height: u32::from(geometry.bounds.size.height),
+            };
+        }
         let bounds = window.bounds();
         // Chrome: sidebar+strip estimate (strip = 28px pill + 2 * CARD_GAP)
         // plus card gap and terminal padding.
         let chrome = 2. * (CARD_GAP + CARD_PADDING);
         let width = (bounds.size.width - px(260. + chrome)).max(px(80.));
         let height = (bounds.size.height - px(28. + 2. * CARD_GAP + chrome)).max(px(40.));
+        let font_size = self
+            .state
+            .as_ref()
+            .map(|state| state.settings().terminal_font_size as f32)
+            .unwrap_or(13.);
         let text_style = window.text_style();
-        let font_size = text_style.font_size.to_pixels(window.rem_size());
-        let cell_width = (font_size * 0.6).max(px(1.));
-        let cell_height = window.line_height().max(px(1.));
+        let font = self
+            .state
+            .as_ref()
+            .map(|state| state.settings().terminal_font_family.clone())
+            .unwrap_or_else(|| terminal::TERMINAL_FONT.to_owned());
+        let run = TextRun {
+            len: 1,
+            font: gpui::Font {
+                family: font.into(),
+                ..text_style.font()
+            },
+            color: text_style.color,
+            background_color: None,
+            underline: None,
+            strikethrough: None,
+        };
+        let sample = window
+            .text_system()
+            .shape_line("M".into(), px(font_size), &[run], None);
+        let cell_width = sample.x_for_index(1).max(px(1.));
+        let line_height = self
+            .state
+            .as_ref()
+            .map(|state| state.settings().terminal_line_height as f32)
+            .unwrap_or(17.);
+        let cell_height = px(line_height).max(px(1.));
         TerminalSize {
             columns: (f32::from(width) / f32::from(cell_width)).floor() as usize,
             rows: (f32::from(height) / f32::from(cell_height)).floor() as usize,

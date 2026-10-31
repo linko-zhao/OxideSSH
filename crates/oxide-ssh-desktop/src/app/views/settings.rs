@@ -303,6 +303,30 @@ impl AppView {
                         cx,
                     ),
                     self.setting_row(
+                        MessageId::TerminalFontFamily,
+                        MessageId::TerminalFontFamily,
+                        Input::new(&self.terminal_font_family)
+                            .w(px(200.))
+                            .into_any_element(),
+                        cx,
+                    ),
+                    self.setting_row(
+                        MessageId::TerminalFontSize,
+                        MessageId::TerminalFontSize,
+                        Input::new(&self.terminal_font_size)
+                            .w(px(200.))
+                            .into_any_element(),
+                        cx,
+                    ),
+                    self.setting_row(
+                        MessageId::TerminalLineHeight,
+                        MessageId::TerminalLineHeight,
+                        Input::new(&self.terminal_line_height)
+                            .w(px(200.))
+                            .into_any_element(),
+                        cx,
+                    ),
+                    self.setting_row(
                         MessageId::AnsiPalette,
                         MessageId::AnsiPaletteDescription,
                         div()

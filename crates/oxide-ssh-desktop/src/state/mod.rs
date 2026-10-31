@@ -266,12 +266,16 @@ impl AppState {
         self.config = config;
         Ok(())
     }
-    pub fn set_confirm_before_close_with_sessions(
+    pub fn set_terminal_settings(
         &mut self,
-        confirm: bool,
+        font_family: String,
+        font_size: u16,
+        line_height: u16,
     ) -> Result<(), StorageError> {
         let mut config = self.config.clone();
-        config.settings.confirm_before_close_with_sessions = confirm;
+        config.settings.terminal_font_family = font_family;
+        config.settings.terminal_font_size = font_size;
+        config.settings.terminal_line_height = line_height;
         self.store.save_config(&config)?;
         self.config = config;
         Ok(())
@@ -295,7 +299,6 @@ impl AppState {
         self.config = config;
         Ok(())
     }
-
     pub fn set_ssh_connect_timeout_seconds(&mut self, seconds: u64) -> Result<(), StorageError> {
         if !(1..=300).contains(&seconds) {
             return Ok(());
@@ -315,6 +318,17 @@ impl AppState {
         let mut config = self.config.clone();
         config.settings.ssh_keepalive_interval_seconds = interval_seconds;
         config.settings.ssh_keepalive_max_count = max_count;
+        self.store.save_config(&config)?;
+        self.config = config;
+        Ok(())
+    }
+
+    pub fn set_confirm_before_close_with_sessions(
+        &mut self,
+        confirm: bool,
+    ) -> Result<(), StorageError> {
+        let mut config = self.config.clone();
+        config.settings.confirm_before_close_with_sessions = confirm;
         self.store.save_config(&config)?;
         self.config = config;
         Ok(())
@@ -385,11 +399,7 @@ impl AppState {
         Ok(())
     }
 
-    pub fn set_local_shell(
-        &mut self,
-        path: String,
-        args: Vec<String>,
-    ) -> Result<(), StorageError> {
+    pub fn set_local_shell(&mut self, path: String, args: Vec<String>) -> Result<(), StorageError> {
         let mut config = self.config.clone();
         config.settings.local_shell_path = path;
         config.settings.local_shell_args = args;
@@ -739,7 +749,13 @@ mod tests {
         state.set_locale(LocaleSetting::ZhCn).unwrap();
         state.set_theme(ThemeSetting::Dark).unwrap();
         state
-            .set_local_shell("C:/Program Files/Git/bin/bash.exe".into(), vec!["--login".into()])
+            .set_terminal_settings("Test Mono".into(), 15, 19)
+            .unwrap();
+        state
+            .set_local_shell(
+                "C:/Program Files/Git/bin/bash.exe".into(),
+                vec!["--login".into()],
+            )
             .unwrap();
         state.set_ssh_compression(true).unwrap();
         state.set_ssh_term("tmux-256color").unwrap();
@@ -748,6 +764,9 @@ mod tests {
         assert_eq!(stored.schema_version(), 1);
         assert_eq!(stored.settings.locale, LocaleSetting::ZhCn);
         assert_eq!(stored.settings.theme, ThemeSetting::Dark);
+        assert_eq!(stored.settings.terminal_font_family, "Test Mono");
+        assert_eq!(stored.settings.terminal_font_size, 15);
+        assert_eq!(stored.settings.terminal_line_height, 19);
         assert!(stored.settings.ssh_compression);
         state.set_confirm_before_close_with_sessions(false).unwrap();
         let stored = state.store().load_config().unwrap();
@@ -766,6 +785,12 @@ mod tests {
         assert_eq!(stored.settings.theme, ThemeSetting::Dark);
         assert_eq!(stored.settings.ssh_keepalive_interval_seconds, 45);
         assert_eq!(stored.settings.ssh_keepalive_max_count, 4);
+        assert!(stored.settings.ssh_compression);
+        state.set_confirm_before_close_with_sessions(false).unwrap();
+        let stored = state.store().load_config().unwrap();
+        assert_eq!(stored.settings.locale, LocaleSetting::ZhCn);
+        assert_eq!(stored.settings.theme, ThemeSetting::Dark);
+        assert!(!stored.settings.confirm_before_close_with_sessions);
         state.set_osc52_clipboard(Osc52Clipboard::Ask).unwrap();
         let stored = state.store().load_config().unwrap();
         assert_eq!(stored.settings.locale, LocaleSetting::ZhCn);

@@ -24,7 +24,9 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::LocalTerminal => "本机终端",
         MessageId::LocalShellPath => "本地 Shell 程序路径",
         MessageId::LocalShellArgs => "本地 Shell 启动参数",
-        MessageId::LocalShellPathDescription => "新建或重启本机终端时使用的程序；留空则使用平台默认 Shell。",
+        MessageId::LocalShellPathDescription => {
+            "新建或重启本机终端时使用的程序；留空则使用平台默认 Shell。"
+        }
         MessageId::LocalShellArgsDescription => "以空格分隔传递给本地 Shell 的启动参数。",
         MessageId::NewTabButton => "新建标签按钮",
         MessageId::Settings => "设置",
@@ -184,6 +186,9 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::SessionClosed => "会话输入通道已关闭。",
         MessageId::ShellRejected => "服务器拒绝了 Shell 请求。",
         MessageId::LocalShellFailed => "无法启动本机 Shell。",
+        MessageId::TerminalFontFamily => "终端字体",
+        MessageId::TerminalFontSize => "终端字号",
+        MessageId::TerminalLineHeight => "终端行高",
         MessageId::LocalWorkingDirectoryInvalid => "配置的本地工作目录不存在或无法访问。",
     }
 }

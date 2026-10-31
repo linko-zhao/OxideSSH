@@ -78,86 +78,86 @@ pub fn spawn_local_shell(
         .map_err(|_| SessionError::LocalShellFailed)?;
     let killer = child.clone_killer();
 
-let id = SessionId::new();
-let (event_sender, event_receiver) = async_channel::bounded(EVENT_QUEUE_CAPACITY);
-let (input_sender, input_receiver) = async_channel::bounded::<Bytes>(INPUT_QUEUE_CAPACITY);
-let (resize_sender, resize_receiver) = mpsc::channel::<TerminalSize>();
+    let id = SessionId::new();
+    let (event_sender, event_receiver) = async_channel::bounded(EVENT_QUEUE_CAPACITY);
+    let (input_sender, input_receiver) = async_channel::bounded::<Bytes>(INPUT_QUEUE_CAPACITY);
+    let (resize_sender, resize_receiver) = mpsc::channel::<TerminalSize>();
 
-// Reader: PTY output -> session events.
-let reader_events = event_sender.clone();
-thread::Builder::new()
-    .name("oxide-ssh-local-read".into())
-    .spawn(move || {
-        let mut buffer = [0u8; 8192];
-        loop {
-            match reader.read(&mut buffer) {
-                Ok(0) | Err(_) => break,
-                Ok(n) => {
-                    if reader_events
-                        .send_blocking(SessionEvent::Output(Bytes::copy_from_slice(
-                            &buffer[..n],
-                        )))
-                        .is_err()
-                    {
-                        break;
+    // Reader: PTY output -> session events.
+    let reader_events = event_sender.clone();
+    thread::Builder::new()
+        .name("oxide-ssh-local-read".into())
+        .spawn(move || {
+            let mut buffer = [0u8; 8192];
+            loop {
+                match reader.read(&mut buffer) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        if reader_events
+                            .send_blocking(SessionEvent::Output(Bytes::copy_from_slice(
+                                &buffer[..n],
+                            )))
+                            .is_err()
+                        {
+                            break;
+                        }
                     }
                 }
             }
-        }
-    })
-    .map_err(|_| SessionError::LocalShellFailed)?;
+        })
+        .map_err(|_| SessionError::LocalShellFailed)?;
 
-// Writer: session input -> PTY. Ends when the handle closes the channel.
-thread::Builder::new()
-    .name("oxide-ssh-local-write".into())
-    .spawn(move || {
-        while let Ok(bytes) = input_receiver.recv_blocking() {
-            if writer.write_all(&bytes).is_err() {
-                break;
+    // Writer: session input -> PTY. Ends when the handle closes the channel.
+    thread::Builder::new()
+        .name("oxide-ssh-local-write".into())
+        .spawn(move || {
+            while let Ok(bytes) = input_receiver.recv_blocking() {
+                if writer.write_all(&bytes).is_err() {
+                    break;
+                }
             }
-        }
-    })
-    .map_err(|_| SessionError::LocalShellFailed)?;
+        })
+        .map_err(|_| SessionError::LocalShellFailed)?;
 
-// Resize: applies the latest queued size, draining stale ones.
-thread::Builder::new()
-    .name("oxide-ssh-local-resize".into())
-    .spawn(move || {
-        while let Ok(size) = resize_receiver.recv() {
-            let mut latest = size;
-            while let Ok(newer) = resize_receiver.try_recv() {
-                latest = newer;
+    // Resize: applies the latest queued size, draining stale ones.
+    thread::Builder::new()
+        .name("oxide-ssh-local-resize".into())
+        .spawn(move || {
+            while let Ok(size) = resize_receiver.recv() {
+                let mut latest = size;
+                while let Ok(newer) = resize_receiver.try_recv() {
+                    latest = newer;
+                }
+                let _ = pair.master.resize(pty_size(latest));
             }
-            let _ = pair.master.resize(pty_size(latest));
-        }
+        })
+        .map_err(|_| SessionError::LocalShellFailed)?;
+
+    // Waiter: child exit -> Exited + Disconnected, mirroring the SSH flow.
+    let waiter_events = event_sender.clone();
+    thread::Builder::new()
+        .name("oxide-ssh-local-wait".into())
+        .spawn(move || {
+            let status = child
+                .wait()
+                .ok()
+                .map(|status: ExitStatus| status.exit_code());
+            let _ = waiter_events.send_blocking(SessionEvent::Exited { status });
+            let _ =
+                waiter_events.send_blocking(SessionEvent::StateChanged(SessionState::Disconnected));
+        })
+        .map_err(|_| SessionError::LocalShellFailed)?;
+
+    let _ = event_sender.send_blocking(SessionEvent::StateChanged(SessionState::Connected));
+
+    Ok(LocalSessionHandle {
+        id,
+        events: Some(event_receiver),
+        input: input_sender,
+        resize: resize_sender,
+        killer: Mutex::new(killer),
+        disconnect_started: AtomicBool::new(false),
     })
-    .map_err(|_| SessionError::LocalShellFailed)?;
-
-// Waiter: child exit -> Exited + Disconnected, mirroring the SSH flow.
-let waiter_events = event_sender.clone();
-thread::Builder::new()
-    .name("oxide-ssh-local-wait".into())
-    .spawn(move || {
-        let status = child
-            .wait()
-            .ok()
-            .map(|status: ExitStatus| status.exit_code());
-        let _ = waiter_events.send_blocking(SessionEvent::Exited { status });
-        let _ =
-            waiter_events.send_blocking(SessionEvent::StateChanged(SessionState::Disconnected));
-    })
-    .map_err(|_| SessionError::LocalShellFailed)?;
-
-let _ = event_sender.send_blocking(SessionEvent::StateChanged(SessionState::Connected));
-
-Ok(LocalSessionHandle {
-    id,
-    events: Some(event_receiver),
-    input: input_sender,
-    resize: resize_sender,
-    killer: Mutex::new(killer),
-    disconnect_started: AtomicBool::new(false),
-})
 }
 
 pub struct LocalSessionHandle {
@@ -270,15 +270,28 @@ mod windows_tests {
 
     #[test]
     fn empty_shell_path_uses_platform_default() {
-        let size = TerminalSize { columns: 80, rows: 24, pixel_width: 800, pixel_height: 480 };
+        let size = TerminalSize {
+            columns: 80,
+            rows: 24,
+            pixel_width: 800,
+            pixel_height: 480,
+        };
         let handle = spawn_local_shell(size, None, &[], "").unwrap();
         drop(handle);
     }
 
     #[test]
     fn configured_missing_windows_shell_returns_error_without_fallback() {
-        let size = TerminalSize { columns: 80, rows: 24, pixel_width: 800, pixel_height: 480 };
-        assert_eq!(spawn_local_shell(size, Some("oxide-ssh-missing-shell.exe"), &[], "").err(), Some(SessionError::LocalShellFailed));
+        let size = TerminalSize {
+            columns: 80,
+            rows: 24,
+            pixel_width: 800,
+            pixel_height: 480,
+        };
+        assert_eq!(
+            spawn_local_shell(size, Some("oxide-ssh-missing-shell.exe"), &[], "").err(),
+            Some(SessionError::LocalShellFailed)
+        );
     }
 
     #[test]
@@ -286,14 +299,38 @@ mod windows_tests {
         let directory = std::env::temp_dir().join(format!("oxide-ssh-cwd-{}", SessionId::new().0));
         std::fs::create_dir(&directory).unwrap();
         let expected = directory.to_string_lossy().into_owned();
-        let mut handle = spawn_local_shell(TerminalSize { columns: 80, rows: 24, pixel_width: 800, pixel_height: 480 }, None, &[], &expected).unwrap();
+        let mut handle = spawn_local_shell(
+            TerminalSize {
+                columns: 80,
+                rows: 24,
+                pixel_width: 800,
+                pixel_height: 480,
+            },
+            None,
+            &[],
+            &expected,
+        )
+        .unwrap();
         let events = handle.take_events().unwrap();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-        while !matches!(events.recv_blocking().unwrap(), SessionEvent::StateChanged(SessionState::Connected)) {}
-        handle.try_send_input(Bytes::from_static(b"\x1b[1;1R")).unwrap();
-        let command: &[u8] = if default_shell().to_ascii_lowercase().contains("cmd") { b"cd\r" } else { b"pwd\r" };
-        handle.try_send_input(Bytes::copy_from_slice(command)).unwrap();
-        handle.try_send_input(Bytes::from_static(b"exit\r")).unwrap();
+        while !matches!(
+            events.recv_blocking().unwrap(),
+            SessionEvent::StateChanged(SessionState::Connected)
+        ) {}
+        handle
+            .try_send_input(Bytes::from_static(b"\x1b[1;1R"))
+            .unwrap();
+        let command: &[u8] = if default_shell().to_ascii_lowercase().contains("cmd") {
+            b"cd\r"
+        } else {
+            b"pwd\r"
+        };
+        handle
+            .try_send_input(Bytes::copy_from_slice(command))
+            .unwrap();
+        handle
+            .try_send_input(Bytes::from_static(b"exit\r"))
+            .unwrap();
         let mut output = Vec::new();
         while std::time::Instant::now() < deadline {
             match events.try_recv() {
@@ -303,7 +340,12 @@ mod windows_tests {
             }
         }
         let output = String::from_utf8_lossy(&output);
-        assert!(output.to_ascii_lowercase().contains(&expected.to_ascii_lowercase()), "shell output did not contain {expected:?}: {output:?}");
+        assert!(
+            output
+                .to_ascii_lowercase()
+                .contains(&expected.to_ascii_lowercase()),
+            "shell output did not contain {expected:?}: {output:?}"
+        );
         std::fs::remove_dir_all(directory).unwrap();
     }
 }

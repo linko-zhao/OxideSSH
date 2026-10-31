@@ -24,8 +24,12 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::LocalTerminal => "Local Terminal",
         MessageId::LocalShellPath => "Local shell executable",
         MessageId::LocalShellArgs => "Local shell arguments",
-        MessageId::LocalShellPathDescription => "Executable used for new and restarted local terminals; empty uses the platform default.",
-        MessageId::LocalShellArgsDescription => "Arguments passed as separate words to the local shell.",
+        MessageId::LocalShellPathDescription => {
+            "Executable used for new and restarted local terminals; empty uses the platform default."
+        }
+        MessageId::LocalShellArgsDescription => {
+            "Arguments passed as separate words to the local shell."
+        }
         MessageId::NewTabButton => "New tab button",
         MessageId::Settings => "Settings",
         MessageId::General => "General",
@@ -200,6 +204,9 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::SessionClosed => "The session input channel is closed.",
         MessageId::ShellRejected => "The server rejected the shell request.",
         MessageId::LocalShellFailed => "Failed to start the local shell.",
+        MessageId::TerminalFontFamily => "Terminal font",
+        MessageId::TerminalFontSize => "Terminal font size",
+        MessageId::TerminalLineHeight => "Terminal line height",
         MessageId::LocalWorkingDirectoryInvalid => {
             "The configured local working directory does not exist or cannot be accessed."
         }

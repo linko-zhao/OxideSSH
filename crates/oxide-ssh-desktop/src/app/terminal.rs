@@ -12,11 +12,11 @@ pub(super) const TERMINAL_FONT: &str = "monospace";
 
 #[derive(Clone, Copy)]
 pub(super) struct TerminalGeometry {
-    bounds: Bounds<Pixels>,
-    cell_width: Pixels,
-    cell_height: Pixels,
-    columns: usize,
-    rows: usize,
+    pub(super) bounds: Bounds<Pixels>,
+    pub(super) cell_width: Pixels,
+    pub(super) cell_height: Pixels,
+    pub(super) columns: usize,
+    pub(super) rows: usize,
 }
 
 pub(super) struct TerminalElement {
@@ -618,6 +618,17 @@ impl AppView {
                 self.status_message = Some(MessageId::InvalidProfile);
             }
             cx.notify();
+        }
+        if let Some(secret) = self.pending_sessions.remove(&tab_id) {
+            self.start_session_inner(tab_id, secret, cx);
+        }
+        if let Some(index) = self
+            .pending_local_sessions
+            .iter()
+            .position(|pending| *pending == tab_id)
+        {
+            self.pending_local_sessions.swap_remove(index);
+            self.start_local_session(tab_id, cx);
         }
     }
 
