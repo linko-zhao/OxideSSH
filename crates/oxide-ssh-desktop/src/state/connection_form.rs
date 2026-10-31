@@ -345,7 +345,10 @@ mod tests {
         form.host = "example.com".into();
         form.username = "oxide".into();
         form.terminal_font_size = "not-a-size".into();
-        assert_eq!(form.save_request().unwrap_err(), FormError::TerminalFontSize);
+        assert_eq!(
+            form.save_request().unwrap_err(),
+            FormError::TerminalFontSize
+        );
         form.terminal_font_size = "18".into();
         form.ansi_palette = "invalid".into();
         assert_eq!(form.save_request().unwrap_err(), FormError::AnsiPalette);
@@ -357,7 +360,10 @@ mod tests {
             .map(|value| format!("#{value:06x}"))
             .collect::<Vec<_>>()
             .join(",");
-        assert_eq!(parse_palette(&palette), Ok(Some(std::array::from_fn(|i| i as u32))));
+        assert_eq!(
+            parse_palette(&palette),
+            Ok(Some(std::array::from_fn(|i| i as u32)))
+        );
     }
 
     #[test]

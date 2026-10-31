@@ -120,12 +120,20 @@ impl AppView {
                         tab_id,
                     })
                     .when_some(
-                        (!matches!(state, Some(TabState::Connected) | Some(TabState::Disconnected { .. })))
-                            .then_some(state)
-                            .flatten(),
+                        (!matches!(
+                            state,
+                            Some(TabState::Connected) | Some(TabState::Disconnected { .. })
+                        ))
+                        .then_some(state)
+                        .flatten(),
                         |element, state| {
                             element.child(
-                                div().absolute().inset_0().flex().items_center().justify_center()
+                                div()
+                                    .absolute()
+                                    .inset_0()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
                                     .text_color(cx.theme().muted_foreground)
                                     .child(self.text(tab_state_message_id(&state))),
                             )

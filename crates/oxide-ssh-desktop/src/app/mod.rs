@@ -1444,11 +1444,10 @@ impl AppView {
     }
 
     fn save_ansi_palette(&mut self, _: &mut Window, cx: &mut Context<Self>) {
-        let parsed = crate::state::connection_form::parse_palette(
-            &self.ansi_palette_input.read(cx).value(),
-        )
-        .ok()
-        .flatten();
+        let parsed =
+            crate::state::connection_form::parse_palette(&self.ansi_palette_input.read(cx).value())
+                .ok()
+                .flatten();
         let Some(palette) = parsed else {
             return;
         };

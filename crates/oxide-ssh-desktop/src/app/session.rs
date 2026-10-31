@@ -140,7 +140,8 @@ impl AppView {
             expected_tab_id,
             PendingSessionStart::Ssh(Some(SecretString::from(value))),
         );
-        self.secret.update(cx, |field, cx| field.set_value("", window, cx));
+        self.secret
+            .update(cx, |field, cx| field.set_value("", window, cx));
         cx.notify();
     }
 
