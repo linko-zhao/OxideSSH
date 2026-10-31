@@ -87,6 +87,8 @@ pub(super) fn text(id: MessageId) -> &'static str {
             "Profile keepalive maximum missed replies (blank inherits)"
         }
         MessageId::InvalidKeepalive => "Keepalive values must be positive whole numbers.",
+        MessageId::InvalidTerminalFontSize => "Terminal font size must be a positive whole number.",
+        MessageId::InvalidAnsiPalette => "Enter 16 comma-separated RGB hex colors.",
         MessageId::LocalWorkingDirectory => "Local terminal working directory",
         MessageId::LocalWorkingDirectoryDescription => "Leave empty to use your home directory.",
         MessageId::Osc52Clipboard => "Remote clipboard",
