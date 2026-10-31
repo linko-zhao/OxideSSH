@@ -298,7 +298,7 @@ mod windows_tests {
     fn local_shell_starts_in_configured_working_directory() {
         let directory = std::env::temp_dir().join(format!("oxide-ssh-cwd-{}", SessionId::new().0));
         std::fs::create_dir(&directory).unwrap();
-        let expected = directory.to_string_lossy().into_owned();
+        std::fs::write(directory.join("oxide-cwd-marker"), b"configured-directory").unwrap();
         let mut handle = spawn_local_shell(
             TerminalSize {
                 columns: 80,
@@ -308,7 +308,7 @@ mod windows_tests {
             },
             None,
             &[],
-            &expected,
+            &directory.to_string_lossy(),
         )
         .unwrap();
         let events = handle.take_events().unwrap();
@@ -320,13 +320,8 @@ mod windows_tests {
         handle
             .try_send_input(Bytes::from_static(b"\x1b[1;1R"))
             .unwrap();
-        let command: &[u8] = if default_shell().to_ascii_lowercase().contains("cmd") {
-            b"cd\r"
-        } else {
-            b"pwd\r"
-        };
         handle
-            .try_send_input(Bytes::copy_from_slice(command))
+            .try_send_input(Bytes::from_static(b"type oxide-cwd-marker\r"))
             .unwrap();
         handle
             .try_send_input(Bytes::from_static(b"exit\r"))
@@ -341,10 +336,8 @@ mod windows_tests {
         }
         let output = String::from_utf8_lossy(&output);
         assert!(
-            output
-                .to_ascii_lowercase()
-                .contains(&expected.to_ascii_lowercase()),
-            "shell output did not contain {expected:?}: {output:?}"
+            output.contains("configured-directory"),
+            "shell did not read the file in its configured working directory: {output:?}"
         );
         std::fs::remove_dir_all(directory).unwrap();
     }
