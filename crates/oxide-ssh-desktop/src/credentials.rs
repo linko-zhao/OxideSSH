@@ -12,6 +12,9 @@ use crate::i18n::MessageId;
 
 pub const APPLICATION_IDENTIFIER: &str = "io.github.linko-zhao.OxideSSH";
 
+type CredentialClearResults =
+    Result<Vec<Result<CredentialRef, (CredentialRef, CredentialError)>>, CredentialError>;
+
 #[derive(Default)]
 pub struct SystemCredentialStore;
 
@@ -26,9 +29,7 @@ impl SystemCredentialStore {
         Entry::new(APPLICATION_IDENTIFIER, reference.as_str()).map_err(map_keyring_error)
     }
 
-    pub fn clear_all(
-        &self,
-    ) -> Result<Vec<Result<CredentialRef, (CredentialRef, CredentialError)>>, CredentialError> {
+    pub fn clear_all(&self) -> CredentialClearResults {
         clear_application_credentials(self)
     }
 }
@@ -60,9 +61,7 @@ impl CredentialStore for SystemCredentialStore {
     }
 }
 
-fn clear_application_credentials<C: CredentialStore>(
-    store: &C,
-) -> Result<Vec<Result<CredentialRef, (CredentialRef, CredentialError)>>, CredentialError> {
+fn clear_application_credentials<C: CredentialStore>(store: &C) -> CredentialClearResults {
     let references = store.list_application_credentials()?;
     Ok(references
         .into_iter()
@@ -136,7 +135,7 @@ fn enumerate_application_credentials() -> Result<Vec<CredentialRef>, CredentialE
             Err(CredentialError::Unavailable)
         };
     }
-    let result = (|| {
+    let result = {
         let suffix: Vec<u16> = format!(".{APPLICATION_IDENTIFIER}")
             .encode_utf16()
             .collect();
@@ -166,7 +165,7 @@ fn enumerate_application_credentials() -> Result<Vec<CredentialRef>, CredentialE
             }
         }
         Ok(references)
-    })();
+    };
     unsafe { CredFree(credentials.cast()) };
     result
 }
@@ -176,7 +175,6 @@ fn enumerate_application_credentials() -> Result<Vec<CredentialRef>, CredentialE
     Err(CredentialError::Unsupported)
 }
 #[cfg(any(target_os = "windows", test))]
-
 fn is_application_profile_reference(reference: &str) -> bool {
     let mut parts = reference.split('/');
     let (Some("profile"), Some(profile_id), Some(kind), None) =

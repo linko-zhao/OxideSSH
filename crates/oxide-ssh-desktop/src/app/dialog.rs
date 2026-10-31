@@ -87,7 +87,7 @@ impl DialogIdentityKind {
 
 #[derive(Clone)]
 enum DialogSnapshot {
-    Editor(EditorDialogSnapshot),
+    Editor(Box<EditorDialogSnapshot>),
     Confirm {
         action: ConfirmAction,
         /// Profiles referencing a tag being deleted; shown in the body.
@@ -1182,7 +1182,7 @@ impl AppView {
                         is_editing: editor.form.is_editing(),
                     },
                 },
-                snapshot: DialogSnapshot::Editor(EditorDialogSnapshot {
+                snapshot: DialogSnapshot::Editor(Box::new(EditorDialogSnapshot {
                     editor_id: editor.id,
                     is_editing: editor.form.is_editing(),
                     auth_method: editor.form.auth_method,
@@ -1203,7 +1203,7 @@ impl AppView {
                     tags,
                     tag_ids: editor.form.tag_ids.clone(),
                     tag_name: editor.tag_name.clone(),
-                }),
+                })),
             });
         }
         if let Some(action) = &self.confirm {

@@ -17,7 +17,7 @@ pub mod connection_form;
 pub mod theme;
 
 pub enum AppLoadOutcome {
-    Ready(AppState),
+    Ready(Box<AppState>),
     Recovery(RecoveryState),
 }
 
@@ -73,13 +73,13 @@ impl AppState {
             Err(_) => return AppLoadOutcome::Recovery(RecoveryState { root }),
         };
 
-        AppLoadOutcome::Ready(Self {
+        AppLoadOutcome::Ready(Box::new(Self {
             store,
             config,
             known_hosts,
             search_query: String::new(),
             tag_filter: TagFilter::default(),
-        })
+        }))
     }
 
     pub fn store(&self) -> &Arc<AppStore> {

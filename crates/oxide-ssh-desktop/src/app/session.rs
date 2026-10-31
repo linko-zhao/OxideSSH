@@ -5,11 +5,6 @@ use super::messages::{
 };
 use super::*;
 
-enum PendingSessionStart {
-    Local,
-    Ssh(Option<SecretString>),
-}
-
 const OUTPUT_COALESCE_BYTES: usize = 64 * 1024;
 
 impl AppView {
@@ -60,15 +55,14 @@ impl AppView {
                 // The keyring could not be read: fall back to a one-time
                 // in-memory prompt instead of blocking the connection.
                 let needs_secret = requires_one_time_secret(&profile);
-                let _ = self.tabs.open(
+                let tab_id = self.tabs.open(
                     profile.clone(),
                     self.estimated_terminal_size(window),
                     self.profile_terminal_colors(&profile),
                     needs_secret,
                 );
                 if !needs_secret {
-                    self.pending_session_starts
-                        .insert(tab_id, PendingSessionStart::Ssh(None));
+                    self.pending_sessions.insert(tab_id, None);
                 }
                 cx.notify();
                 return;
@@ -82,8 +76,7 @@ impl AppView {
             needs_secret,
         );
         if !needs_secret {
-            self.pending_session_starts
-                .insert(tab_id, PendingSessionStart::Ssh(secret));
+            self.pending_sessions.insert(tab_id, secret);
         }
         cx.notify();
     }
@@ -136,16 +129,14 @@ impl AppView {
         {
             return;
         }
-        self.pending_session_starts.insert(
-            expected_tab_id,
-            PendingSessionStart::Ssh(Some(SecretString::from(value))),
-        );
+        self.pending_sessions
+            .insert(expected_tab_id, Some(SecretString::from(value)));
         self.secret
             .update(cx, |field, cx| field.set_value("", window, cx));
         cx.notify();
     }
 
-    fn start_session(
+    pub(super) fn start_session(
         &mut self,
         tab_id: TabId,
         secret: Option<SecretString>,
@@ -543,8 +534,7 @@ impl AppView {
             return;
         }
         if is_local {
-            self.pending_session_starts
-                .insert(tab_id, PendingSessionStart::Local);
+            self.start_local_session(tab_id, cx);
             cx.notify();
             return;
         }
@@ -560,8 +550,7 @@ impl AppView {
                         self.status_message = None;
                     }
                 } else {
-                    self.pending_session_starts
-                        .insert(tab_id, PendingSessionStart::Ssh(secret));
+                    self.pending_sessions.insert(tab_id, secret);
                 }
             }
             Err(error) => self.status_message = Some(credential_error_message_id(error)),

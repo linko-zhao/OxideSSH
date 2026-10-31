@@ -66,7 +66,7 @@ pub enum TabNotification {
 /// local machine.
 #[derive(Clone, Debug)]
 pub enum TabKind {
-    Ssh(ConnectionProfile),
+    Ssh(Box<ConnectionProfile>),
     Local,
 }
 
@@ -584,7 +584,7 @@ impl TabCollection {
         awaiting_secret: bool,
     ) -> TabId {
         let tab = Tab::new(
-            TabKind::Ssh(profile),
+            TabKind::Ssh(Box::new(profile)),
             size,
             colors,
             awaiting_secret,

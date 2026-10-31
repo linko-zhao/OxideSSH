@@ -966,8 +966,10 @@ mod tests {
         let directory = tempdir().unwrap();
         let store = AppStore::open(directory.path().to_path_buf()).unwrap();
         store.accept_host_key(host("existing.example", 22)).unwrap();
-        let mut incoming = KnownHosts::default();
-        incoming.hosts = vec![host("existing.example", 22), host("new.example", 2200)];
+        let mut incoming = KnownHosts {
+            hosts: vec![host("existing.example", 22), host("new.example", 2200)],
+            ..Default::default()
+        };
         for entry in &mut incoming.hosts {
             entry.public_key =
                 "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILagOJFgwaMNhBWQINinKOXmqS4Gh5NgxgriXwdOoINJ"

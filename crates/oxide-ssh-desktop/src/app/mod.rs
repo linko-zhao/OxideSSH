@@ -329,7 +329,7 @@ impl AppView {
                     .err()
                     .map(|error| session_error_message_id(*error));
                 (
-                    Some(state),
+                    Some(*state),
                     Some(credentials),
                     Some(coordinator),
                     ssh.ok(),
@@ -792,10 +792,10 @@ impl AppView {
                     &scrollback_input,
                     window,
                     |this, input, event: &InputEvent, _, cx| {
-                        if matches!(event, InputEvent::Blur) {
-                            if let Ok(lines) = input.read(cx).value().parse::<usize>() {
-                                this.set_terminal_scrollback_lines(lines, cx);
-                            }
+                        if matches!(event, InputEvent::Blur)
+                            && let Ok(lines) = input.read(cx).value().parse::<usize>()
+                        {
+                            this.set_terminal_scrollback_lines(lines, cx);
                         }
                     },
                 ),
@@ -1676,7 +1676,7 @@ impl AppView {
         ));
         match SshService::new(store) {
             Ok(ssh) => {
-                self.state = Some(state);
+                self.state = Some(*state);
                 self.credentials = Some(credentials);
                 self.coordinator = Some(coordinator);
                 self.ssh = Some(ssh);

@@ -673,7 +673,7 @@ impl AppView {
             cx.notify();
         }
         if let Some(secret) = self.pending_sessions.remove(&tab_id) {
-            self.start_session_inner(tab_id, secret, cx);
+            self.start_session(tab_id, secret, cx);
         }
         if let Some(index) = self
             .pending_local_sessions
@@ -686,10 +686,11 @@ impl AppView {
     }
 
     fn terminal_cell_at(&self, position: Point<Pixels>) -> Option<(usize, usize, CellSide)> {
-        let geometry = self
-            .terminal_geometries
-            .get(&self.tabs.active()?)
-            .copied()?;
+        let tab_id = self.tabs.active()?;
+        if self.terminal_geometry_tab != Some(tab_id) {
+            return None;
+        }
+        let geometry = self.terminal_geometry?;
         if position.x < geometry.bounds.left()
             || position.x >= geometry.bounds.right()
             || position.y < geometry.bounds.top()
@@ -763,16 +764,14 @@ impl AppView {
                 .state
                 .as_ref()
                 .is_some_and(|state| state.settings().copy_on_select)
-        {
-            if let Some(text) = self
+            && let Some(text) = self
                 .tabs
                 .active()
                 .and_then(|id| self.tabs.tab(id))
                 .and_then(|tab| tab.terminal().selected_text())
                 .filter(|text| !text.is_empty())
-            {
-                cx.write_to_clipboard(ClipboardItem::new_string(text));
-            }
+        {
+            cx.write_to_clipboard(ClipboardItem::new_string(text));
         }
         self.terminal_selecting = false;
         self.terminal_selection_dragged = false;
@@ -784,12 +783,13 @@ impl AppView {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(geometry) = self
-            .tabs
-            .active()
-            .and_then(|tab| self.terminal_geometries.get(&tab))
-            .copied()
-        else {
+        let Some(tab_id) = self.tabs.active() else {
+            return;
+        };
+        if self.terminal_geometry_tab != Some(tab_id) {
+            return;
+        }
+        let Some(geometry) = self.terminal_geometry else {
             return;
         };
         let delta = event.delta.pixel_delta(geometry.cell_height);
