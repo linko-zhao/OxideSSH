@@ -1,6 +1,14 @@
 use super::messages::local_error_message_id;
 use super::*;
 
+fn cursor_phase_visible(blinking: bool, focused: bool, blink_phase: bool) -> bool {
+    !blinking || !focused || blink_phase
+}
+
+fn cursor_visible(blinking: bool, focused: bool, blink_phase: bool) -> bool {
+    cursor_phase_visible(blinking, focused, blink_phase)
+}
+
 #[cfg(target_os = "macos")]
 pub(super) const TERMINAL_FONT: &str = "Menlo";
 
@@ -103,7 +111,13 @@ impl Element for TerminalElement {
             columns: columns.max(2),
             rows: rows.max(1),
         };
+        let terminal_focused =
+            window.is_window_active() && self.view.read(cx).terminal_focus.is_focused(window);
         self.view.update(cx, |view, cx| {
+            if view.terminal_cursor_focused != terminal_focused {
+                view.cursor_blink_phase = true;
+            }
+            view.terminal_cursor_focused = terminal_focused;
             view.update_terminal_geometry(self.tab_id, geometry, cx)
         });
 
@@ -251,29 +265,56 @@ impl Element for TerminalElement {
             let cursor_color = rgb(terminal_colors.cursor.to_hex());
             let cursor_x = bounds.left() + cell_width * cursor.point.column.0 as f32;
             let cursor_y = bounds.top() + cell_height * cursor_row.unwrap_or_default() as f32;
-            match cursor.shape {
-                alacritty_terminal::vte::ansi::CursorShape::Hidden => Vec::new(),
-                alacritty_terminal::vte::ansi::CursorShape::Beam => vec![fill(
-                    Bounds::new(point(cursor_x, cursor_y), size(px(2.), cell_height)),
-                    cursor_color,
-                )],
-                alacritty_terminal::vte::ansi::CursorShape::Underline => vec![fill(
-                    Bounds::new(
-                        point(cursor_x, cursor_y + cell_height - px(2.)),
-                        size(cell_width, px(2.)),
-                    ),
-                    cursor_color,
-                )],
-                alacritty_terminal::vte::ansi::CursorShape::HollowBlock => {
-                    terminal_outline(cursor_x, cursor_y, cell_width, cell_height, cursor_color)
+            let shape = if model.has_remote_cursor_style() {
+                cursor.shape
+            } else {
+                match view
+                    .state
+                    .as_ref()
+                    .map(|state| state.settings().cursor_style)
+                    .unwrap_or_default()
+                {
+                    CursorStyleSetting::Block => alacritty_terminal::vte::ansi::CursorShape::Block,
+                    CursorStyleSetting::Beam => alacritty_terminal::vte::ansi::CursorShape::Beam,
+                    CursorStyleSetting::Underline => {
+                        alacritty_terminal::vte::ansi::CursorShape::Underline
+                    }
                 }
-                alacritty_terminal::vte::ansi::CursorShape::Block => vec![fill(
-                    Bounds::new(point(cursor_x, cursor_y), size(cell_width, cell_height)),
-                    gpui::Rgba {
-                        a: 0.45,
-                        ..cursor_color
-                    },
-                )],
+            };
+            let blinking = if model.has_remote_cursor_style() || model.has_remote_cursor_blink() {
+                model.cursor_blinking()
+            } else {
+                view.state
+                    .as_ref()
+                    .is_some_and(|state| state.settings().cursor_blink)
+            };
+            if !cursor_visible(blinking, terminal_focused, view.cursor_blink_phase) {
+                Vec::new()
+            } else {
+                match shape {
+                    alacritty_terminal::vte::ansi::CursorShape::Hidden => Vec::new(),
+                    alacritty_terminal::vte::ansi::CursorShape::Beam => vec![fill(
+                        Bounds::new(point(cursor_x, cursor_y), size(px(2.), cell_height)),
+                        cursor_color,
+                    )],
+                    alacritty_terminal::vte::ansi::CursorShape::Underline => vec![fill(
+                        Bounds::new(
+                            point(cursor_x, cursor_y + cell_height - px(2.)),
+                            size(cell_width, px(2.)),
+                        ),
+                        cursor_color,
+                    )],
+                    alacritty_terminal::vte::ansi::CursorShape::HollowBlock => {
+                        terminal_outline(cursor_x, cursor_y, cell_width, cell_height, cursor_color)
+                    }
+                    alacritty_terminal::vte::ansi::CursorShape::Block => vec![fill(
+                        Bounds::new(point(cursor_x, cursor_y), size(cell_width, cell_height)),
+                        gpui::Rgba {
+                            a: 0.45,
+                            ..cursor_color
+                        },
+                    )],
+                }
             }
         };
 
@@ -743,5 +784,18 @@ impl AppView {
             tab.terminal_mut().scroll_display(lines);
             cx.notify();
         }
+    }
+}
+
+#[cfg(test)]
+mod cursor_blink_tests {
+    use super::cursor_phase_visible;
+
+    #[test]
+    fn cursor_visibility_tracks_blink_phase_and_focus() {
+        assert!(!cursor_phase_visible(true, true, false));
+        assert!(cursor_phase_visible(true, false, false));
+        assert!(cursor_phase_visible(true, true, true));
+        assert!(cursor_phase_visible(false, true, false));
     }
 }

@@ -43,6 +43,13 @@ pub(super) fn text(id: MessageId) -> &'static str {
         }
         MessageId::InvalidScrollbackLines => "Enter a whole number from 1 to 1,000,000.",
         MessageId::Theme => "Theme",
+        MessageId::CursorStyle => "Cursor style",
+        MessageId::CursorStyleDescription => "Default cursor shape",
+        MessageId::CursorBlock => "Block",
+        MessageId::CursorBeam => "Beam",
+        MessageId::CursorUnderline => "Underline",
+        MessageId::CursorBlink => "Cursor blinking",
+        MessageId::CursorBlinkDescription => "Blink the cursor by default",
         MessageId::AnsiPalette => "ANSI palette",
         MessageId::AnsiPaletteDescription => {
             "Enter 16 comma-separated RGB hex colors in index order (0–7 standard, 8–15 bright)."
