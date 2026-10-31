@@ -570,7 +570,11 @@ impl AppView {
                                                             .save_file()
                                                             .await
                                                         {
-                                                            let result = store.export_config(&file.path().to_path_buf());
+                                                            let path = file.path().to_path_buf();
+                                                            let result = cx
+                                                                .background_executor()
+                                                                .spawn(async move { store.export_config(&path) })
+                                                                .await;
                                                             weak.update(cx, |this, cx| {
                                                                 this.status_message = Some(if result.is_ok() {
                                                                     MessageId::ConfigExportSuccess
@@ -597,7 +601,11 @@ impl AppView {
                                                             .save_file()
                                                             .await
                                                         {
-                                                            let result = store.backup_config(&file.path().to_path_buf());
+                                                            let path = file.path().to_path_buf();
+                                                            let result = cx
+                                                                .background_executor()
+                                                                .spawn(async move { store.backup_config(&path) })
+                                                                .await;
                                                             weak.update(cx, |this, cx| {
                                                                 this.status_message = Some(if result.is_ok() {
                                                                     MessageId::ConfigExportSuccess
@@ -624,12 +632,18 @@ impl AppView {
                                                             .pick_file()
                                                             .await
                                                         {
-                                                            let result = store.import_config(&file.path().to_path_buf());
+                                                            let path = file.path().to_path_buf();
+                                                            let result = cx
+                                                                .background_executor()
+                                                                .spawn(async move { store.import_config(&path) })
+                                                                .await;
                                                             weak.update_in(cx, |this, window, cx| {
                                                                 this.status_message = match result {
                                                                     Err(_) => Some(MessageId::ConfigImportFailure),
                                                                     Ok(()) if this.state.as_mut().is_some_and(|state| state.reload_config().is_ok()) => {
                                                                         this.refresh_preferences(window, cx);
+                                                                        this.sync_settings_inputs(window, cx);
+                                                                        this.tabs.set_terminal_colors(this.terminal_colors());
                                                                         Some(MessageId::ConfigImportSuccess)
                                                                     }
                                                                     Ok(()) => Some(MessageId::ConfigImportReloadFailure),
