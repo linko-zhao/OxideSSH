@@ -175,6 +175,7 @@ pub struct TerminalModel {
     remote_cursor_style: bool,
     remote_cursor_blink: bool,
     last_output_ended_escape: bool,
+    cursor_style_command_in_progress: bool,
 }
 
 impl TerminalModel {
@@ -219,19 +220,39 @@ impl TerminalModel {
             remote_cursor_style: false,
             remote_cursor_blink: false,
             last_output_ended_escape: false,
+            cursor_style_command_in_progress: false,
         })
     }
 
     pub fn process_output(&mut self, bytes: &[u8]) -> SmallVec<[TerminalAction; 4]> {
-        let previous_cursor_shape = self.term.cursor_style().shape;
-        let reset = (self.last_output_ended_escape && bytes.first() == Some(&b'c'))
-            || bytes.windows(2).any(|sequence| sequence == b"\x1bc");
-        if !bytes.is_empty() {
-            self.last_output_ended_escape = bytes.last() == Some(&0x1b);
+        let mut reset = false;
+        let mut cursor_style_command = false;
+        let mut cursor_style_after_reset = false;
+        for &byte in bytes {
+            if self.last_output_ended_escape && byte == b'c' {
+                reset = true;
+                cursor_style_after_reset = false;
+            }
+            if byte == b'q' && self.cursor_style_command_in_progress {
+                cursor_style_command = true;
+                cursor_style_after_reset = reset;
+                self.cursor_style_command_in_progress = false;
+            } else if byte == 0x1b {
+                self.cursor_style_command_in_progress = false;
+            } else if byte == b'[' && self.last_output_ended_escape {
+                self.cursor_style_command_in_progress = true;
+            } else if self.cursor_style_command_in_progress
+                && !byte.is_ascii_digit()
+                && byte != b';'
+                && byte != b' '
+            {
+                self.cursor_style_command_in_progress = false;
+            }
+            self.last_output_ended_escape = byte == 0x1b;
         }
         self.processor.advance(&mut self.term, bytes);
         self.processor.stop_sync(&mut self.term);
-        self.remote_cursor_style |= self.term.cursor_style().shape != previous_cursor_shape;
+        self.remote_cursor_style |= cursor_style_command;
 
         let mut pending = {
             let mut shared = self.pending_events.lock();
@@ -269,7 +290,7 @@ impl TerminalModel {
                 | Event::ChildExit(_) => {}
             }
         }
-        if reset {
+        if reset && !cursor_style_after_reset {
             self.remote_cursor_style = false;
             self.remote_cursor_blink = false;
         }
@@ -606,6 +627,43 @@ mod tests {
         assert!(actions.contains(&TerminalAction::Wakeup));
     }
 
+    #[test]
+    fn explicit_cursor_style_same_as_default_takes_remote_ownership() {
+        let mut model = TerminalModel::new(size(80, 24)).unwrap();
+        model.process_output(b"\x1b[2 q");
+        assert!(model.has_remote_cursor_style());
+    }
+
+    #[test]
+    fn cursor_style_commands_take_remote_ownership_even_if_shape_returns_to_initial() {
+        let mut model = TerminalModel::new(size(80, 24)).unwrap();
+        model.process_output(b"\x1b[5 q\x1b[2 q");
+        assert!(model.has_remote_cursor_style());
+        assert!(!model.cursor_blinking());
+    }
+
+    #[test]
+    fn reset_then_cursor_style_in_same_chunk_matches_split_chunks() {
+        let mut together = TerminalModel::new(size(80, 24)).unwrap();
+        let mut split = TerminalModel::new(size(80, 24)).unwrap();
+
+        together.process_output(b"\x1bc\x1b[5 q");
+        split.process_output(b"\x1bc");
+        split.process_output(b"\x1b[5 q");
+
+        assert!(together.has_remote_cursor_style());
+        assert!(together.has_remote_cursor_blink());
+        assert!(together.cursor_blinking());
+        assert_eq!(
+            together.has_remote_cursor_style(),
+            split.has_remote_cursor_style()
+        );
+        assert_eq!(
+            together.has_remote_cursor_blink(),
+            split.has_remote_cursor_blink()
+        );
+        assert_eq!(together.cursor_blinking(), split.cursor_blinking());
+    }
     #[test]
     fn terminal_reset_restores_local_cursor_precedence() {
         let mut model = TerminalModel::new(size(80, 24)).unwrap();
