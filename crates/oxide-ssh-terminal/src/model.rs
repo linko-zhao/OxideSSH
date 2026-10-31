@@ -6,8 +6,8 @@ use alacritty_terminal::{
     index::{Column, Point, Side},
     selection::{Selection, SelectionType},
     term::{
-        Config, MIN_COLUMNS, MIN_SCREEN_LINES, Osc52, RenderableContent, Term, TermDamage,
-        TermMode,
+        ClipboardType, Config, MIN_COLUMNS, MIN_SCREEN_LINES, Osc52, RenderableContent, Term,
+        TermDamage, TermMode,
         cell::{Cell, Flags},
         color,
     },
@@ -123,6 +123,7 @@ pub struct CellRenderStyle {
 pub enum TerminalAction {
     WriteBack(Bytes),
     Bell,
+    Clipboard(String),
     Wakeup,
 }
 
@@ -175,12 +176,20 @@ pub struct TerminalModel {
 
 impl TerminalModel {
     pub fn new(size: TerminalSize) -> Result<Self, TerminalError> {
-        Self::with_colors(size, TerminalColors::default())
+        Self::with_scrollback(size, TerminalColors::default(), SCROLLBACK_HISTORY_LINES)
     }
 
     pub fn with_colors(
         size: TerminalSize,
         default_colors: TerminalColors,
+    ) -> Result<Self, TerminalError> {
+        Self::with_scrollback(size, default_colors, SCROLLBACK_HISTORY_LINES)
+    }
+
+    pub fn with_scrollback(
+        size: TerminalSize,
+        default_colors: TerminalColors,
+        scrollback_lines: usize,
     ) -> Result<Self, TerminalError> {
         if !size.is_valid() {
             return Err(TerminalError::InvalidSize);
@@ -191,9 +200,10 @@ impl TerminalModel {
             pending: pending_events.clone(),
         };
         let config = Config {
-            scrolling_history: SCROLLBACK_HISTORY_LINES,
+            scrolling_history: scrollback_lines,
             kitty_keyboard: false,
-            osc52: Osc52::Disabled,
+            // Requests become actions; the desktop applies policy before writing.
+            osc52: Osc52::OnlyCopy,
             ..Default::default()
         };
 
@@ -230,10 +240,13 @@ impl TerminalModel {
                 }
                 Event::Bell => actions.push(TerminalAction::Bell),
                 Event::Wakeup => actions.push(TerminalAction::Wakeup),
-                Event::MouseCursorDirty
+                Event::ClipboardStore(ClipboardType::Clipboard, content) => {
+                    actions.push(TerminalAction::Clipboard(content));
+                }
+                Event::ClipboardStore(_, _)
+                | Event::MouseCursorDirty
                 | Event::Title(_)
                 | Event::ResetTitle
-                | Event::ClipboardStore(_, _)
                 | Event::ClipboardLoad(_, _)
                 | Event::CursorBlinkingChange
                 | Event::Exit
@@ -563,10 +576,11 @@ mod tests {
     }
 
     #[test]
-    fn bell_queries_and_unsafe_osc_events_are_bounded() {
+    fn bell_and_osc52_clipboard_requests_are_reported() {
         let mut model = TerminalModel::new(size(80, 24)).unwrap();
-        let actions =
-            model.process_output(b"\x07\x1b[6n\x1b]0;ignored title\x07\x1b]52;c;YQ==\x07");
+        let actions = model.process_output(
+            b"\x07\x1b[6n\x1b]0;ignored title\x07\x1b]52;c;YQ==\x07\x1b]52;c;Yg==\x07",
+        );
 
         assert!(actions.contains(&TerminalAction::Bell));
         assert!(
@@ -581,6 +595,8 @@ mod tests {
                 .count(),
             1,
         );
+        assert!(actions.contains(&TerminalAction::Clipboard("a".into())));
+        assert!(actions.contains(&TerminalAction::Clipboard("b".into())));
         assert_eq!(
             actions
                 .iter()
@@ -646,6 +662,22 @@ mod tests {
     }
 
     #[test]
+    fn standard_and_bright_ansi_output_use_configured_palette() {
+        let custom = RgbColor::new(0x12, 0x34, 0x56);
+        let mut colors = TerminalColors::default();
+        colors.ansi[1] = custom;
+        colors.ansi[9] = RgbColor::new(0x65, 0x43, 0x21);
+        let mut model = TerminalModel::with_colors(size(20, 2), colors).unwrap();
+        model.process_output(b"\x1b[31mstandard\x1b[91mbright");
+        let styles: Vec<_> = model
+            .renderable_content()
+            .display_iter
+            .filter(|indexed| matches!(indexed.cell.c, 's' | 'b'))
+            .map(|indexed| model.cell_render_style(indexed.cell).foreground)
+            .collect();
+        assert_eq!(styles, [custom, RgbColor::new(0x65, 0x43, 0x21)]);
+    }
+    #[test]
     fn wide_cjk_cells_survive_resize() {
         let mut model = TerminalModel::new(size(10, 2)).unwrap();
         model.process_output("A你B".as_bytes());
@@ -684,6 +716,15 @@ mod tests {
             model.cell_render_style(cell.cell).foreground,
             light.foreground
         );
+    }
+
+    #[test]
+    fn configured_scrollback_discards_oldest_history() {
+        let mut model =
+            TerminalModel::with_scrollback(size(10, 2), TerminalColors::default(), 2).unwrap();
+        model.process_output(b"one\r\ntwo\r\nthree\r\nfour\r\nfive");
+        assert_eq!(model.history_size(), 2);
+        assert!(visible_text(&model).contains("five"));
     }
 
     #[test]

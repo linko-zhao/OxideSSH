@@ -25,13 +25,16 @@ gpui = "=0.2.2"
 gpui-component = "=0.5.1"
 gpui-component-assets = "=0.5.1"
 keyring = { version = "=4.1.6", features = ["v1"] }
+secret-service = { version = "=5.1.0", default-features = false, features = ["rt-tokio-crypto-rust"] }
+security-framework = "=3.7.0"
+windows-sys = { version = "=0.61.2", features = ["Win32_Security_Credentials", "Win32_Foundation"] }
 oxide-ssh-app = { path = "crates/oxide-ssh-app" }
 oxide-ssh-core = { path = "crates/oxide-ssh-core" }
 oxide-ssh-terminal = { path = "crates/oxide-ssh-terminal" }
 pageant = "=0.2.1"
 parking_lot = "0.12"
 portable-pty = "=0.9.0"
-russh = { version = "=0.62.5", default-features = false, features = ["ring", "rsa"] }
+russh = { version = "=0.62.5", default-features = false, features = ["ring", "rsa", "flate2"] }
 rand = "0.10"
 secrecy = "0.10"
 serde = { version = "1.0", features = ["derive"] }

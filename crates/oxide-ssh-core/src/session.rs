@@ -33,7 +33,6 @@ use crate::{
 
 pub(crate) const INPUT_QUEUE_CAPACITY: usize = 128;
 pub(crate) const EVENT_QUEUE_CAPACITY: usize = 256;
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 const HOST_KEY_DECISION_TIMEOUT: Duration = Duration::from_secs(120);
 const DISCONNECT_GRACE: Duration = Duration::from_secs(2);
 
@@ -41,6 +40,9 @@ pub struct ConnectRequest {
     pub profile: ConnectionProfile,
     pub secret: Option<SecretString>,
     pub initial_size: TerminalSize,
+    pub ssh_compression: bool,
+    pub connect_timeout_seconds: u64,
+    pub term: String,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -123,6 +125,8 @@ pub enum SessionError {
     ShellRejected,
     #[error("failed to start local shell")]
     LocalShellFailed,
+    #[error("local working directory is unavailable")]
+    LocalWorkingDirectoryInvalid,
     #[error("session disconnected")]
     Disconnected,
 }
@@ -168,6 +172,9 @@ impl SshService {
             .validate()
             .map_err(|_| SessionError::InvalidProfile)?;
         if !request.initial_size.is_valid() {
+            return Err(SessionError::InvalidProfile);
+        }
+        if !(1..=300).contains(&request.connect_timeout_seconds) {
             return Err(SessionError::InvalidProfile);
         }
 
@@ -633,6 +640,25 @@ impl AgentConnector for SystemAgentConnector {
     }
 }
 
+fn enable_compression(config: &mut client::Config) {
+    config.preferred.compression = std::borrow::Cow::Owned(vec![
+        russh::compression::ZLIB_LEGACY,
+        russh::compression::ZLIB,
+        russh::compression::NONE,
+    ]);
+}
+fn ssh_client_config(profile: &ConnectionProfile) -> client::Config {
+    client::Config {
+        keepalive_interval: Some(Duration::from_secs(
+            profile.ssh_keepalive_interval_seconds.unwrap_or(30),
+        )),
+        keepalive_max: profile.ssh_keepalive_max_count.unwrap_or(3),
+        inactivity_timeout: None,
+        nodelay: true,
+        ..Default::default()
+    }
+}
+
 async fn run_session(
     request: ConnectRequest,
     input: Receiver<Bytes>,
@@ -644,13 +670,11 @@ async fn run_session(
 ) -> Result<Option<u32>, SessionError> {
     let endpoint = canonicalize_endpoint(&request.profile.endpoint)
         .map_err(|_| SessionError::InvalidProfile)?;
-    let config = Arc::new(client::Config {
-        keepalive_interval: Some(Duration::from_secs(30)),
-        keepalive_max: 3,
-        inactivity_timeout: None,
-        nodelay: true,
-        ..Default::default()
-    });
+    let mut config = ssh_client_config(&request.profile);
+    if request.ssh_compression {
+        enable_compression(&mut config);
+    }
+    let config = Arc::new(config);
     let handler = ClientHandler {
         endpoint: endpoint.clone(),
         events: events.clone(),
@@ -660,7 +684,8 @@ async fn run_session(
     let address = (endpoint.host.as_str(), endpoint.port);
     let mut connect = Box::pin(client::connect(config, address, handler));
     let mut awaiting = trust.subscribe_awaiting(&endpoint);
-    let mut deadline = Box::pin(tokio::time::sleep(CONNECT_TIMEOUT));
+    let connect_timeout = Duration::from_secs(request.connect_timeout_seconds);
+    let mut deadline = Box::pin(tokio::time::sleep(connect_timeout));
     let mut handle = loop {
         tokio::select! {
             result = &mut connect => break result?,
@@ -672,7 +697,7 @@ async fn run_session(
                 deadline = Box::pin(tokio::time::sleep(if *awaiting.borrow() {
                     HOST_KEY_DECISION_TIMEOUT
                 } else {
-                    CONNECT_TIMEOUT
+                    connect_timeout
                 }));
             }
         }
@@ -702,7 +727,7 @@ async fn run_session(
     channel
         .request_pty(
             true,
-            "xterm-256color",
+            crate::model::effective_ssh_term(&request.term),
             request.initial_size.columns,
             request.initial_size.rows,
             request.initial_size.pixel_width,
@@ -711,10 +736,28 @@ async fn run_session(
         )
         .await
         .map_err(|_| SessionError::PtyRejected)?;
-    channel
-        .request_shell(true)
-        .await
-        .map_err(|_| SessionError::ShellRejected)?;
+    for variable in &request.profile.environment_variables {
+        channel
+            .set_env(false, variable.name.clone(), variable.value.clone())
+            .await
+            .map_err(|_| SessionError::ConnectFailed)?;
+    }
+    if let Some(command) = request
+        .profile
+        .startup_command
+        .as_deref()
+        .filter(|command| !command.trim().is_empty())
+    {
+        channel
+            .exec(true, command.as_bytes())
+            .await
+            .map_err(|_| SessionError::ShellRejected)?;
+    } else {
+        channel
+            .request_shell(true)
+            .await
+            .map_err(|_| SessionError::ShellRejected)?;
+    }
     events
         .send(SessionEvent::StateChanged(SessionState::Connected))
         .await
@@ -755,6 +798,9 @@ async fn run_session(
                     }
                     Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => {
                         return Ok(exit_status);
+                    }
+                    Some(ChannelMsg::Failure) => {
+                        return Err(SessionError::ShellRejected);
                     }
                     Some(_) => {}
                 }
@@ -880,6 +926,21 @@ mod tests {
     use tempfile::{TempDir, tempdir};
 
     use super::*;
+
+    #[test]
+    fn ssh_client_configuration_uses_resolved_keepalive_values() {
+        let mut profile = connection_profile(22, AuthConfig::Agent);
+        let defaults = ssh_client_config(&profile);
+        assert_eq!(defaults.keepalive_interval, Some(Duration::from_secs(30)));
+        assert_eq!(defaults.keepalive_max, 3);
+
+        profile.ssh_keepalive_interval_seconds = Some(11);
+        profile.ssh_keepalive_max_count = Some(6);
+        let configured = ssh_client_config(&profile);
+        assert_eq!(configured.keepalive_interval, Some(Duration::from_secs(11)));
+        assert_eq!(configured.keepalive_max, 6);
+    }
+
     fn runtime() -> Arc<Runtime> {
         Arc::new(
             tokio::runtime::Builder::new_current_thread()
@@ -888,6 +949,21 @@ mod tests {
                 .build()
                 .unwrap(),
         )
+    }
+
+    #[test]
+    fn compression_setting_prioritizes_real_algorithms_and_keeps_none_fallback() {
+        let mut config = client::Config::default();
+        enable_compression(&mut config);
+        assert_eq!(
+            config
+                .preferred
+                .compression
+                .iter()
+                .map(|name| name.as_ref())
+                .collect::<Vec<_>>(),
+            ["zlib@openssh.com", "zlib", "none"]
+        );
     }
 
     fn endpoint() -> Endpoint {
@@ -1314,6 +1390,9 @@ mod tests {
     struct FixtureServer {
         accepted_keys: Arc<Vec<PublicKey>>,
         resize_events: Sender<TerminalSize>,
+        exec_requests: Sender<Bytes>,
+        term_events: Sender<String>,
+        env_requests: Arc<Mutex<Vec<(String, String)>>>,
     }
 
     impl server::Server for FixtureServer {
@@ -1361,10 +1440,23 @@ mod tests {
             Ok(())
         }
 
+        async fn env_request(
+            &mut self,
+            _channel: ChannelId,
+            variable_name: &str,
+            variable_value: &str,
+            _session: &mut Session,
+        ) -> Result<(), Self::Error> {
+            self.env_requests
+                .lock()
+                .push((variable_name.to_owned(), variable_value.to_owned()));
+            Ok(())
+        }
+
         async fn pty_request(
             &mut self,
             channel: ChannelId,
-            _term: &str,
+            term: &str,
             col_width: u32,
             row_height: u32,
             pix_width: u32,
@@ -1372,6 +1464,7 @@ mod tests {
             _modes: &[(Pty, u32)],
             session: &mut Session,
         ) -> Result<(), Self::Error> {
+            let _ = self.term_events.try_send(term.to_owned());
             let _ = self.resize_events.try_send(TerminalSize {
                 columns: col_width,
                 rows: row_height,
@@ -1387,6 +1480,20 @@ mod tests {
             channel: ChannelId,
             session: &mut Session,
         ) -> Result<(), Self::Error> {
+            session.channel_success(channel)?;
+            Ok(())
+        }
+
+        async fn exec_request(
+            &mut self,
+            channel: ChannelId,
+            data: &[u8],
+            session: &mut Session,
+        ) -> Result<(), Self::Error> {
+            self.exec_requests
+                .send(Bytes::copy_from_slice(data))
+                .await
+                .unwrap();
             session.channel_success(channel)?;
             Ok(())
         }
@@ -1427,6 +1534,9 @@ mod tests {
         #[cfg(unix)]
         agent_key: PrivateKey,
         resize_events: Receiver<TerminalSize>,
+        exec_requests: Receiver<Bytes>,
+        term_events: Receiver<String>,
+        env_requests: Arc<Mutex<Vec<(String, String)>>>,
         server_task: tokio::task::JoinHandle<()>,
     }
 
@@ -1467,13 +1577,19 @@ mod tests {
             ..Default::default()
         });
         let (resize_sender, resize_events) = async_channel::bounded(16);
+        let (exec_sender, exec_requests) = async_channel::bounded(16);
+        let (term_sender, term_events) = async_channel::bounded(16);
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
             .await
             .unwrap();
         let port = listener.local_addr().unwrap().port();
+        let env_requests = Arc::new(Mutex::new(Vec::new()));
         let fixture_server = FixtureServer {
             accepted_keys,
             resize_events: resize_sender,
+            exec_requests: exec_sender,
+            term_events: term_sender,
+            env_requests: env_requests.clone(),
         };
         let server_task = tokio::spawn(async move {
             let mut server = fixture_server;
@@ -1487,6 +1603,9 @@ mod tests {
             #[cfg(unix)]
             agent_key,
             resize_events,
+            exec_requests,
+            term_events,
+            env_requests,
             server_task,
         }
     }
@@ -1502,6 +1621,10 @@ mod tests {
             username: "oxide".into(),
             auth,
             tag_ids: Vec::new(),
+            startup_command: None,
+            ssh_keepalive_interval_seconds: None,
+            ssh_keepalive_max_count: None,
+            environment_variables: Vec::new(),
         }
     }
 
@@ -1570,6 +1693,113 @@ mod tests {
         (directory, Arc::new(SocketAgentConnector { socket }), task)
     }
 
+    #[test]
+    fn profile_startup_command_runs_in_its_ssh_channel() {
+        let runtime = runtime();
+        let (_fixture, _service) = runtime.block_on(async {
+            let fixture = start_ssh_fixture().await;
+            let directory = tempdir().unwrap();
+            let store = Arc::new(AppStore::open(directory.path().to_path_buf()).unwrap());
+            let service = SshService::new(store).unwrap();
+            let mut profile = connection_profile(
+                fixture.port,
+                AuthConfig::Password {
+                    credential_ref: None,
+                },
+            );
+            profile.startup_command = Some("tmux attach".into());
+            let mut session = service
+                .connect(ConnectRequest {
+                    profile,
+                    secret: Some(SecretString::from("oxide-test")),
+                    ssh_compression: false,
+                    connect_timeout_seconds: 15,
+                    term: crate::model::default_ssh_term(),
+                    initial_size: TerminalSize {
+                        columns: 80,
+                        rows: 24,
+                        pixel_width: 800,
+                        pixel_height: 480,
+                    },
+                })
+                .unwrap();
+            let events = session.take_events().unwrap();
+            wait_for_connected(&session, &events).await.unwrap();
+            assert_eq!(
+                fixture.exec_requests.recv().await.unwrap(),
+                Bytes::from_static(b"tmux attach")
+            );
+            session.disconnect();
+            (fixture, service)
+        });
+    }
+
+    #[test]
+    fn environment_requests_are_sent_with_names_and_values_intact() {
+        let runtime = Arc::new(
+            tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(2)
+                .enable_all()
+                .build()
+                .unwrap(),
+        );
+        let service = runtime.block_on(async {
+            let fixture = start_ssh_fixture().await;
+            let store_directory = tempdir().unwrap();
+            let store = Arc::new(AppStore::open(store_directory.path().to_path_buf()).unwrap());
+            let service = SshService::new(store).unwrap();
+            let mut profile = connection_profile(
+                fixture.port,
+                AuthConfig::Password {
+                    credential_ref: None,
+                },
+            );
+            profile.environment_variables = vec![
+                crate::model::EnvironmentVariable {
+                    name: "BUILD_ID".into(),
+                    value: "release=blue".into(),
+                },
+                crate::model::EnvironmentVariable {
+                    name: "UNICODE_VALUE".into(),
+                    value: "  雪  ".into(),
+                },
+            ];
+            let mut session = service
+                .connect(ConnectRequest {
+                    profile,
+                    secret: Some(SecretString::from("oxide-test")),
+                    ssh_compression: false,
+                    connect_timeout_seconds: 15,
+                    term: crate::model::default_ssh_term(),
+                    initial_size: TerminalSize {
+                        columns: 80,
+                        rows: 24,
+                        pixel_width: 800,
+                        pixel_height: 480,
+                    },
+                })
+                .unwrap();
+            let events = session.take_events().unwrap();
+            wait_for_connected(&session, &events).await.unwrap();
+            tokio::time::timeout(Duration::from_secs(3), async {
+                while fixture.env_requests.lock().len() != 2 {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+            assert_eq!(
+                fixture.env_requests.lock().as_slice(),
+                [
+                    ("BUILD_ID".into(), "release=blue".into()),
+                    ("UNICODE_VALUE".into(), "  雪  ".into()),
+                ]
+            );
+            session.disconnect();
+            service
+        });
+        drop(service);
+    }
     #[cfg(unix)]
     #[test]
     fn password_private_key_and_signer_authenticate() {
@@ -1602,6 +1832,9 @@ mod tests {
                         pixel_width: 800,
                         pixel_height: 480,
                     },
+                    ssh_compression: true,
+                    connect_timeout_seconds: 15,
+                    term: "xterm-256color".into(),
                 })
                 .unwrap();
             let password_events = password.take_events().unwrap();
@@ -1636,6 +1869,9 @@ mod tests {
                         pixel_width: 800,
                         pixel_height: 480,
                     },
+                    ssh_compression: false,
+                    connect_timeout_seconds: 15,
+                    term: "xterm-256color".into(),
                 })
                 .unwrap();
             let key_events = key_session.take_events().unwrap();
@@ -1656,6 +1892,9 @@ mod tests {
                         pixel_width: 800,
                         pixel_height: 480,
                     },
+                    ssh_compression: false,
+                    connect_timeout_seconds: 15,
+                    term: "xterm-256color".into(),
                 })
                 .unwrap();
             let agent_events = agent_session.take_events().unwrap();
@@ -1694,6 +1933,9 @@ mod tests {
                         pixel_width: 800,
                         pixel_height: 480,
                     },
+                    ssh_compression: false,
+                    connect_timeout_seconds: 15,
+                    term: "xterm-256color".into(),
                 })
                 .unwrap();
             let events = session.take_events().unwrap();
@@ -1739,6 +1981,9 @@ mod tests {
                         pixel_width: 800,
                         pixel_height: 480,
                     },
+                    ssh_compression: false,
+                    connect_timeout_seconds: 15,
+                    term: "xterm-256color".into(),
                 })
                 .unwrap();
             let missing_secret_events = missing_secret_session.take_events().unwrap();
@@ -1764,6 +2009,9 @@ mod tests {
                         pixel_width: 800,
                         pixel_height: 480,
                     },
+                    ssh_compression: false,
+                    connect_timeout_seconds: 15,
+                    term: "xterm-256color".into(),
                 })
                 .unwrap();
             let events = session.take_events().unwrap();
@@ -1807,10 +2055,14 @@ mod tests {
                         pixel_width: 800,
                         pixel_height: 480,
                     },
+                    ssh_compression: false,
+                    connect_timeout_seconds: 15,
+                    term: "tmux-256color".into(),
                 })
                 .unwrap();
             let events = session.take_events().unwrap();
             wait_for_connected(&session, &events).await.unwrap();
+            assert_eq!(fixture.term_events.recv().await.unwrap(), "tmux-256color");
             let expected = TerminalSize {
                 columns: 132,
                 rows: 43,
@@ -1833,6 +2085,56 @@ mod tests {
             service
         });
         drop(service);
+    }
+
+    #[test]
+    fn configured_connect_timeout_ends_an_unresponsive_ssh_handshake() {
+        let runtime = runtime();
+        let (port, server_task) = runtime.block_on(async {
+            let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+                .await
+                .unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let server_task = tokio::spawn(async move {
+                let (_stream, _) = listener.accept().await.unwrap();
+                std::future::pending::<()>().await;
+            });
+            (port, server_task)
+        });
+        let directory = tempdir().unwrap();
+        let store = Arc::new(AppStore::open(directory.path().to_path_buf()).unwrap());
+        let service = SshService::new(store).unwrap();
+        let mut session = service
+            .connect(ConnectRequest {
+                profile: connection_profile(port, AuthConfig::Agent),
+                secret: None,
+                ssh_compression: false,
+                term: crate::model::default_ssh_term(),
+                initial_size: TerminalSize {
+                    columns: 80,
+                    rows: 24,
+                    pixel_width: 800,
+                    pixel_height: 480,
+                },
+                connect_timeout_seconds: 1,
+            })
+            .unwrap();
+        let events = session.take_events().unwrap();
+        runtime.block_on(async {
+            loop {
+                match tokio::time::timeout(Duration::from_secs(5), events.recv())
+                    .await
+                    .unwrap()
+                    .unwrap()
+                {
+                    SessionEvent::Error(SessionError::ConnectTimeout) => break,
+                    SessionEvent::Error(error) => panic!("unexpected error: {error:?}"),
+                    _ => {}
+                }
+            }
+        });
+        session.disconnect();
+        server_task.abort();
     }
 
     #[test]
@@ -1859,6 +2161,9 @@ mod tests {
                         pixel_width: 800,
                         pixel_height: 480,
                     },
+                    ssh_compression: false,
+                    connect_timeout_seconds: 15,
+                    term: "xterm-256color".into(),
                 })
                 .unwrap();
             let events = session.take_events().unwrap();

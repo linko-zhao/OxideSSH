@@ -116,7 +116,7 @@ impl Element for TerminalElement {
             };
         };
         let model = tab.terminal();
-        let terminal_colors = view.theme.terminal_colors();
+        let terminal_colors = view.terminal_colors();
         let selection_color = terminal_selection_color(view.theme);
         let content = model.renderable_content();
         let selection = content.selection;
@@ -489,13 +489,23 @@ impl AppView {
         let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
             return;
         };
-        let result = self
-            .tabs
-            .active()
-            .and_then(|id| self.tabs.tab_mut(id))
-            .map(|tab| tab.paste(&text));
-        if let Some(Err(error)) = result {
-            self.status_message = Some(local_error_message_id(error));
+        let Some(tab_id) = self.tabs.active() else {
+            return;
+        };
+        let max = oxide_ssh_terminal::MAX_PASTE_BYTES;
+        if text.len() > max {
+            self.status_message = Some(MessageId::PasteTooLarge);
+        } else {
+            let threshold = self
+                .state
+                .as_ref()
+                .map(|state| state.settings().paste_confirm_threshold)
+                .unwrap_or(4 * 1024);
+            if text.len() > threshold {
+                self.confirm = Some(ConfirmAction::Paste { tab_id, text });
+            } else if let Some(Err(error)) = self.tabs.tab_mut(tab_id).map(|tab| tab.paste(&text)) {
+                self.status_message = Some(local_error_message_id(error));
+            }
         }
         cx.notify();
     }
@@ -650,6 +660,7 @@ impl AppView {
         if let Some(tab) = self.tabs.active().and_then(|id| self.tabs.tab_mut(id)) {
             tab.terminal_mut().start_selection(row, column, side);
             self.terminal_selecting = true;
+            self.terminal_selection_dragged = false;
             cx.notify();
         }
     }
@@ -667,6 +678,7 @@ impl AppView {
             return;
         };
         if let Some(tab) = self.tabs.active().and_then(|id| self.tabs.tab_mut(id)) {
+            self.terminal_selection_dragged = true;
             tab.terminal_mut().update_selection(row, column, side);
             cx.notify();
         }
@@ -676,9 +688,27 @@ impl AppView {
         &mut self,
         _: &MouseUpEvent,
         _: &mut Window,
-        _: &mut Context<Self>,
+        cx: &mut Context<Self>,
     ) {
+        if self.terminal_selecting
+            && self.terminal_selection_dragged
+            && self
+                .state
+                .as_ref()
+                .is_some_and(|state| state.settings().copy_on_select)
+        {
+            if let Some(text) = self
+                .tabs
+                .active()
+                .and_then(|id| self.tabs.tab(id))
+                .and_then(|tab| tab.terminal().selected_text())
+                .filter(|text| !text.is_empty())
+            {
+                cx.write_to_clipboard(ClipboardItem::new_string(text));
+            }
+        }
         self.terminal_selecting = false;
+        self.terminal_selection_dragged = false;
     }
 
     pub(super) fn terminal_scroll(

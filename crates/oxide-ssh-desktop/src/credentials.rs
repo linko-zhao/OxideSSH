@@ -19,12 +19,17 @@ impl SystemCredentialStore {
     pub fn new() -> Self {
         Self
     }
-
     fn entry(reference: &CredentialRef) -> Result<Entry, CredentialError> {
         if reference.as_str().is_empty() {
             return Err(CredentialError::InvalidReference);
         }
         Entry::new(APPLICATION_IDENTIFIER, reference.as_str()).map_err(map_keyring_error)
+    }
+
+    pub fn clear_all(
+        &self,
+    ) -> Result<Vec<Result<CredentialRef, (CredentialRef, CredentialError)>>, CredentialError> {
+        clear_application_credentials(self)
     }
 }
 
@@ -49,6 +54,138 @@ impl CredentialStore for SystemCredentialStore {
             Err(error) => Err(map_keyring_error(error)),
         }
     }
+
+    fn list_application_credentials(&self) -> Result<Vec<CredentialRef>, CredentialError> {
+        enumerate_application_credentials()
+    }
+}
+
+fn clear_application_credentials<C: CredentialStore>(
+    store: &C,
+) -> Result<Vec<Result<CredentialRef, (CredentialRef, CredentialError)>>, CredentialError> {
+    let references = store.list_application_credentials()?;
+    Ok(references
+        .into_iter()
+        .map(|reference| match store.delete(&reference) {
+            Ok(()) => Ok(reference),
+            Err(error) => Err((reference, error)),
+        })
+        .collect())
+}
+#[cfg(target_os = "macos")]
+fn enumerate_application_credentials() -> Result<Vec<CredentialRef>, CredentialError> {
+    use security_framework::item::{ItemClass, ItemSearchOptions, Limit};
+
+    let mut options = ItemSearchOptions::new();
+    options
+        .class(ItemClass::generic_password())
+        .service(APPLICATION_IDENTIFIER)
+        .limit(Limit::All)
+        .load_attributes(true);
+    options
+        .search()
+        .map_err(|_| CredentialError::Unavailable)?
+        .into_iter()
+        .map(|item| {
+            let attrs = item.simplify_dict().ok_or(CredentialError::Corrupt)?;
+            let account = attrs.get("acct").ok_or(CredentialError::Corrupt)?;
+            Ok(CredentialRef(account.clone()))
+        })
+        .collect()
+}
+
+#[cfg(target_os = "linux")]
+fn enumerate_application_credentials() -> Result<Vec<CredentialRef>, CredentialError> {
+    use secret_service::{EncryptionType, blocking::SecretService};
+    use std::collections::HashMap;
+
+    let service =
+        SecretService::connect(EncryptionType::Dh).map_err(|_| CredentialError::Unavailable)?;
+    let items = service
+        .search_items(HashMap::from([("service", APPLICATION_IDENTIFIER)]))
+        .map_err(|_| CredentialError::Unavailable)?;
+    items
+        .unlocked
+        .into_iter()
+        .chain(items.locked)
+        .map(|item| {
+            let attrs = item
+                .get_attributes()
+                .map_err(|_| CredentialError::AccessDenied)?;
+            let account = attrs.get("username").ok_or(CredentialError::Corrupt)?;
+            Ok(CredentialRef(account.clone()))
+        })
+        .collect()
+}
+
+#[cfg(target_os = "windows")]
+fn enumerate_application_credentials() -> Result<Vec<CredentialRef>, CredentialError> {
+    use std::{ffi::OsString, os::windows::ffi::OsStringExt, ptr};
+    use windows_sys::Win32::{
+        Foundation::GetLastError,
+        Security::Credentials::{CRED_TYPE_GENERIC, CREDENTIALW, CredEnumerateW, CredFree},
+    };
+
+    let mut count = 0;
+    let mut credentials: *mut *mut CREDENTIALW = ptr::null_mut();
+    let ok = unsafe { CredEnumerateW(ptr::null(), 0, &mut count, &mut credentials) };
+    if ok == 0 {
+        return if unsafe { GetLastError() } == 1168 {
+            Ok(Vec::new())
+        } else {
+            Err(CredentialError::Unavailable)
+        };
+    }
+    let result = (|| {
+        let suffix: Vec<u16> = format!(".{APPLICATION_IDENTIFIER}")
+            .encode_utf16()
+            .collect();
+        let mut references = Vec::new();
+        for index in 0..count as usize {
+            let credential = unsafe { *credentials.add(index) };
+            if unsafe { (*credential).Type } != CRED_TYPE_GENERIC {
+                continue;
+            }
+            let target = unsafe { (*credential).TargetName };
+            if target.is_null() {
+                continue;
+            }
+            let mut len = 0;
+            while unsafe { *target.add(len) } != 0 {
+                len += 1;
+            }
+            let target = unsafe { std::slice::from_raw_parts(target, len) };
+            let Some(reference) = target.strip_suffix(suffix.as_slice()) else {
+                continue;
+            };
+            let reference = OsString::from_wide(reference)
+                .to_string_lossy()
+                .into_owned();
+            if is_application_profile_reference(&reference) {
+                references.push(CredentialRef(reference));
+            }
+        }
+        Ok(references)
+    })();
+    unsafe { CredFree(credentials.cast()) };
+    result
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+fn enumerate_application_credentials() -> Result<Vec<CredentialRef>, CredentialError> {
+    Err(CredentialError::Unsupported)
+}
+#[cfg(any(target_os = "windows", test))]
+
+fn is_application_profile_reference(reference: &str) -> bool {
+    let mut parts = reference.split('/');
+    let (Some("profile"), Some(profile_id), Some(kind), None) =
+        (parts.next(), parts.next(), parts.next(), parts.next())
+    else {
+        return false;
+    };
+    uuid::Uuid::parse_str(profile_id).is_ok()
+        && matches!(kind, "password" | "private-key-passphrase")
 }
 
 fn map_keyring_error(error: KeyringError) -> CredentialError {
@@ -322,6 +459,7 @@ mod tests {
     struct FakeCredentialStore {
         values: Mutex<HashMap<String, String>>,
         fail_delete: AtomicBool,
+        fail_delete_reference: Mutex<Option<String>>,
     }
 
     impl FakeCredentialStore {
@@ -347,11 +485,23 @@ mod tests {
         }
 
         fn delete(&self, reference: &CredentialRef) -> Result<(), CredentialError> {
-            if self.fail_delete.load(Ordering::Relaxed) {
+            if self.fail_delete.load(Ordering::Relaxed)
+                || self.fail_delete_reference.lock().as_deref() == Some(reference.as_str())
+            {
                 return Err(CredentialError::AccessDenied);
             }
             self.values.lock().remove(reference.as_str());
             Ok(())
+        }
+
+        fn list_application_credentials(&self) -> Result<Vec<CredentialRef>, CredentialError> {
+            Ok(self
+                .values
+                .lock()
+                .keys()
+                .cloned()
+                .map(CredentialRef)
+                .collect())
         }
     }
 
@@ -368,6 +518,10 @@ mod tests {
                 credential_ref: None,
             },
             tag_ids: Vec::new(),
+            startup_command: None,
+            ssh_keepalive_interval_seconds: None,
+            ssh_keepalive_max_count: None,
+            environment_variables: Vec::new(),
         }
     }
 
@@ -608,5 +762,84 @@ mod tests {
             CredentialError::Corrupt
         );
         assert_eq!(format!("{:?}", CredentialError::Corrupt), "Corrupt");
+    }
+    #[test]
+    fn clear_all_includes_orphans_reports_partial_failures_and_preserves_profiles() {
+        let directory = tempdir().unwrap();
+        let app_store = AppStore::open(directory.path().to_path_buf()).unwrap();
+        let profile = password_profile();
+        let referenced = CredentialRef::password(profile.id);
+        let orphan = CredentialRef::password(ProfileId::new());
+        app_store
+            .update_config(|config| config.profiles.push(profile.clone()))
+            .unwrap();
+        let config_before = fs::read(app_store.config_path()).unwrap();
+
+        let store = FakeCredentialStore::default();
+        store.put(&referenced, &SecretString::from("one")).unwrap();
+        store.put(&orphan, &SecretString::from("two")).unwrap();
+        *store.fail_delete_reference.lock() = Some(orphan.as_str().to_owned());
+
+        let report = clear_application_credentials(&store).unwrap();
+        assert_eq!(report.len(), 2);
+        assert!(
+            report
+                .iter()
+                .any(|item| item.as_ref().is_ok_and(|r| r == &referenced))
+        );
+        assert!(report.iter().any(|item| {
+            item.as_ref()
+                .is_err_and(|(r, e)| r == &orphan && *e == CredentialError::AccessDenied)
+        }));
+        assert!(store.value(&referenced).is_none());
+        assert_eq!(store.value(&orphan).as_deref(), Some("two"));
+        assert_eq!(fs::read(app_store.config_path()).unwrap(), config_before);
+        assert_eq!(app_store.load_config().unwrap().profiles.len(), 1);
+    }
+    #[cfg(windows)]
+    struct CredentialCleanup(CredentialRef);
+
+    #[cfg(windows)]
+    impl Drop for CredentialCleanup {
+        fn drop(&mut self) {
+            let _ = SystemCredentialStore::new().delete(&self.0);
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "touches the current user's system credential store"]
+    fn windows_keyring_enumeration_and_deletion_smoke() {
+        let store = SystemCredentialStore::new();
+        let reference = CredentialRef::password(ProfileId::new());
+        let _cleanup = CredentialCleanup(reference.clone());
+        store
+            .put(&reference, &SecretString::from("ticket-20-smoke"))
+            .unwrap();
+
+        assert!(
+            store
+                .list_application_credentials()
+                .unwrap()
+                .contains(&reference)
+        );
+        store.delete(&reference).unwrap();
+        assert!(store.get(&reference).unwrap().is_none());
+    }
+    #[test]
+    fn windows_reference_filter_includes_orphan_profile_credentials_only() {
+        let id = ProfileId::new();
+        assert!(is_application_profile_reference(
+            CredentialRef::password(id).as_str()
+        ));
+        assert!(is_application_profile_reference(
+            CredentialRef::private_key_passphrase(id).as_str()
+        ));
+        assert!(!is_application_profile_reference(
+            "some-other-service.io.github.linko-zhao.OxideSSH"
+        ));
+        assert!(!is_application_profile_reference(
+            "profile/not-a-uuid/password"
+        ));
     }
 }
