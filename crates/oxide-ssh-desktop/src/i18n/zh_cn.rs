@@ -39,6 +39,13 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::ScrollbackLinesDescription => "新终端保留的最大历史行数（1–1,000,000）",
         MessageId::InvalidScrollbackLines => "请输入 1 到 1,000,000 之间的整数。",
         MessageId::Theme => "主题",
+        MessageId::CursorStyle => "光标样式",
+        MessageId::CursorStyleDescription => "默认光标形状",
+        MessageId::CursorBlock => "块状",
+        MessageId::CursorBeam => "竖线",
+        MessageId::CursorUnderline => "下划线",
+        MessageId::CursorBlink => "光标闪烁",
+        MessageId::CursorBlinkDescription => "默认启用光标闪烁",
         MessageId::AnsiPalette => "ANSI 调色板",
         MessageId::AnsiPaletteDescription => {
             "按索引顺序输入 16 个逗号分隔的 RGB 十六进制颜色（0–7 标准色，8–15 高亮色）。"

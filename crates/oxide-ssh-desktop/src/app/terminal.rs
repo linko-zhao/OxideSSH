@@ -111,13 +111,13 @@ impl Element for TerminalElement {
             columns: columns.max(2),
             rows: rows.max(1),
         };
-        let terminal_focused = window.is_window_active()
-            && self.view.read(cx).terminal_focus.is_focused(window);
+        let terminal_focused =
+            window.is_window_active() && self.view.read(cx).terminal_focus.is_focused(window);
         self.view.update(cx, |view, cx| {
-            view.terminal_cursor_focused = terminal_focused;
-            if !terminal_focused {
+            if view.terminal_cursor_focused != terminal_focused {
                 view.cursor_blink_phase = true;
             }
+            view.terminal_cursor_focused = terminal_focused;
             view.update_terminal_geometry(self.tab_id, geometry, cx)
         });
 
@@ -288,33 +288,33 @@ impl Element for TerminalElement {
                     .as_ref()
                     .is_some_and(|state| state.settings().cursor_blink)
             };
-            if !cursor_visible(blinking, view.terminal_focus.is_focused(window), view.cursor_blink_phase) {
+            if !cursor_visible(blinking, terminal_focused, view.cursor_blink_phase) {
                 Vec::new()
             } else {
-            match shape {
-                alacritty_terminal::vte::ansi::CursorShape::Hidden => Vec::new(),
-                alacritty_terminal::vte::ansi::CursorShape::Beam => vec![fill(
-                    Bounds::new(point(cursor_x, cursor_y), size(px(2.), cell_height)),
-                    cursor_color,
-                )],
-                alacritty_terminal::vte::ansi::CursorShape::Underline => vec![fill(
-                    Bounds::new(
-                        point(cursor_x, cursor_y + cell_height - px(2.)),
-                        size(cell_width, px(2.)),
-                    ),
-                    cursor_color,
-                )],
-                alacritty_terminal::vte::ansi::CursorShape::HollowBlock => {
-                    terminal_outline(cursor_x, cursor_y, cell_width, cell_height, cursor_color)
+                match shape {
+                    alacritty_terminal::vte::ansi::CursorShape::Hidden => Vec::new(),
+                    alacritty_terminal::vte::ansi::CursorShape::Beam => vec![fill(
+                        Bounds::new(point(cursor_x, cursor_y), size(px(2.), cell_height)),
+                        cursor_color,
+                    )],
+                    alacritty_terminal::vte::ansi::CursorShape::Underline => vec![fill(
+                        Bounds::new(
+                            point(cursor_x, cursor_y + cell_height - px(2.)),
+                            size(cell_width, px(2.)),
+                        ),
+                        cursor_color,
+                    )],
+                    alacritty_terminal::vte::ansi::CursorShape::HollowBlock => {
+                        terminal_outline(cursor_x, cursor_y, cell_width, cell_height, cursor_color)
+                    }
+                    alacritty_terminal::vte::ansi::CursorShape::Block => vec![fill(
+                        Bounds::new(point(cursor_x, cursor_y), size(cell_width, cell_height)),
+                        gpui::Rgba {
+                            a: 0.45,
+                            ..cursor_color
+                        },
+                    )],
                 }
-                alacritty_terminal::vte::ansi::CursorShape::Block => vec![fill(
-                    Bounds::new(point(cursor_x, cursor_y), size(cell_width, cell_height)),
-                    gpui::Rgba {
-                        a: 0.45,
-                        ..cursor_color
-                    },
-                )],
-            }
             }
         };
 

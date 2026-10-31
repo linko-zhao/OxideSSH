@@ -338,6 +338,19 @@ pub enum NewTabAction {
     LocalTerminal,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CursorStyleSetting {
+    #[default]
+    Block,
+    Beam,
+    Underline,
+}
+
+fn default_cursor_blink() -> bool {
+    true
+}
+
 fn default_ssh_connect_timeout_seconds() -> u64 {
     15
 }
@@ -409,6 +422,10 @@ pub struct AppSettings {
     pub ssh_term: String,
     #[serde(default = "default_scrollback_lines")]
     pub terminal_scrollback_lines: usize,
+    #[serde(default)]
+    pub cursor_style: CursorStyleSetting,
+    #[serde(default = "default_cursor_blink")]
+    pub cursor_blink: bool,
 }
 
 pub fn default_ssh_term() -> String {
@@ -506,6 +523,8 @@ impl Default for AppSettings {
             copy_on_select: false,
             ssh_term: default_ssh_term(),
             terminal_scrollback_lines: DEFAULT_SCROLLBACK_LINES,
+            cursor_style: CursorStyleSetting::default(),
+            cursor_blink: default_cursor_blink(),
         }
     }
 }
@@ -588,6 +607,8 @@ mod tests {
             serde_json::from_str(r#"{"locale":"system","theme":"system"}"#).unwrap();
         assert_eq!(settings.terminal_font_size, 13);
         assert_eq!(settings.terminal_line_height, 17);
+        assert_eq!(settings.cursor_style, CursorStyleSetting::Block);
+        assert!(settings.cursor_blink);
     }
 
     #[test]

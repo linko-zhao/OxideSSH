@@ -459,8 +459,7 @@ mod tests {
     #[test]
     fn configured_missing_shell_returns_error_without_fallback() {
         assert_eq!(
-            spawn_local_shell(size(), Some("/oxide-ssh-missing-shell"), &[], "")
-                .err(),
+            spawn_local_shell(size(), Some("/oxide-ssh-missing-shell"), &[], "").err(),
             Some(SessionError::LocalShellFailed)
         );
     }

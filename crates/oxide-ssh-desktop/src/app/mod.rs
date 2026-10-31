@@ -30,9 +30,9 @@ use gpui::WindowControlArea;
 use oxide_ssh_core::{
     credentials::{CredentialError, CredentialStore},
     model::{
-        AuthConfig, ConnectionProfile, Endpoint, LocaleSetting, NewTabAction, Osc52Clipboard,
-        ProfileId, SessionId, Tag, TagColor, TagId, TerminalBell, TerminalSize as CoreTerminalSize,
-        ThemeSetting,
+        AuthConfig, ConnectionProfile, CursorStyleSetting, Endpoint, LocaleSetting, NewTabAction,
+        Osc52Clipboard, ProfileId, SessionId, Tag, TagColor, TagId, TerminalBell,
+        TerminalSize as CoreTerminalSize, ThemeSetting,
     },
     session::{
         ConnectRequest, HostKeyDecision, SessionError, SessionEvent, SshService,
@@ -247,6 +247,7 @@ pub struct AppView {
     theme_select: SettingSelect,
     ssh_connect_timeout_select: SettingSelect,
     new_tab_action_select: SettingSelect,
+    cursor_style_select: SettingSelect,
     terminal_font_family: Entity<InputState>,
     terminal_font_size: Entity<InputState>,
     terminal_line_height: Entity<InputState>,
@@ -279,6 +280,8 @@ pub struct AppView {
     pending_local_sessions: Vec<TabId>,
     terminal_selecting: bool,
     terminal_selection_dragged: bool,
+    cursor_blink_phase: bool,
+    terminal_cursor_focused: bool,
     quitting: bool,
     _search_subscription: gpui::Subscription,
     _settings_subscriptions: Vec<gpui::Subscription>,
@@ -476,6 +479,21 @@ impl AppView {
                 NewTabAction::LocalTerminal => 1,
             },
         );
+        let cursor_style_select = new_setting_select(
+            window,
+            cx,
+            locale,
+            &[
+                MessageId::CursorBlock,
+                MessageId::CursorBeam,
+                MessageId::CursorUnderline,
+            ],
+            match preferences.cursor_style {
+                CursorStyleSetting::Block => 0,
+                CursorStyleSetting::Beam => 1,
+                CursorStyleSetting::Underline => 2,
+            },
+        );
         let ssh_keepalive_interval = new_input(
             window,
             cx,
@@ -613,6 +631,23 @@ impl AppView {
                             NewTabAction::AddConnection
                         };
                         this.set_new_tab_action(setting, cx);
+                    },
+                ),
+                cx.subscribe_in(
+                    &cursor_style_select,
+                    window,
+                    |this, _, event: &SelectEvent<SearchableVec<SharedString>>, _, cx| {
+                        let SelectEvent::Confirm(Some(value)) = event else {
+                            return;
+                        };
+                        let style = if value.as_str() == this.text(MessageId::CursorBeam) {
+                            CursorStyleSetting::Beam
+                        } else if value.as_str() == this.text(MessageId::CursorUnderline) {
+                            CursorStyleSetting::Underline
+                        } else {
+                            CursorStyleSetting::Block
+                        };
+                        this.set_cursor_style(style, cx);
                     },
                 ),
                 cx.subscribe_in(
@@ -766,6 +801,40 @@ impl AppView {
             ];
         let mut tabs = TabCollection::new();
         tabs.set_scrollback_lines(preferences.terminal_scrollback_lines);
+        cx.spawn(async move |weak, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_millis(500))
+                    .await;
+                if weak
+                    .update(cx, |this, cx| {
+                        let remote_blink = this
+                            .tabs
+                            .active()
+                            .and_then(|id| this.tabs.tab(id))
+                            .and_then(|tab| {
+                                let terminal = tab.terminal();
+                                (terminal.has_remote_cursor_style()
+                                    || terminal.has_remote_cursor_blink())
+                                .then(|| terminal.cursor_blinking())
+                            });
+                        let blinking = remote_blink.unwrap_or_else(|| {
+                            this.state
+                                .as_ref()
+                                .is_some_and(|state| state.settings().cursor_blink)
+                        });
+                        if this.terminal_cursor_focused && blinking {
+                            this.cursor_blink_phase = !this.cursor_blink_phase;
+                            cx.notify();
+                        }
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })
+        .detach();
         let bounds_subscription = cx.observe_window_bounds(window, |this, window, cx| {
             if let Some(state) = &mut this.state {
                 let bounds = window.bounds();
@@ -804,6 +873,7 @@ impl AppView {
             ssh_connect_timeout_select,
             scrollback_input,
             new_tab_action_select,
+            cursor_style_select,
             terminal_font_family,
             terminal_font_size,
             terminal_line_height,
@@ -834,6 +904,8 @@ impl AppView {
             pending_local_sessions: Vec::new(),
             terminal_selecting: false,
             terminal_selection_dragged: false,
+            cursor_blink_phase: true,
+            terminal_cursor_focused: false,
             quitting: false,
             _search_subscription: search_subscription,
             _settings_subscriptions: settings_subscriptions,
@@ -995,6 +1067,29 @@ impl AppView {
                 Some(IndexPath::new(match settings.new_tab_action {
                     NewTabAction::AddConnection => 0,
                     NewTabAction::LocalTerminal => 1,
+                })),
+                window,
+                cx,
+            );
+        });
+        self.cursor_style_select.update(cx, |select, cx| {
+            select.set_items(
+                setting_select_items(
+                    locale,
+                    &[
+                        MessageId::CursorBlock,
+                        MessageId::CursorBeam,
+                        MessageId::CursorUnderline,
+                    ],
+                ),
+                window,
+                cx,
+            );
+            select.set_selected_index(
+                Some(IndexPath::new(match settings.cursor_style {
+                    CursorStyleSetting::Block => 0,
+                    CursorStyleSetting::Beam => 1,
+                    CursorStyleSetting::Underline => 2,
                 })),
                 window,
                 cx,
@@ -1180,6 +1275,30 @@ impl AppView {
         }
         cx.notify();
     }
+
+    fn set_cursor_style(&mut self, setting: CursorStyleSetting, cx: &mut Context<Self>) {
+        if let Some(state) = &mut self.state {
+            let blink = state.settings().cursor_blink;
+            if state.set_cursor_preferences(setting, blink).is_err() {
+                self.status_message = Some(MessageId::StorageCorrupt);
+            }
+        }
+        cx.notify();
+    }
+
+    fn toggle_cursor_blink(&mut self, cx: &mut Context<Self>) {
+        if let Some(state) = &mut self.state {
+            let settings = state.settings();
+            let style = settings.cursor_style;
+            let blink = !settings.cursor_blink;
+            if state.set_cursor_preferences(style, blink).is_err() {
+                self.status_message = Some(MessageId::StorageCorrupt);
+            }
+        }
+        self.cursor_blink_phase = true;
+        cx.notify();
+    }
+
     fn set_ssh_connect_timeout_seconds(&mut self, seconds: u64, cx: &mut Context<Self>) {
         if self
             .state
