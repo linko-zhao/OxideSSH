@@ -4,8 +4,8 @@ use std::{collections::HashSet, path::PathBuf, sync::Arc};
 
 use oxide_ssh_core::{
     model::{
-        AppSettings, ConnectionProfile, CursorStyleSetting, Endpoint, LocaleSetting, NewTabAction,
-        Tag, TagColor, TagId, ThemeSetting,
+        AppSettings, ConnectionProfile, Endpoint, LocaleSetting, NewTabAction, Osc52Clipboard, Tag,
+        TagColor, TagId, TerminalBell, ThemeSetting,
     },
     storage::{AppConfig, AppStore, KnownHostEntry, KnownHosts, StorageError},
 };
@@ -244,16 +244,80 @@ impl AppState {
         config.settings.new_tab_action = action;
         self.store.save_config(&config)?;
         self.config = config;
+
         Ok(())
     }
-    pub fn set_cursor_preferences(
+    pub fn set_ssh_term(&mut self, term: &str) -> Result<(), StorageError> {
+        let term = term.trim();
+        if !oxide_ssh_core::model::valid_ssh_term(term) {
+            return Ok(());
+        }
+        let mut config = self.config.clone();
+        config.settings.ssh_term = term.to_owned();
+        self.store.save_config(&config)?;
+        self.config = config;
+        Ok(())
+    }
+
+    pub fn set_osc52_clipboard(&mut self, setting: Osc52Clipboard) -> Result<(), StorageError> {
+        let mut config = self.config.clone();
+        config.settings.osc52_clipboard = setting;
+        self.store.save_config(&config)?;
+        self.config = config;
+        Ok(())
+    }
+    pub fn set_terminal_settings(
         &mut self,
-        style: CursorStyleSetting,
-        blink: bool,
+        font_family: String,
+        font_size: u16,
+        line_height: u16,
     ) -> Result<(), StorageError> {
         let mut config = self.config.clone();
-        config.settings.cursor_style = style;
-        config.settings.cursor_blink = blink;
+        config.settings.terminal_font_family = font_family;
+        config.settings.terminal_font_size = font_size;
+        config.settings.terminal_line_height = line_height;
+        self.store.save_config(&config)?;
+        self.config = config;
+        Ok(())
+    }
+
+    pub fn set_ssh_compression(&mut self, enabled: bool) -> Result<(), StorageError> {
+        let mut config = self.config.clone();
+        config.settings.ssh_compression = enabled;
+        self.store.save_config(&config)?;
+        self.config = config;
+        Ok(())
+    }
+
+    pub fn set_ansi_palette(&mut self, palette: Option<[u32; 16]>) -> Result<(), StorageError> {
+        if palette.is_some_and(|colors| colors.iter().any(|color| color & 0xff00_0000 != 0)) {
+            return Ok(());
+        }
+        let mut config = self.config.clone();
+        config.settings.ansi_palette = palette;
+        self.store.save_config(&config)?;
+        self.config = config;
+        Ok(())
+    }
+    pub fn set_ssh_connect_timeout_seconds(&mut self, seconds: u64) -> Result<(), StorageError> {
+        if !(1..=300).contains(&seconds) {
+            return Ok(());
+        }
+        let mut config = self.config.clone();
+        config.settings.ssh_connect_timeout_seconds = seconds;
+        self.store.save_config(&config)?;
+        self.config = config;
+        Ok(())
+    }
+
+    pub fn set_ssh_keepalive(
+        &mut self,
+        interval_seconds: u64,
+        max_count: usize,
+    ) -> Result<(), StorageError> {
+        let mut config = self.config.clone();
+        config.settings.ssh_keepalive_interval_seconds = interval_seconds;
+        config.settings.ssh_keepalive_max_count = max_count;
         self.store.save_config(&config)?;
         self.config = config;
         Ok(())
@@ -270,25 +334,79 @@ impl AppState {
         Ok(())
     }
 
-
-    pub fn set_ssh_compression(&mut self, enabled: bool) -> Result<(), StorageError> {
+    pub fn set_terminal_bell(&mut self, bell: TerminalBell) -> Result<(), StorageError> {
         let mut config = self.config.clone();
-        config.settings.ssh_compression = enabled;
+        config.settings.terminal_bell = bell;
         self.store.save_config(&config)?;
         self.config = config;
         Ok(())
     }
-    pub fn set_ssh_connect_timeout_seconds(&mut self, seconds: u64) -> Result<(), StorageError> {
-        if !(1..=300).contains(&seconds) {
+
+    pub fn set_paste_confirm_threshold(&mut self, threshold: usize) -> Result<(), StorageError> {
+        let mut config = self.config.clone();
+        config.settings.paste_confirm_threshold = threshold;
+        self.store.save_config(&config)?;
+        self.config = config;
+        Ok(())
+    }
+
+    pub fn set_local_working_directory(&mut self, directory: String) -> Result<(), StorageError> {
+        let mut config = self.config.clone();
+        config.settings.local_working_directory = directory;
+        self.store.save_config(&config)?;
+        self.config = config;
+        Ok(())
+    }
+
+    pub fn set_copy_on_select(&mut self, enabled: bool) -> Result<(), StorageError> {
+        let mut config = self.config.clone();
+        config.settings.copy_on_select = enabled;
+        self.store.save_config(&config)?;
+        self.config = config;
+        Ok(())
+    }
+
+    pub fn set_remember_window_size(&mut self, remember: bool) -> Result<(), StorageError> {
+        let mut config = self.config.clone();
+        config.settings.remember_window_size = remember;
+        if !remember {
+            config.settings.window_size = None;
+        }
+        self.store.save_config(&config)?;
+        self.config = config;
+        Ok(())
+    }
+
+    pub fn set_window_size(&mut self, width: u32, height: u32) -> Result<(), StorageError> {
+        if !self.config.settings.remember_window_size {
             return Ok(());
         }
         let mut config = self.config.clone();
-        config.settings.ssh_connect_timeout_seconds = seconds;
+        config.settings.window_size = Some(oxide_ssh_core::model::WindowSize { width, height });
         self.store.save_config(&config)?;
         self.config = config;
         Ok(())
     }
 
+    pub fn set_terminal_scrollback_lines(&mut self, lines: usize) -> Result<(), StorageError> {
+        if !(1..=1_000_000).contains(&lines) {
+            return Err(StorageError::InvalidScrollbackLines);
+        }
+        let mut config = self.config.clone();
+        config.settings.terminal_scrollback_lines = lines;
+        self.store.save_config(&config)?;
+        self.config = config;
+        Ok(())
+    }
+
+    pub fn set_local_shell(&mut self, path: String, args: Vec<String>) -> Result<(), StorageError> {
+        let mut config = self.config.clone();
+        config.settings.local_shell_path = path;
+        config.settings.local_shell_args = args;
+        self.store.save_config(&config)?;
+        self.config = config;
+        Ok(())
+    }
 
     pub fn reload_config(&mut self) -> Result<(), StorageError> {
         self.config = self.store.load_config()?;
@@ -340,9 +458,86 @@ mod tests {
             username: username.into(),
             auth: AuthConfig::Agent,
             tag_ids: Vec::new(),
+            startup_command: None,
+            ssh_keepalive_interval_seconds: None,
+            ssh_keepalive_max_count: None,
+            environment_variables: Vec::new(),
         }
     }
 
+    #[test]
+    fn paste_confirmation_threshold_persists() {
+        let directory = tempdir().unwrap();
+        let AppLoadOutcome::Ready(mut state) = AppState::load(directory.path().to_path_buf())
+        else {
+            panic!("expected ready state");
+        };
+        state.set_paste_confirm_threshold(8192).unwrap();
+        let AppLoadOutcome::Ready(reloaded) = AppState::load(directory.path().to_path_buf()) else {
+            panic!("expected ready state");
+        };
+        assert_eq!(reloaded.settings().paste_confirm_threshold, 8192);
+    }
+    #[test]
+    fn local_working_directory_setting_persists() {
+        let directory = tempdir().unwrap();
+        let AppLoadOutcome::Ready(mut state) = AppState::load(directory.path().to_path_buf())
+        else {
+            panic!("expected ready state");
+        };
+        state
+            .set_local_working_directory("C:/work".to_owned())
+            .unwrap();
+        let stored = state.store().load_config().unwrap();
+        assert_eq!(stored.settings.local_working_directory, "C:/work");
+    }
+    #[test]
+    fn disabling_window_size_memory_clears_saved_dimensions() {
+        let directory = tempdir().unwrap();
+        let AppLoadOutcome::Ready(mut state) = AppState::load(directory.path().to_path_buf())
+        else {
+            panic!("fresh store should load");
+        };
+        state.set_remember_window_size(true).unwrap();
+        state.set_window_size(1280, 800).unwrap();
+        let AppLoadOutcome::Ready(state) = AppState::load(directory.path().to_path_buf()) else {
+            panic!("saved store should load");
+        };
+        assert!(state.settings().remember_window_size);
+        assert_eq!(
+            state.settings().window_size,
+            Some(oxide_ssh_core::model::WindowSize {
+                width: 1280,
+                height: 800
+            })
+        );
+        let mut state = state;
+        state.set_remember_window_size(false).unwrap();
+        let AppLoadOutcome::Ready(state) = AppState::load(directory.path().to_path_buf()) else {
+            panic!("saved store should load");
+        };
+        assert!(!state.settings().remember_window_size);
+        assert_eq!(state.settings().window_size, None);
+    }
+    #[test]
+    fn scrollback_setting_persists_and_rejects_out_of_range_values() {
+        let directory = tempdir().unwrap();
+        let AppLoadOutcome::Ready(mut state) = AppState::load(directory.path().to_path_buf())
+        else {
+            panic!("expected ready state");
+        };
+
+        assert!(state.set_terminal_scrollback_lines(0).is_err());
+        assert!(state.set_terminal_scrollback_lines(1_000_001).is_err());
+        assert_eq!(
+            state.settings().terminal_scrollback_lines,
+            oxide_ssh_core::model::DEFAULT_SCROLLBACK_LINES
+        );
+        state.set_terminal_scrollback_lines(250).unwrap();
+        state.reload_config().unwrap();
+        assert_eq!(state.settings().terminal_scrollback_lines, 250);
+        assert_eq!(state.store().load_config().unwrap().schema_version(), 1);
+    }
     #[test]
     fn untagged_filter_is_exclusive_with_tag_selection() {
         let directory = tempdir().unwrap();
@@ -403,6 +598,30 @@ mod tests {
         state.set_search_query("web");
         state.toggle_tag_filter(db.id);
         assert!(state.filtered_profiles().is_empty());
+    }
+
+    #[test]
+    fn ansi_palette_is_persisted_and_invalid_values_are_ignored() {
+        let directory = tempdir().unwrap();
+        let AppLoadOutcome::Ready(mut state) = AppState::load(directory.path().to_path_buf())
+        else {
+            panic!("expected ready state");
+        };
+        let mut palette = [0x112233; 16];
+        palette[1] = 0x123456;
+        state.set_ansi_palette(Some(palette)).unwrap();
+        assert_eq!(state.settings().ansi_palette, Some(palette));
+
+        let mut invalid = palette;
+        invalid[0] = 0x1_000000;
+        state.set_ansi_palette(Some(invalid)).unwrap();
+        assert_eq!(state.settings().ansi_palette, Some(palette));
+
+        let AppLoadOutcome::Ready(reloaded) = AppState::load(directory.path().to_path_buf()) else {
+            panic!("expected ready state");
+        };
+        assert_eq!(reloaded.settings().ansi_palette, Some(palette));
+        assert_eq!(reloaded.config.schema_version(), 1);
     }
 
     #[test]
@@ -529,16 +748,61 @@ mod tests {
 
         state.set_locale(LocaleSetting::ZhCn).unwrap();
         state.set_theme(ThemeSetting::Dark).unwrap();
+        state
+            .set_terminal_settings("Test Mono".into(), 15, 19)
+            .unwrap();
+        state
+            .set_local_shell(
+                "C:/Program Files/Git/bin/bash.exe".into(),
+                vec!["--login".into()],
+            )
+            .unwrap();
         state.set_ssh_compression(true).unwrap();
+        state.set_ssh_term("tmux-256color").unwrap();
+        state.set_ssh_term("").unwrap();
+        let stored = state.store().load_config().unwrap();
+        assert_eq!(stored.schema_version(), 1);
+        assert_eq!(stored.settings.locale, LocaleSetting::ZhCn);
+        assert_eq!(stored.settings.theme, ThemeSetting::Dark);
+        assert_eq!(stored.settings.terminal_font_family, "Test Mono");
+        assert_eq!(stored.settings.terminal_font_size, 15);
+        assert_eq!(stored.settings.terminal_line_height, 19);
+        assert!(stored.settings.ssh_compression);
+        state.set_confirm_before_close_with_sessions(false).unwrap();
+        let stored = state.store().load_config().unwrap();
+        assert_eq!(stored.schema_version(), 1);
+        assert_eq!(stored.settings.locale, LocaleSetting::ZhCn);
+        assert_eq!(stored.settings.theme, ThemeSetting::Dark);
+        assert_eq!(
+            stored.settings.local_shell_path,
+            "C:/Program Files/Git/bin/bash.exe"
+        );
+        assert_eq!(stored.settings.local_shell_args, vec!["--login".to_owned()]);
+        assert!(!stored.settings.confirm_before_close_with_sessions);
+        state.set_ssh_keepalive(45, 4).unwrap();
         let stored = state.store().load_config().unwrap();
         assert_eq!(stored.settings.locale, LocaleSetting::ZhCn);
         assert_eq!(stored.settings.theme, ThemeSetting::Dark);
+        assert_eq!(stored.settings.ssh_keepalive_interval_seconds, 45);
+        assert_eq!(stored.settings.ssh_keepalive_max_count, 4);
         assert!(stored.settings.ssh_compression);
         state.set_confirm_before_close_with_sessions(false).unwrap();
         let stored = state.store().load_config().unwrap();
         assert_eq!(stored.settings.locale, LocaleSetting::ZhCn);
         assert_eq!(stored.settings.theme, ThemeSetting::Dark);
         assert!(!stored.settings.confirm_before_close_with_sessions);
+        state.set_osc52_clipboard(Osc52Clipboard::Ask).unwrap();
+        let stored = state.store().load_config().unwrap();
+        assert_eq!(stored.settings.locale, LocaleSetting::ZhCn);
+        assert_eq!(stored.settings.theme, ThemeSetting::Dark);
+        assert_eq!(stored.settings.osc52_clipboard, Osc52Clipboard::Ask);
+        assert_eq!(stored.schema_version(), 1);
+        state.set_copy_on_select(true).unwrap();
+        let stored = state.store().load_config().unwrap();
+        assert_eq!(stored.settings.locale, LocaleSetting::ZhCn);
+        assert_eq!(stored.settings.theme, ThemeSetting::Dark);
+        assert!(stored.settings.copy_on_select);
+        assert_eq!(stored.settings.ssh_term, "tmux-256color");
         assert_eq!(state.resolved_locale(Some("en-US")), ResolvedLocale::ZhCn);
         assert_eq!(state.resolved_theme(false), ResolvedTheme::Dark);
     }

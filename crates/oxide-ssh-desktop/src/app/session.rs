@@ -58,7 +58,7 @@ impl AppView {
                 let _ = self.tabs.open(
                     profile,
                     self.estimated_terminal_size(window),
-                    self.theme.terminal_colors(),
+                    self.terminal_colors(),
                     needs_secret,
                 );
                 cx.notify();
@@ -69,7 +69,7 @@ impl AppView {
         let tab_id = self.tabs.open(
             profile,
             self.estimated_terminal_size(window),
-            self.theme.terminal_colors(),
+            self.terminal_colors(),
             needs_secret,
         );
         if !needs_secret {
@@ -179,19 +179,26 @@ impl AppView {
         self.start_session_inner(tab_id, secret, cx);
     }
 
-    fn start_session_inner(
+    pub(super) fn start_session_inner(
         &mut self,
         tab_id: TabId,
         secret: Option<SecretString>,
         cx: &mut Context<Self>,
     ) {
+        if self.terminal_geometry.is_none() {
+            self.pending_sessions.insert(tab_id, secret);
+            return;
+        }
         let Some(tab) = self.tabs.tab(tab_id) else {
             return;
         };
-        let Some(profile) = tab.profile().cloned() else {
+        let Some(mut profile) = tab.profile().cloned() else {
             return;
         };
         let terminal_size = tab.terminal().size();
+        if let Some(state) = &self.state {
+            profile.inherit_keepalive_defaults(state.settings());
+        }
         let request = ConnectRequest {
             profile,
             secret,
@@ -205,9 +212,15 @@ impl AppView {
                 .state
                 .as_ref()
                 .is_some_and(|state| state.settings().ssh_compression),
-            connect_timeout_seconds: self.state.as_ref().map_or(15, |state| {
-                state.settings().ssh_connect_timeout_seconds
-            }),
+            connect_timeout_seconds: self
+                .state
+                .as_ref()
+                .map_or(15, |state| state.settings().ssh_connect_timeout_seconds),
+            term: self
+                .state
+                .as_ref()
+                .map(|state| state.settings().ssh_term.clone())
+                .unwrap_or_else(oxide_ssh_core::model::default_ssh_term),
         };
         let result = self
             .ssh
@@ -237,25 +250,41 @@ impl AppView {
     /// Opens a local-shell tab and spawns the platform shell on a PTY.
     pub(super) fn connect_local(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.main_view = MainView::Sessions;
-        let tab_id = self.tabs.open_local(
-            self.estimated_terminal_size(window),
-            self.theme.terminal_colors(),
-        );
+        let tab_id = self
+            .tabs
+            .open_local(self.estimated_terminal_size(window), self.terminal_colors());
         self.start_local_session(tab_id, cx);
         cx.notify();
     }
 
-    fn start_local_session(&mut self, tab_id: TabId, cx: &mut Context<Self>) {
+    pub(super) fn start_local_session(&mut self, tab_id: TabId, cx: &mut Context<Self>) {
+        if self.terminal_geometry.is_none() {
+            if !self.pending_local_sessions.contains(&tab_id) {
+                self.pending_local_sessions.push(tab_id);
+            }
+            return;
+        }
         let Some(tab) = self.tabs.tab(tab_id) else {
             return;
         };
         let size = tab.terminal().size();
-        let result = oxide_ssh_core::local::spawn_local_shell(CoreTerminalSize {
-            columns: size.columns as u32,
-            rows: size.rows as u32,
-            pixel_width: size.pixel_width,
-            pixel_height: size.pixel_height,
-        });
+        let settings = self
+            .state
+            .as_ref()
+            .map(|state| state.settings().clone())
+            .unwrap_or_default();
+        let working_directory = settings.local_working_directory;
+        let result = oxide_ssh_core::local::spawn_local_shell(
+            CoreTerminalSize {
+                columns: size.columns as u32,
+                rows: size.rows as u32,
+                pixel_width: size.pixel_width,
+                pixel_height: size.pixel_height,
+            },
+            (!settings.local_shell_path.is_empty()).then_some(settings.local_shell_path.as_str()),
+            &settings.local_shell_args,
+            &working_directory,
+        );
         match result {
             Ok(session) => {
                 let session_id = session.id();
@@ -348,6 +377,7 @@ impl AppView {
         }
         let mut notifications = Vec::new();
         let mut repainted = false;
+        let mut belled = false;
         for event in events {
             let batch_notifications = self.tabs.apply_event(tab_id, event);
             for notification in batch_notifications {
@@ -355,12 +385,32 @@ impl AppView {
                     TabNotification::LocalError(error) => {
                         notifications.push(error);
                     }
-                    TabNotification::Bell => self.bell = true,
+                    TabNotification::Bell => {
+                        belled = true;
+                        self.handle_terminal_bell(cx);
+                    }
                     TabNotification::Repaint => repainted = true,
+                    TabNotification::Clipboard(text) => match self
+                        .state
+                        .as_ref()
+                        .map(|state| state.settings().osc52_clipboard)
+                    {
+                        Some(Osc52Clipboard::On) => {
+                            cx.write_to_clipboard(ClipboardItem::new_string(text));
+                        }
+                        Some(Osc52Clipboard::Ask) if self.confirm.is_none() => {
+                            self.confirm = Some(ConfirmAction::Osc52Clipboard {
+                                tab_id,
+                                session_id,
+                                text,
+                            });
+                        }
+                        _ => {}
+                    },
                 }
             }
         }
-        if repainted {
+        if repainted && !belled {
             self.bell = false;
         }
         for error in notifications {
@@ -398,16 +448,37 @@ impl AppView {
         }
         let notifications = self.tabs.apply_event(tab_id, event);
         let mut repainted = false;
+        let mut belled = false;
         for notification in notifications {
             match notification {
                 TabNotification::LocalError(error) => {
                     self.status_message = Some(local_error_message_id(error));
                 }
-                TabNotification::Bell => self.bell = true,
+                TabNotification::Bell => {
+                    belled = true;
+                    self.handle_terminal_bell(cx);
+                }
                 TabNotification::Repaint => repainted = true,
+                TabNotification::Clipboard(text) => match self
+                    .state
+                    .as_ref()
+                    .map(|state| state.settings().osc52_clipboard)
+                {
+                    Some(Osc52Clipboard::On) => {
+                        cx.write_to_clipboard(ClipboardItem::new_string(text));
+                    }
+                    Some(Osc52Clipboard::Ask) if self.confirm.is_none() => {
+                        self.confirm = Some(ConfirmAction::Osc52Clipboard {
+                            tab_id,
+                            session_id,
+                            text,
+                        });
+                    }
+                    _ => {}
+                },
             }
         }
-        if repainted {
+        if repainted && !belled {
             self.bell = false;
         }
         if matches!(
@@ -446,7 +517,7 @@ impl AppView {
             .prepare_reconnect(
                 tab_id,
                 self.estimated_terminal_size(window),
-                self.theme.terminal_colors(),
+                self.terminal_colors(),
             )
             .is_err()
         {
@@ -589,6 +660,65 @@ impl AppView {
                 }
             }
             ConfirmAction::DeleteTag(id) => self.delete_tag(id, cx),
+            ConfirmAction::ClearAllCredentials => {
+                if let Some(credentials) = self.credentials.clone() {
+                    self.credential_clear_failures.clear();
+                    cx.spawn(async move |weak, cx| {
+                        let result = credentials.clear_all();
+                        weak.update(cx, |this, cx| {
+                            match result {
+                                Ok(items) => {
+                                    this.credential_clear_failures = items
+                                        .into_iter()
+                                        .filter_map(|item| {
+                                            item.err().map(|(reference, error)| {
+                                                format!("{} ({error})", reference.as_str())
+                                            })
+                                        })
+                                        .collect();
+                                    this.status_message =
+                                        Some(if this.credential_clear_failures.is_empty() {
+                                            MessageId::ClearCredentialsSuccess
+                                        } else {
+                                            MessageId::ClearCredentialsFailures
+                                        });
+                                }
+                                Err(error) => {
+                                    this.credential_clear_failures.clear();
+                                    this.status_message = Some(credential_error_message_id(error));
+                                }
+                            }
+                            cx.notify();
+                        })
+                        .ok();
+                    })
+                    .detach();
+                } else {
+                    self.status_message = Some(MessageId::CredentialUnavailable);
+                }
+            }
+            ConfirmAction::Paste { tab_id, text } => {
+                if let Some(Err(error)) = self.tabs.tab_mut(tab_id).map(|tab| tab.paste(&text)) {
+                    self.status_message = Some(local_error_message_id(error));
+                }
+            }
+            ConfirmAction::Osc52Clipboard {
+                tab_id,
+                session_id,
+                text,
+            } => {
+                let still_authorized =
+                    self.state.as_ref().is_some_and(|state| {
+                        state.settings().osc52_clipboard == Osc52Clipboard::Ask
+                    }) && self.tabs.tab(tab_id).is_some_and(|tab| {
+                        tab.session_id() == Some(session_id)
+                            && !tab.is_local()
+                            && matches!(tab.state(), TabState::Connected)
+                    });
+                if still_authorized {
+                    cx.write_to_clipboard(ClipboardItem::new_string(text));
+                }
+            }
             ConfirmAction::Quit => {
                 self.quitting = true;
                 self.tabs.disconnect_all();

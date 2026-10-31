@@ -7,7 +7,17 @@ pub(super) enum ConfirmAction {
     DeleteProfile(ProfileId),
     DeleteHost(Endpoint),
     DeleteTag(TagId),
+    ClearAllCredentials,
+    Paste {
+        tab_id: TabId,
+        text: String,
+    },
     /// Window close: disconnects, then removes only this window.
+    Osc52Clipboard {
+        tab_id: TabId,
+        session_id: SessionId,
+        text: String,
+    },
     Quit,
     /// Cmd+Q / dock Quit: disconnects, then terminates the process.
     QuitApp,
@@ -109,6 +119,10 @@ struct EditorDialogSnapshot {
     port: Entity<InputState>,
     username: Entity<InputState>,
     private_key_path: Entity<InputState>,
+    startup_command: Entity<InputState>,
+    ssh_keepalive_interval: Entity<InputState>,
+    ssh_keepalive_max_count: Entity<InputState>,
+    environment_variables: Entity<InputState>,
     secret: Entity<InputState>,
     /// Registry tags available for assignment, name-sorted.
     tags: Vec<Tag>,
@@ -343,6 +357,8 @@ impl DialogPresenter {
         let host_label = text(MessageId::Host);
         let port_label = text(MessageId::Port);
         let username_label = text(MessageId::Username);
+        let keepalive_interval_label = text(MessageId::ProfileKeepaliveInterval);
+        let keepalive_max_count_label = text(MessageId::ProfileKeepaliveMaxCount);
         let auth_label = text(MessageId::AuthMethod);
         let private_key_label = text(MessageId::PrivateKey);
         let password_label = text(MessageId::Password);
@@ -508,6 +524,16 @@ impl DialogPresenter {
                     .child(Input::new(&editor.username)),
             )
             .child(
+                field()
+                    .label(keepalive_interval_label)
+                    .child(Input::new(&editor.ssh_keepalive_interval)),
+            )
+            .child(
+                field()
+                    .label(keepalive_max_count_label)
+                    .child(Input::new(&editor.ssh_keepalive_max_count)),
+            )
+            .child(
                 field().label(auth_label).child(
                     RadioGroup::horizontal("editor-auth")
                         .selected_index(Some(auth_index))
@@ -530,6 +556,13 @@ impl DialogPresenter {
                     ),
                 )
             })
+            .child(
+                field().label(text(MessageId::EnvironmentVariables)).child(
+                    div()
+                        .h(px(110.))
+                        .child(Input::new(&editor.environment_variables)),
+                ),
+            )
             .when(secret_is_visible, |form| {
                 form.child(
                     field()
@@ -537,6 +570,11 @@ impl DialogPresenter {
                         .child(Input::new(&editor.secret)),
                 )
             })
+            .child(
+                field()
+                    .label(text(MessageId::StartupCommand))
+                    .child(Input::new(&editor.startup_command)),
+            )
             .when(secret_is_visible, |form| {
                 form.child(
                     field().label(remember_label).child(
@@ -605,6 +643,14 @@ impl DialogPresenter {
             ConfirmAction::DeleteProfile(_) => (MessageId::ConfirmDeleteProfile, MessageId::Delete),
             ConfirmAction::DeleteHost(_) => (MessageId::ConfirmDeleteHost, MessageId::Delete),
             ConfirmAction::DeleteTag(_) => (MessageId::ConfirmDeleteTag, MessageId::Delete),
+            ConfirmAction::ClearAllCredentials => (
+                MessageId::ConfirmClearAllCredentials,
+                MessageId::ClearAllCredentials,
+            ),
+            ConfirmAction::Paste { .. } => (MessageId::ConfirmLargePaste, MessageId::Paste),
+            ConfirmAction::Osc52Clipboard { .. } => {
+                (MessageId::Osc52ClipboardConfirm, MessageId::Allow)
+            }
             ConfirmAction::Quit | ConfirmAction::QuitApp => {
                 (MessageId::ConfirmQuit, MessageId::Quit)
             }
@@ -618,7 +664,7 @@ impl DialogPresenter {
                 .update(cx, |app, cx| app.perform_confirm(window, cx))
                 .ok();
         });
-        let mut body = h_flex().gap(px(8.)).child(self.text(message));
+        let mut body = div().w_full().text_sm().child(self.text(message));
         if matches!(action, ConfirmAction::DeleteTag(_)) {
             body = body.child(
                 div()
@@ -1134,6 +1180,10 @@ impl AppView {
                     port: editor.port.clone(),
                     username: editor.username.clone(),
                     private_key_path: editor.private_key_path.clone(),
+                    startup_command: editor.startup_command.clone(),
+                    ssh_keepalive_interval: editor.ssh_keepalive_interval.clone(),
+                    ssh_keepalive_max_count: editor.ssh_keepalive_max_count.clone(),
+                    environment_variables: editor.environment_variables.clone(),
                     secret: editor.secret.clone(),
                     tags,
                     tag_ids: editor.form.tag_ids.clone(),
