@@ -122,6 +122,8 @@ struct EditorDialogSnapshot {
     startup_command: Entity<InputState>,
     ssh_keepalive_interval: Entity<InputState>,
     ssh_keepalive_max_count: Entity<InputState>,
+    terminal_font_size: Entity<InputState>,
+    ansi_palette: Entity<InputState>,
     environment_variables: Entity<InputState>,
     secret: Entity<InputState>,
     /// Registry tags available for assignment, name-sorted.
@@ -357,6 +359,7 @@ impl DialogPresenter {
         let host_label = text(MessageId::Host);
         let port_label = text(MessageId::Port);
         let username_label = text(MessageId::Username);
+        let terminal_font_size_label = text(MessageId::TerminalFontSize);
         let keepalive_interval_label = text(MessageId::ProfileKeepaliveInterval);
         let keepalive_max_count_label = text(MessageId::ProfileKeepaliveMaxCount);
         let auth_label = text(MessageId::AuthMethod);
@@ -532,6 +535,16 @@ impl DialogPresenter {
                 field()
                     .label(keepalive_max_count_label)
                     .child(Input::new(&editor.ssh_keepalive_max_count)),
+            )
+            .child(
+                field()
+                    .label(terminal_font_size_label)
+                    .child(Input::new(&editor.terminal_font_size)),
+            )
+            .child(
+                field()
+                    .label(text(MessageId::AnsiPalette))
+                    .child(Input::new(&editor.ansi_palette)),
             )
             .child(
                 field().label(auth_label).child(
@@ -1183,6 +1196,8 @@ impl AppView {
                     startup_command: editor.startup_command.clone(),
                     ssh_keepalive_interval: editor.ssh_keepalive_interval.clone(),
                     ssh_keepalive_max_count: editor.ssh_keepalive_max_count.clone(),
+                    terminal_font_size: editor.terminal_font_size.clone(),
+                    ansi_palette: editor.ansi_palette.clone(),
                     environment_variables: editor.environment_variables.clone(),
                     secret: editor.secret.clone(),
                     tags,

@@ -29,6 +29,8 @@ pub(super) struct ConnectionEditor {
     pub(super) startup_command: Entity<InputState>,
     pub(super) ssh_keepalive_interval: Entity<InputState>,
     pub(super) ssh_keepalive_max_count: Entity<InputState>,
+    pub(super) terminal_font_size: Entity<InputState>,
+    pub(super) ansi_palette: Entity<InputState>,
     pub(super) environment_variables: Entity<InputState>,
     pub(super) secret: Entity<InputState>,
     /// Inline "create tag" field; the name is read when the button is clicked.
@@ -77,6 +79,19 @@ impl ConnectionEditor {
             false,
             locale,
         );
+        let terminal_font_size = new_input(
+            window,
+            cx,
+            MessageId::TerminalFontSize,
+            &form.terminal_font_size,
+            false,
+            locale,
+        );
+        let ansi_palette = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder(Catalog::text(locale, MessageId::AnsiPaletteDescription))
+                .default_value(form.ansi_palette.clone())
+        });
         let environment_variables = cx.new(|cx| {
             InputState::new(window, cx)
                 .placeholder(Catalog::text(locale, MessageId::EnvironmentVariables))
@@ -108,6 +123,8 @@ impl ConnectionEditor {
             private_key_path,
             startup_command,
             ssh_keepalive_interval,
+            terminal_font_size,
+            ansi_palette,
             ssh_keepalive_max_count,
             environment_variables,
             secret,
@@ -130,6 +147,8 @@ impl ConnectionEditor {
             self.ssh_keepalive_interval.read(cx).value().to_string();
         self.form.ssh_keepalive_max_count =
             self.ssh_keepalive_max_count.read(cx).value().to_string();
+        self.form.terminal_font_size = self.terminal_font_size.read(cx).value().to_string();
+        self.form.ansi_palette = self.ansi_palette.read(cx).value().to_string();
         self.form.save_request()
     }
 }

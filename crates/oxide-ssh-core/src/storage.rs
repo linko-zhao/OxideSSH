@@ -612,6 +612,8 @@ mod tests {
             startup_command: None,
             ssh_keepalive_interval_seconds: None,
             ssh_keepalive_max_count: None,
+            terminal_font_size: None,
+            ansi_palette: None,
             environment_variables: Vec::new(),
         }
     }

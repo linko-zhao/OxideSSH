@@ -745,7 +745,17 @@ impl TabCollection {
 
     pub fn set_terminal_colors(&mut self, colors: TerminalColors) {
         for tab in &mut self.tabs {
-            tab.terminal.set_default_colors(colors);
+            let mut effective = colors;
+            if let Some(palette) = tab.profile().and_then(|profile| profile.ansi_palette) {
+                effective.ansi = palette.map(|color| {
+                    oxide_ssh_terminal::RgbColor::new(
+                        ((color >> 16) & 0xff) as u8,
+                        ((color >> 8) & 0xff) as u8,
+                        (color & 0xff) as u8,
+                    )
+                });
+            }
+            tab.terminal.set_default_colors(effective);
         }
     }
 
@@ -783,6 +793,8 @@ mod tests {
             startup_command: None,
             ssh_keepalive_interval_seconds: None,
             ssh_keepalive_max_count: None,
+            terminal_font_size: None,
+            ansi_palette: None,
             environment_variables: Vec::new(),
         }
     }
@@ -1192,6 +1204,43 @@ mod tests {
 
         tabs.apply_event(tab_id, SessionEvent::StateChanged(SessionState::Connected));
         assert_eq!(tabs.tab(tab_id).unwrap().state(), &TabState::Connected);
+    }
+
+    #[test]
+    fn profile_palette_remains_isolated_when_global_theme_changes() {
+        let mut tabs = TabCollection::new();
+        let mut custom_profile = profile();
+        custom_profile.ansi_palette = Some([0x123456; 16]);
+        let custom = tabs.open(custom_profile, size(), TerminalColors::default(), false);
+        let inherited = tabs.open(profile(), size(), TerminalColors::default(), false);
+        let mut global = TerminalColors::default();
+        global.ansi[1] = oxide_ssh_terminal::RgbColor::new(0xaa, 0xbb, 0xcc);
+
+        tabs.set_terminal_colors(global);
+        for tab_id in [custom, inherited] {
+            tabs.tab_mut(tab_id)
+                .unwrap()
+                .terminal_mut()
+                .process_output(b"\x1b[31mX");
+        }
+        let foreground = |id| {
+            let tab = tabs.tab(id).unwrap();
+            let cell = tab
+                .terminal()
+                .renderable_content()
+                .display_iter
+                .find(|indexed| indexed.cell.c == 'X')
+                .unwrap();
+            tab.terminal().cell_render_style(cell.cell).foreground
+        };
+        assert_eq!(
+            foreground(custom),
+            oxide_ssh_terminal::RgbColor::new(0x12, 0x34, 0x56)
+        );
+        assert_eq!(
+            foreground(inherited),
+            oxide_ssh_terminal::RgbColor::new(0xaa, 0xbb, 0xcc)
+        );
     }
 
     #[test]
