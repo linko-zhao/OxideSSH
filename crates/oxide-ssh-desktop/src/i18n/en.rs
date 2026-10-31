@@ -29,7 +29,19 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::Security => "Security",
         MessageId::Language => "Language",
         MessageId::LanguageDescription => "Application interface language",
+        MessageId::ScrollbackLines => "Scrollback lines",
+        MessageId::ScrollbackLinesDescription => {
+            "Maximum number of lines retained for new terminals (1–1,000,000)"
+        }
+        MessageId::InvalidScrollbackLines => "Enter a whole number from 1 to 1,000,000.",
         MessageId::Theme => "Theme",
+        MessageId::AnsiPalette => "ANSI palette",
+        MessageId::AnsiPaletteDescription => {
+            "Enter 16 comma-separated RGB hex colors in index order (0–7 standard, 8–15 bright)."
+        }
+        MessageId::Reset => "Reset",
+        MessageId::CopyOnSelect => "Copy on select",
+        MessageId::CopyOnSelectDescription => "Copy selected terminal text to the clipboard",
         MessageId::ThemeDescription => "Application color scheme",
         MessageId::TrustedHosts => "Trusted hosts",
         MessageId::ConfirmBeforeCloseWithSessions => "Confirm before closing sessions",
@@ -37,6 +49,10 @@ pub(super) fn text(id: MessageId) -> &'static str {
             "Ask before closing tabs, windows, or the app while sessions are active"
         }
         MessageId::NewTabButtonDescription => "Action performed by the new tab button",
+        MessageId::RememberWindowSize => "Remember window size",
+        MessageId::RememberWindowSizeDescription => {
+            "Restore the last window size on the next launch"
+        }
         MessageId::SshCompression => "SSH compression",
         MessageId::SshCompressionDescription => {
             "Compress SSH traffic when available; peers without compression fall back to uncompressed traffic."
@@ -56,6 +72,21 @@ pub(super) fn text(id: MessageId) -> &'static str {
             "Profile keepalive maximum missed replies (blank inherits)"
         }
         MessageId::InvalidKeepalive => "Keepalive values must be positive whole numbers.",
+        MessageId::LocalWorkingDirectory => "Local terminal working directory",
+        MessageId::LocalWorkingDirectoryDescription => "Leave empty to use your home directory.",
+        MessageId::Osc52Clipboard => "Remote clipboard",
+        MessageId::Osc52ClipboardDescription => {
+            "Allow remote applications to write to the system clipboard"
+        }
+        MessageId::Osc52ClipboardOff => "Off",
+        MessageId::Osc52ClipboardAsk => "Ask",
+        MessageId::Osc52ClipboardOn => "On",
+        MessageId::Osc52ClipboardConfirm => {
+            "Allow this remote application to replace the system clipboard?"
+        }
+        MessageId::Allow => "Allow",
+        MessageId::SshTerm => "SSH TERM",
+        MessageId::SshTermDescription => "Terminal type requested for remote PTYs",
         MessageId::System => "System",
         MessageId::Light => "Light",
         MessageId::English => "English",
@@ -67,6 +98,13 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::Quit => "Quit",
         MessageId::NewWindow => "New Window",
         MessageId::StorageCorrupt => "A configuration file is corrupt and was not overwritten.",
+        MessageId::ExportKnownHosts => "Export trusted hosts",
+        MessageId::ImportKnownHosts => "Import trusted hosts",
+        MessageId::ImportKeepExisting => "Import (keep existing keys)",
+        MessageId::ImportReplaceExisting => "Import (replace conflicting keys)",
+        MessageId::KnownHostsTransferFailed => "Could not import or export trusted hosts.",
+        MessageId::KnownHostsExported => "Trusted hosts exported.",
+        MessageId::KnownHostsImported => "Trusted hosts imported.",
         MessageId::NoTrustedHosts => "No trusted hosts",
         MessageId::Close => "Close",
         MessageId::Copy => "Copy",
@@ -76,7 +114,11 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::Username => "Username",
         MessageId::AuthMethod => "Authentication method",
         MessageId::Password => "Password",
+        MessageId::EnvironmentVariables => {
+            "Remote environment requests (JSON array; server may reject)"
+        }
         MessageId::PrivateKey => "Private key",
+        MessageId::StartupCommand => "Startup command",
         MessageId::Agent => "SSH agent",
         MessageId::Remember => "Remember in system credential store",
         MessageId::Passphrase => "Passphrase",
@@ -88,6 +130,12 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::Connect => "Connect",
         MessageId::ConnectOnce => "Connect once",
         MessageId::Edit => "Edit",
+        MessageId::ClearAllCredentials => "Clear all saved credentials",
+        MessageId::ConfirmClearAllCredentials => {
+            "This permanently deletes every OxideSSH credential from the system credential store, including credentials not referenced by a profile. This cannot be undone."
+        }
+        MessageId::ClearCredentialsSuccess => "All OxideSSH credentials were deleted.",
+        MessageId::ClearCredentialsFailures => "Some OxideSSH credentials could not be deleted:",
         MessageId::ConfirmDeleteProfile => "Delete this connection?",
         MessageId::ConfirmDeleteHost => "Delete this trusted host?",
         MessageId::ConfirmDeleteTag => "Delete this tag?",
@@ -109,8 +157,22 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::AcceptAndStore => "Accept and store",
         MessageId::OpenTrustedHosts => "Open trusted hosts",
         MessageId::Bell => "Bell",
+        MessageId::TerminalBell => "Terminal bell",
+        MessageId::BellVisual => "Visual",
+        MessageId::BellSound => "Sound",
+        MessageId::BellOff => "Off",
+        MessageId::BellDescription => "Choose how remote terminal bell events are reported.",
         MessageId::InputQueueFull => "Input is paused because the session queue is full.",
         MessageId::PasteTooLarge => "Paste exceeds the 1 MiB limit.",
+        MessageId::ConfirmLargePaste => "This paste is large. Send all of it to the terminal?",
+        MessageId::Paste => "Send",
+        MessageId::PasteConfirmThreshold => "Large paste confirmation",
+        MessageId::PasteConfirmThresholdDescription => {
+            "Ask before sending pasted text longer than this size."
+        }
+        MessageId::PasteThreshold1KiB => "1 KiB",
+        MessageId::PasteThreshold4KiB => "4 KiB",
+        MessageId::PasteThreshold16KiB => "16 KiB",
         MessageId::CredentialUnavailable => "The system credential store is unavailable.",
         MessageId::CredentialAccessDenied => "Access to the system credential store was denied.",
         MessageId::CredentialInvalidReference => "The credential reference is invalid.",
@@ -137,5 +199,8 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::TerminalFontFamily => "Terminal font",
         MessageId::TerminalFontSize => "Terminal font size",
         MessageId::TerminalLineHeight => "Terminal line height",
+        MessageId::LocalWorkingDirectoryInvalid => {
+            "The configured local working directory does not exist or cannot be accessed."
+        }
     }
 }

@@ -79,8 +79,8 @@ impl AppView {
                     .border_color(cx.theme().border)
                     .p(px(CARD_PADDING))
                     .when(!disconnected, |element| element.key_context("Terminal"))
-                    .bg(rgb(self.theme.terminal_colors().background.to_hex()))
-                    .text_color(rgb(self.theme.terminal_colors().foreground.to_hex()))
+                    .bg(rgb(self.terminal_colors().background.to_hex()))
+                    .text_color(rgb(self.terminal_colors().foreground.to_hex()))
                     .font_family(
                         self.state
                             .as_ref()

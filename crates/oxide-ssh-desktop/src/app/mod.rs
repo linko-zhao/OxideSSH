@@ -30,8 +30,9 @@ use gpui::WindowControlArea;
 use oxide_ssh_core::{
     credentials::{CredentialError, CredentialStore},
     model::{
-        AuthConfig, ConnectionProfile, Endpoint, LocaleSetting, NewTabAction, ProfileId, SessionId,
-        Tag, TagColor, TagId, TerminalSize as CoreTerminalSize, ThemeSetting,
+        AuthConfig, ConnectionProfile, Endpoint, LocaleSetting, NewTabAction, Osc52Clipboard,
+        ProfileId, SessionId, Tag, TagColor, TagId, TerminalBell, TerminalSize as CoreTerminalSize,
+        ThemeSetting,
     },
     session::{
         ConnectRequest, HostKeyDecision, SessionError, SessionEvent, SshService,
@@ -83,7 +84,7 @@ mod session;
 
 mod terminal;
 
-use self::terminal::TerminalGeometry;
+use self::terminal::{RgbColorExt, TerminalGeometry};
 
 mod views;
 
@@ -247,9 +248,16 @@ pub struct AppView {
     terminal_font_family: Entity<InputState>,
     terminal_font_size: Entity<InputState>,
     terminal_line_height: Entity<InputState>,
+    ansi_palette_input: Entity<InputState>,
     ssh_keepalive_interval: Entity<InputState>,
     ssh_keepalive_max_count: Entity<InputState>,
+    terminal_bell_select: SettingSelect,
+    paste_threshold_select: SettingSelect,
+    local_working_directory: Entity<InputState>,
+    osc52_clipboard_select: SettingSelect,
+    ssh_term_input: Entity<InputState>,
     locale: ResolvedLocale,
+    scrollback_input: Entity<InputState>,
     system_locale: Option<String>,
     theme: ResolvedTheme,
     focus_handle: FocusHandle,
@@ -259,16 +267,30 @@ pub struct AppView {
     compose_tab: Option<TabId>,
     scroll_accumulator: f32,
     bell: bool,
+    last_bell_sound: Option<std::time::Instant>,
+    bell_generation: u64,
     status_message: Option<MessageId>,
+    credential_clear_failures: Vec<String>,
     status_rendered: Option<MessageId>,
     terminal_geometry: Option<TerminalGeometry>,
+    pending_sessions: HashMap<TabId, Option<SecretString>>,
+    pending_local_sessions: Vec<TabId>,
     terminal_selecting: bool,
+    terminal_selection_dragged: bool,
     quitting: bool,
     _search_subscription: gpui::Subscription,
     _settings_subscriptions: Vec<gpui::Subscription>,
+    _bounds_subscription: gpui::Subscription,
 }
 
 impl AppView {
+    pub(super) fn terminal_colors(&self) -> oxide_ssh_terminal::TerminalColors {
+        self.theme.terminal_colors(
+            self.state
+                .as_ref()
+                .and_then(|state| state.settings().ansi_palette),
+        )
+    }
     pub fn new(
         root: PathBuf,
         outcome: AppLoadOutcome,
@@ -356,6 +378,33 @@ impl AppView {
             false,
             locale,
         );
+        let ansi_palette_input = cx.new(|cx| {
+            InputState::new(window, cx).default_value(
+                theme
+                    .terminal_colors(preferences.ansi_palette)
+                    .ansi
+                    .iter()
+                    .map(|color| format!("{:06x}", color.to_hex()))
+                    .collect::<Vec<_>>()
+                    .join(","),
+            )
+        });
+        let ssh_term_input = new_input(
+            window,
+            cx,
+            MessageId::SshTerm,
+            &preferences.ssh_term,
+            false,
+            locale,
+        );
+        let scrollback_input = new_input(
+            window,
+            cx,
+            MessageId::ScrollbackLines,
+            &preferences.terminal_scrollback_lines.to_string(),
+            false,
+            locale,
+        );
         let locale_select = new_setting_select(
             window,
             cx,
@@ -425,128 +474,289 @@ impl AppView {
             false,
             locale,
         );
-        let settings_subscriptions = vec![
-            cx.subscribe_in(
-                &locale_select,
-                window,
-                |this, _, event: &SelectEvent<SearchableVec<SharedString>>, window, cx| {
-                    let SelectEvent::Confirm(Some(value)) = event else {
-                        return;
-                    };
-                    let setting = if value.as_str() == this.text(MessageId::English) {
-                        LocaleSetting::EnUs
-                    } else if value.as_str() == this.text(MessageId::SimplifiedChinese) {
-                        LocaleSetting::ZhCn
-                    } else {
-                        LocaleSetting::System
-                    };
-                    this.set_locale(setting, window, cx);
-                },
-            ),
-            cx.subscribe_in(
-                &theme_select,
-                window,
-                |this, _, event: &SelectEvent<SearchableVec<SharedString>>, window, cx| {
-                    let SelectEvent::Confirm(Some(value)) = event else {
-                        return;
-                    };
-                    let setting = if value.as_str() == this.text(MessageId::Light) {
-                        ThemeSetting::Light
-                    } else if value.as_str() == this.text(MessageId::Dark) {
-                        ThemeSetting::Dark
-                    } else {
-                        ThemeSetting::System
-                    };
-                    this.set_theme(setting, window, cx);
-                },
-            ),
-            cx.subscribe_in(
-                &ssh_connect_timeout_select,
-                window,
-                |this, _, event: &SelectEvent<SearchableVec<SharedString>>, _, cx| {
-                    let SelectEvent::Confirm(Some(value)) = event else {
-                        return;
-                    };
-                    let seconds = if value.as_str() == this.text(MessageId::Timeout30Seconds) {
-                        30
-                    } else if value.as_str() == this.text(MessageId::Timeout60Seconds) {
-                        60
-                    } else if value.as_str() == this.text(MessageId::Timeout120Seconds) {
-                        120
-                    } else {
-                        15
-                    };
-                    this.set_ssh_connect_timeout_seconds(seconds, cx);
-                },
-            ),
-            cx.subscribe_in(
-                &new_tab_action_select,
-                window,
-                |this, _, event: &SelectEvent<SearchableVec<SharedString>>, _, cx| {
-                    let SelectEvent::Confirm(Some(value)) = event else {
-                        return;
-                    };
-                    let setting = if value.as_str() == this.text(MessageId::LocalTerminal) {
-                        NewTabAction::LocalTerminal
-                    } else {
-                        NewTabAction::AddConnection
-                    };
-                    this.set_new_tab_action(setting, cx);
-                },
-            ),
-            cx.subscribe_in(
-                &terminal_font_family,
-                window,
-                |this, _, event: &gpui_component::input::InputEvent, _, cx| {
-                    if matches!(event, gpui_component::input::InputEvent::Blur) {
-                        this.commit_terminal_settings(cx);
-                    }
-                },
-            ),
-            cx.subscribe_in(
-                &terminal_font_size,
-                window,
-                |this, _, event: &gpui_component::input::InputEvent, _, cx| {
-                    if matches!(event, gpui_component::input::InputEvent::Blur) {
-                        this.commit_terminal_settings(cx);
-                    }
-                },
-            ),
-            cx.subscribe_in(
-                &terminal_line_height,
-                window,
-                |this, _, event: &gpui_component::input::InputEvent, _, cx| {
-                    if matches!(event, gpui_component::input::InputEvent::Blur) {
-                        this.commit_terminal_settings(cx);
-                    }
-                },
-            ),
-            cx.subscribe_in(
-                &ssh_keepalive_interval,
-                window,
-                |this, _, event: &InputEvent, _, cx| {
-                    if matches!(event, InputEvent::Blur) {
-                        this.commit_ssh_keepalive(cx);
-                    }
-                },
-            ),
-            cx.subscribe_in(
-                &ssh_keepalive_max_count,
-                window,
-                |this, _, event: &InputEvent, _, cx| {
-                    if matches!(event, InputEvent::Blur) {
-                        this.commit_ssh_keepalive(cx);
-                    }
-                },
-            ),
-        ];
+        let terminal_bell_select = new_setting_select(
+            window,
+            cx,
+            locale,
+            &[
+                MessageId::BellVisual,
+                MessageId::BellSound,
+                MessageId::BellOff,
+            ],
+            match preferences.terminal_bell {
+                TerminalBell::Visual => 0,
+                TerminalBell::Sound => 1,
+                TerminalBell::Off => 2,
+            },
+        );
+        let paste_threshold_select = new_setting_select(
+            window,
+            cx,
+            locale,
+            &[
+                MessageId::PasteThreshold1KiB,
+                MessageId::PasteThreshold4KiB,
+                MessageId::PasteThreshold16KiB,
+            ],
+            match preferences.paste_confirm_threshold {
+                0..=1024 => 0,
+                1025..=4096 => 1,
+                _ => 2,
+            },
+        );
+        let local_working_directory = new_input(
+            window,
+            cx,
+            MessageId::LocalWorkingDirectory,
+            &preferences.local_working_directory,
+            false,
+            locale,
+        );
+        let osc52_clipboard_select = new_setting_select(
+            window,
+            cx,
+            locale,
+            &[
+                MessageId::Osc52ClipboardOff,
+                MessageId::Osc52ClipboardAsk,
+                MessageId::Osc52ClipboardOn,
+            ],
+            match preferences.osc52_clipboard {
+                Osc52Clipboard::Off => 0,
+                Osc52Clipboard::Ask => 1,
+                Osc52Clipboard::On => 2,
+            },
+        );
+        let settings_subscriptions =
+            vec![
+                cx.subscribe_in(
+                    &locale_select,
+                    window,
+                    |this, _, event: &SelectEvent<SearchableVec<SharedString>>, window, cx| {
+                        let SelectEvent::Confirm(Some(value)) = event else {
+                            return;
+                        };
+                        let setting = if value.as_str() == this.text(MessageId::English) {
+                            LocaleSetting::EnUs
+                        } else if value.as_str() == this.text(MessageId::SimplifiedChinese) {
+                            LocaleSetting::ZhCn
+                        } else {
+                            LocaleSetting::System
+                        };
+                        this.set_locale(setting, window, cx);
+                    },
+                ),
+                cx.subscribe_in(
+                    &theme_select,
+                    window,
+                    |this, _, event: &SelectEvent<SearchableVec<SharedString>>, window, cx| {
+                        let SelectEvent::Confirm(Some(value)) = event else {
+                            return;
+                        };
+                        let setting = if value.as_str() == this.text(MessageId::Light) {
+                            ThemeSetting::Light
+                        } else if value.as_str() == this.text(MessageId::Dark) {
+                            ThemeSetting::Dark
+                        } else {
+                            ThemeSetting::System
+                        };
+                        this.set_theme(setting, window, cx);
+                    },
+                ),
+                cx.subscribe_in(
+                    &ssh_connect_timeout_select,
+                    window,
+                    |this, _, event: &SelectEvent<SearchableVec<SharedString>>, _, cx| {
+                        let SelectEvent::Confirm(Some(value)) = event else {
+                            return;
+                        };
+                        let seconds = if value.as_str() == this.text(MessageId::Timeout30Seconds) {
+                            30
+                        } else if value.as_str() == this.text(MessageId::Timeout60Seconds) {
+                            60
+                        } else if value.as_str() == this.text(MessageId::Timeout120Seconds) {
+                            120
+                        } else {
+                            15
+                        };
+                        this.set_ssh_connect_timeout_seconds(seconds, cx);
+                    },
+                ),
+                cx.subscribe_in(
+                    &new_tab_action_select,
+                    window,
+                    |this, _, event: &SelectEvent<SearchableVec<SharedString>>, _, cx| {
+                        let SelectEvent::Confirm(Some(value)) = event else {
+                            return;
+                        };
+                        let setting = if value.as_str() == this.text(MessageId::LocalTerminal) {
+                            NewTabAction::LocalTerminal
+                        } else {
+                            NewTabAction::AddConnection
+                        };
+                        this.set_new_tab_action(setting, cx);
+                    },
+                ),
+                cx.subscribe_in(
+                    &terminal_font_family,
+                    window,
+                    |this, _, event: &gpui_component::input::InputEvent, _, cx| {
+                        if matches!(event, gpui_component::input::InputEvent::Blur) {
+                            this.commit_terminal_settings(cx);
+                        }
+                    },
+                ),
+                cx.subscribe_in(
+                    &terminal_font_size,
+                    window,
+                    |this, _, event: &gpui_component::input::InputEvent, _, cx| {
+                        if matches!(event, gpui_component::input::InputEvent::Blur) {
+                            this.commit_terminal_settings(cx);
+                        }
+                    },
+                ),
+                cx.subscribe_in(
+                    &terminal_line_height,
+                    window,
+                    |this, _, event: &gpui_component::input::InputEvent, _, cx| {
+                        if matches!(event, gpui_component::input::InputEvent::Blur) {
+                            this.commit_terminal_settings(cx);
+                        }
+                    },
+                ),
+                cx.subscribe_in(
+                    &ssh_keepalive_interval,
+                    window,
+                    |this, _, event: &InputEvent, _, cx| {
+                        if matches!(event, InputEvent::Blur) {
+                            this.commit_ssh_keepalive(cx);
+                        }
+                    },
+                ),
+                cx.subscribe_in(
+                    &ssh_keepalive_max_count,
+                    window,
+                    |this, _, event: &InputEvent, _, cx| {
+                        if matches!(event, InputEvent::Blur) {
+                            this.commit_ssh_keepalive(cx);
+                        }
+                    },
+                ),
+                cx.subscribe_in(
+                    &terminal_bell_select,
+                    window,
+                    |this, _, event: &SelectEvent<SearchableVec<SharedString>>, _, cx| {
+                        let SelectEvent::Confirm(Some(value)) = event else {
+                            return;
+                        };
+                        let setting = if value.as_str() == this.text(MessageId::BellSound) {
+                            TerminalBell::Sound
+                        } else if value.as_str() == this.text(MessageId::BellOff) {
+                            TerminalBell::Off
+                        } else {
+                            TerminalBell::Visual
+                        };
+                        this.set_terminal_bell(setting, cx);
+                    },
+                ),
+                cx.subscribe_in(
+                    &paste_threshold_select,
+                    window,
+                    |this, _, event: &SelectEvent<SearchableVec<SharedString>>, _, cx| {
+                        let SelectEvent::Confirm(Some(value)) = event else {
+                            return;
+                        };
+                        let threshold =
+                            if value.as_str() == this.text(MessageId::PasteThreshold1KiB) {
+                                1024
+                            } else if value.as_str() == this.text(MessageId::PasteThreshold16KiB) {
+                                16 * 1024
+                            } else {
+                                4 * 1024
+                            };
+                        if this.state.as_mut().is_some_and(|state| {
+                            state.set_paste_confirm_threshold(threshold).is_err()
+                        }) {
+                            this.status_message = Some(MessageId::StorageCorrupt);
+                        }
+                        cx.notify();
+                    },
+                ),
+                cx.subscribe_in(
+                    &local_working_directory,
+                    window,
+                    |this, _, event: &InputEvent, _window, cx| {
+                        if matches!(event, InputEvent::Blur) {
+                            let value = this.local_working_directory.read(cx).value().to_string();
+                            if this.state.as_mut().is_some_and(|state| {
+                                state.set_local_working_directory(value).is_err()
+                            }) {
+                                this.status_message = Some(MessageId::StorageCorrupt);
+                            }
+                            cx.notify();
+                        }
+                    },
+                ),
+                cx.subscribe_in(
+                    &osc52_clipboard_select,
+                    window,
+                    |this, _, event: &SelectEvent<SearchableVec<SharedString>>, _, cx| {
+                        let SelectEvent::Confirm(Some(value)) = event else {
+                            return;
+                        };
+                        let setting = if value.as_str() == this.text(MessageId::Osc52ClipboardAsk) {
+                            Osc52Clipboard::Ask
+                        } else if value.as_str() == this.text(MessageId::Osc52ClipboardOn) {
+                            Osc52Clipboard::On
+                        } else {
+                            Osc52Clipboard::Off
+                        };
+                        this.set_osc52_clipboard(setting, cx);
+                    },
+                ),
+                cx.subscribe_in(
+                    &ssh_term_input,
+                    window,
+                    |this, input, event: &InputEvent, _, cx| {
+                        if matches!(event, InputEvent::Blur) {
+                            let term = input.read(cx).value().to_string();
+                            this.set_ssh_term(&term, cx);
+                        }
+                    },
+                ),
+                cx.subscribe_in(
+                    &scrollback_input,
+                    window,
+                    |this, input, event: &InputEvent, _, cx| {
+                        if matches!(event, InputEvent::Blur) {
+                            if let Ok(lines) = input.read(cx).value().parse::<usize>() {
+                                this.set_terminal_scrollback_lines(lines, cx);
+                            }
+                        }
+                    },
+                ),
+            ];
+        let mut tabs = TabCollection::new();
+        tabs.set_scrollback_lines(preferences.terminal_scrollback_lines);
+        let bounds_subscription = cx.observe_window_bounds(window, |this, window, cx| {
+            if let Some(state) = &mut this.state {
+                let bounds = window.bounds();
+                if state
+                    .set_window_size(u32::from(bounds.size.width), u32::from(bounds.size.height))
+                    .is_err()
+                {
+                    this.status_message = Some(MessageId::StorageCorrupt);
+                    cx.notify();
+                }
+            }
+        });
         Self {
             root,
             state,
             credentials,
             coordinator,
             ssh,
-            tabs: TabCollection::new(),
+            tabs,
             search,
             secret,
             connect_secrets: HashMap::new(),
@@ -559,14 +769,20 @@ impl AppView {
             main_view: MainView::Workspace,
             settings_category: SettingsCategory::General,
             locale_select,
+            paste_threshold_select,
             theme_select,
             ssh_connect_timeout_select,
+            scrollback_input,
             new_tab_action_select,
             terminal_font_family,
             terminal_font_size,
             terminal_line_height,
+            ansi_palette_input,
             ssh_keepalive_interval,
             ssh_keepalive_max_count,
+            terminal_bell_select,
+            local_working_directory,
+            osc52_clipboard_select,
             locale,
             system_locale,
             theme,
@@ -577,13 +793,21 @@ impl AppView {
             compose_tab: None,
             scroll_accumulator: 0.0,
             bell: false,
+            last_bell_sound: None,
+            bell_generation: 0,
+            ssh_term_input,
             status_message,
+            credential_clear_failures: Vec::new(),
             status_rendered: None,
             terminal_geometry: None,
+            pending_sessions: HashMap::new(),
+            pending_local_sessions: Vec::new(),
             terminal_selecting: false,
+            terminal_selection_dragged: false,
             quitting: false,
             _search_subscription: search_subscription,
             _settings_subscriptions: settings_subscriptions,
+            _bounds_subscription: bounds_subscription,
         }
     }
 
@@ -618,11 +842,15 @@ impl AppView {
     }
 
     fn refresh_preferences(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(state) = &self.state else {
+        let Some((locale, theme, has_custom_ansi_palette)) = self.state.as_ref().map(|state| {
+            (
+                state.resolved_locale(self.system_locale.as_deref()),
+                state.resolved_theme(is_dark(window.appearance())),
+                state.settings().ansi_palette.is_some(),
+            )
+        }) else {
             return;
         };
-        let locale = state.resolved_locale(self.system_locale.as_deref());
-        let theme = state.resolved_theme(is_dark(window.appearance()));
         if self.locale != locale {
             self.locale = locale;
             gpui_component::set_locale(match locale {
@@ -635,7 +863,19 @@ impl AppView {
         if self.theme != theme {
             self.theme = theme;
             apply_theme(theme, window, cx);
-            self.tabs.set_terminal_colors(self.theme.terminal_colors());
+            self.tabs.set_terminal_colors(self.terminal_colors());
+            if !has_custom_ansi_palette {
+                let value = self
+                    .terminal_colors()
+                    .ansi
+                    .iter()
+                    .map(|color| format!("{:06x}", color.to_hex()))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                self.ansi_palette_input.update(cx, |input, cx| {
+                    input.set_value(value, window, cx);
+                });
+            }
         }
     }
 
@@ -725,6 +965,75 @@ impl AppView {
                 Some(IndexPath::new(match settings.new_tab_action {
                     NewTabAction::AddConnection => 0,
                     NewTabAction::LocalTerminal => 1,
+                })),
+                window,
+                cx,
+            );
+        });
+        self.terminal_bell_select.update(cx, |select, cx| {
+            select.set_items(
+                setting_select_items(
+                    locale,
+                    &[
+                        MessageId::BellVisual,
+                        MessageId::BellSound,
+                        MessageId::BellOff,
+                    ],
+                ),
+                window,
+                cx,
+            );
+            select.set_selected_index(
+                Some(IndexPath::new(match settings.terminal_bell {
+                    TerminalBell::Visual => 0,
+                    TerminalBell::Sound => 1,
+                    TerminalBell::Off => 2,
+                })),
+                window,
+                cx,
+            );
+        });
+        self.paste_threshold_select.update(cx, |select, cx| {
+            select.set_items(
+                setting_select_items(
+                    locale,
+                    &[
+                        MessageId::PasteThreshold1KiB,
+                        MessageId::PasteThreshold4KiB,
+                        MessageId::PasteThreshold16KiB,
+                    ],
+                ),
+                window,
+                cx,
+            );
+            select.set_selected_index(
+                Some(IndexPath::new(match settings.paste_confirm_threshold {
+                    0..=1024 => 0,
+                    1025..=4096 => 1,
+                    _ => 2,
+                })),
+                window,
+                cx,
+            );
+        });
+        self.osc52_clipboard_select.update(cx, |select, cx| {
+            select.set_items(
+                setting_select_items(
+                    locale,
+                    &[
+                        MessageId::Osc52ClipboardOff,
+                        MessageId::Osc52ClipboardAsk,
+                        MessageId::Osc52ClipboardOn,
+                    ],
+                ),
+                window,
+                cx,
+            );
+            select.set_selected_index(
+                Some(IndexPath::new(match settings.osc52_clipboard {
+                    Osc52Clipboard::Off => 0,
+                    Osc52Clipboard::Ask => 1,
+                    Osc52Clipboard::On => 2,
                 })),
                 window,
                 cx,
@@ -851,6 +1160,32 @@ impl AppView {
         }
         cx.notify();
     }
+    fn set_ssh_term(&mut self, term: &str, cx: &mut Context<Self>) {
+        if self
+            .state
+            .as_mut()
+            .is_some_and(|state| state.set_ssh_term(term).is_err())
+        {
+            self.status_message = Some(MessageId::StorageCorrupt);
+        }
+        cx.notify();
+    }
+    fn set_terminal_scrollback_lines(&mut self, lines: usize, cx: &mut Context<Self>) {
+        if !(1..=1_000_000).contains(&lines) {
+            self.status_message = Some(MessageId::InvalidScrollbackLines);
+            return;
+        }
+        if self
+            .state
+            .as_mut()
+            .is_some_and(|state| state.set_terminal_scrollback_lines(lines).is_err())
+        {
+            self.status_message = Some(MessageId::StorageCorrupt);
+            return;
+        }
+        self.tabs.set_scrollback_lines(lines);
+        cx.notify();
+    }
 
     fn set_ssh_compression(&mut self, enabled: bool, cx: &mut Context<Self>) {
         if self
@@ -863,6 +1198,68 @@ impl AppView {
         cx.notify();
     }
 
+    fn set_confirm_before_close_with_sessions(&mut self, confirm: bool, cx: &mut Context<Self>) {
+        if self.state.as_mut().is_some_and(|state| {
+            state
+                .set_confirm_before_close_with_sessions(confirm)
+                .is_err()
+        }) {
+            self.status_message = Some(MessageId::StorageCorrupt);
+        }
+        cx.notify();
+    }
+
+    fn save_ansi_palette(&mut self, _: &mut Window, cx: &mut Context<Self>) {
+        let parsed = self
+            .ansi_palette_input
+            .read(cx)
+            .value()
+            .split(',')
+            .map(|entry| {
+                let value = entry.trim().trim_start_matches('#');
+                (value.len() == 6)
+                    .then(|| u32::from_str_radix(value, 16).ok())
+                    .flatten()
+            })
+            .collect::<Option<Vec<_>>>();
+        let Some(values) = parsed.filter(|values| values.len() == 16) else {
+            return;
+        };
+        let palette: [u32; 16] = values.try_into().expect("length checked");
+        if self
+            .state
+            .as_mut()
+            .is_some_and(|state| state.set_ansi_palette(Some(palette)).is_err())
+        {
+            self.status_message = Some(MessageId::StorageCorrupt);
+            return;
+        }
+        self.tabs.set_terminal_colors(self.terminal_colors());
+        cx.notify();
+    }
+
+    fn reset_ansi_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let value = self
+            .theme
+            .terminal_colors(None)
+            .ansi
+            .iter()
+            .map(|color| format!("{:06x}", color.to_hex()))
+            .collect::<Vec<_>>()
+            .join(",");
+        if self
+            .state
+            .as_mut()
+            .is_some_and(|state| state.set_ansi_palette(None).is_err())
+        {
+            self.status_message = Some(MessageId::StorageCorrupt);
+            return;
+        }
+        self.ansi_palette_input
+            .update(cx, |input, cx| input.set_value(value, window, cx));
+        self.tabs.set_terminal_colors(self.terminal_colors());
+        cx.notify();
+    }
     fn commit_ssh_keepalive(&mut self, cx: &mut Context<Self>) {
         let interval = self
             .ssh_keepalive_interval
@@ -893,18 +1290,108 @@ impl AppView {
         cx.notify();
     }
 
-    fn set_confirm_before_close_with_sessions(&mut self, confirm: bool, cx: &mut Context<Self>) {
-        if self.state.as_mut().is_some_and(|state| {
-            state
-                .set_confirm_before_close_with_sessions(confirm)
-                .is_err()
-        }) {
+    fn set_terminal_bell(&mut self, setting: TerminalBell, cx: &mut Context<Self>) {
+        if self
+            .state
+            .as_mut()
+            .is_some_and(|state| state.set_terminal_bell(setting).is_err())
+        {
+            self.status_message = Some(MessageId::StorageCorrupt);
+        }
+        if setting != TerminalBell::Visual {
+            self.bell_generation = self.bell_generation.wrapping_add(1);
+            self.bell = false;
+        }
+        cx.notify();
+    }
+
+    fn handle_terminal_bell(&mut self, cx: &mut Context<Self>) {
+        match self
+            .state
+            .as_ref()
+            .map(|state| state.settings().terminal_bell)
+            .unwrap_or_default()
+        {
+            TerminalBell::Visual => {
+                self.bell = true;
+                self.bell_generation = self.bell_generation.wrapping_add(1);
+                let generation = self.bell_generation;
+                cx.spawn(async move |weak, cx| {
+                    cx.background_executor()
+                        .timer(std::time::Duration::from_secs(1))
+                        .await;
+                    weak.update(cx, |this, cx| {
+                        if this.bell_generation == generation {
+                            this.bell = false;
+                            cx.notify();
+                        }
+                    })
+                    .ok();
+                })
+                .detach();
+            }
+            TerminalBell::Sound => {
+                let now = std::time::Instant::now();
+                if self.last_bell_sound.is_none_or(|last| {
+                    now.duration_since(last) >= std::time::Duration::from_millis(200)
+                }) {
+                    self.last_bell_sound = Some(now);
+                    play_terminal_bell();
+                }
+            }
+            TerminalBell::Off => {
+                self.bell_generation = self.bell_generation.wrapping_add(1);
+                self.bell = false;
+            }
+        }
+    }
+
+    fn set_osc52_clipboard(&mut self, setting: Osc52Clipboard, cx: &mut Context<Self>) {
+        if self
+            .state
+            .as_mut()
+            .is_some_and(|state| state.set_osc52_clipboard(setting).is_err())
+        {
             self.status_message = Some(MessageId::StorageCorrupt);
         }
         cx.notify();
     }
 
+    fn set_remember_window_size(
+        &mut self,
+        remember: bool,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self
+            .state
+            .as_mut()
+            .is_some_and(|state| state.set_remember_window_size(remember).is_err())
+        {
+            self.status_message = Some(MessageId::StorageCorrupt);
+        }
+        if remember {
+            let bounds = window.bounds();
+            if self.state.as_mut().is_some_and(|state| {
+                state
+                    .set_window_size(u32::from(bounds.size.width), u32::from(bounds.size.height))
+                    .is_err()
+            }) {
+                self.status_message = Some(MessageId::StorageCorrupt);
+            }
+        }
+        cx.notify();
+    }
+
     fn estimated_terminal_size(&self, window: &Window) -> TerminalSize {
+        if let Some(geometry) = self.terminal_geometry {
+            return TerminalSize {
+                columns: geometry.columns,
+                rows: geometry.rows,
+                pixel_width: u32::from(geometry.bounds.size.width),
+                pixel_height: u32::from(geometry.bounds.size.height),
+            };
+        }
         let bounds = window.bounds();
         // Chrome: sidebar+strip estimate (strip = 28px pill + 2 * CARD_GAP)
         // plus card gap and terminal padding.
@@ -1118,6 +1605,16 @@ impl AppView {
         }
     }
 
+    fn toggle_copy_on_select(&mut self, cx: &mut Context<Self>) {
+        if self.state.as_mut().is_some_and(|state| {
+            let enabled = !state.settings().copy_on_select;
+            state.set_copy_on_select(enabled).is_err()
+        }) {
+            self.status_message = Some(MessageId::StorageCorrupt);
+        }
+        cx.notify();
+    }
+
     fn on_paste(&mut self, _: &Paste, window: &mut Window, cx: &mut Context<Self>) {
         if self.focus_handle.is_focused(window) {
             self.paste_terminal(cx);
@@ -1222,3 +1719,35 @@ impl Drop for AppView {
 }
 
 const STATUS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(8);
+
+fn play_terminal_bell() {
+    #[cfg(target_os = "windows")]
+    {
+        #[link(name = "user32")]
+        unsafe extern "system" {
+            fn MessageBeep(kind: u32) -> i32;
+        }
+        // Windows' default system notification sound.
+        unsafe {
+            MessageBeep(0xFFFFFFFF);
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("afplay")
+            .arg("/System/Library/Sounds/Glass.aiff")
+            .spawn();
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if std::process::Command::new("canberra-gtk-play")
+            .args(["-i", "bell"])
+            .spawn()
+            .is_err()
+        {
+            let _ = std::process::Command::new("paplay")
+                .arg("/usr/share/sounds/freedesktop/stereo/bell.oga")
+                .spawn();
+        }
+    }
+}

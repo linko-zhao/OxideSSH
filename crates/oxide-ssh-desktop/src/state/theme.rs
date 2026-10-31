@@ -27,32 +27,33 @@ impl ResolvedTheme {
         }
     }
 
-    pub fn terminal_colors(self) -> TerminalColors {
-        // Fixed terminal palette: changing the widget theme must never alter
-        // terminal readability or output semantics. Only foreground,
-        // background and cursor follow the widget palette family; the 16 ANSI
-        // colors stay untouched so CLI color semantics are preserved.
-        match self {
-            Self::Dark => TerminalColors {
-                foreground: rgb_color(0xe8e6dc),
-                background: rgb_color(0x1f1e1d),
-                cursor: rgb_color(0xd97757),
-                ansi: [
+    pub fn terminal_colors(self, ansi_palette: Option<[u32; 16]>) -> TerminalColors {
+        let (foreground, background, cursor, default_palette) = match self {
+            Self::Dark => (
+                0xe8e6dc,
+                0x1f1e1d,
+                0xd97757,
+                [
                     0x1b1d23, 0xe06c75, 0x98c379, 0xe5c07b, 0x61afef, 0xc678dd, 0x56b6c2, 0xabb2bf,
                     0x5c6370, 0xff7b86, 0xb3e98c, 0xffd68a, 0x76c7ff, 0xd99bff, 0x70e1ed, 0xf5f7fa,
-                ]
-                .map(rgb_color),
-            },
-            Self::Light => TerminalColors {
-                foreground: rgb_color(0x1f1e1d),
-                background: rgb_color(0xfaf9f5),
-                cursor: rgb_color(0xd97757),
-                ansi: [
+                ],
+            ),
+            Self::Light => (
+                0x1f1e1d,
+                0xfaf9f5,
+                0xd97757,
+                [
                     0x202124, 0xb4232c, 0x2f7d32, 0x8a5a00, 0x005fb8, 0x7a3e9d, 0x007a7a, 0xdadce0,
                     0x5f6368, 0xd93025, 0x188038, 0xb06000, 0x1967d2, 0x9334e6, 0x008b8b, 0xffffff,
-                ]
-                .map(rgb_color),
-            },
+                ],
+            ),
+        };
+        let ansi = ansi_palette.unwrap_or(default_palette);
+        TerminalColors {
+            foreground: rgb_color(foreground),
+            background: rgb_color(background),
+            cursor: rgb_color(cursor),
+            ansi: ansi.map(|color| rgb_color(color & 0x00ff_ffff)),
         }
     }
 }
@@ -269,4 +270,30 @@ const fn rgb_color(hex: u32) -> RgbColor {
         ((hex >> 8) & 0xff) as u8,
         (hex & 0xff) as u8,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn explicit_ansi_palette_overrides_each_theme_and_default_remains_theme_specific() {
+        let custom = [0x123456; 16];
+        assert_eq!(
+            ResolvedTheme::Dark.terminal_colors(Some(custom)).ansi[0],
+            RgbColor::new(0x12, 0x34, 0x56)
+        );
+        assert_eq!(
+            ResolvedTheme::Light.terminal_colors(Some(custom)).ansi[0],
+            RgbColor::new(0x12, 0x34, 0x56)
+        );
+        assert_eq!(
+            ResolvedTheme::Light.terminal_colors(None).ansi[0],
+            RgbColor::new(0x20, 0x21, 0x24)
+        );
+        assert_eq!(
+            ResolvedTheme::Dark.terminal_colors(None).ansi[0],
+            RgbColor::new(0x1b, 0x1d, 0x23)
+        );
+    }
 }

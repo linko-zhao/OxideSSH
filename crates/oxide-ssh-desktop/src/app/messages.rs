@@ -43,6 +43,7 @@ pub(super) fn session_error_message_id(error: SessionError) -> MessageId {
         SessionError::PtyRejected => MessageId::PtyRejected,
         SessionError::ShellRejected => MessageId::ShellRejected,
         SessionError::LocalShellFailed => MessageId::LocalShellFailed,
+        SessionError::LocalWorkingDirectoryInvalid => MessageId::LocalWorkingDirectoryInvalid,
     }
 }
 
@@ -74,6 +75,7 @@ pub(super) fn form_error_message_id(error: FormError) -> MessageId {
         FormError::Port => MessageId::Port,
         FormError::PrivateKeyPath => MessageId::PrivateKey,
         FormError::Keepalive => MessageId::InvalidKeepalive,
+        FormError::EnvironmentVariable => MessageId::EnvironmentVariables,
     }
 }
 
