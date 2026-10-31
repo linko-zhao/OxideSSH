@@ -686,7 +686,7 @@ impl AppView {
     }
 
     fn terminal_cell_at(&self, position: Point<Pixels>) -> Option<(usize, usize, CellSide)> {
-        let geometry = self.terminal_geometry?;
+        let geometry = self.terminal_geometries.get(&self.tabs.active()?).copied()?;
         if position.x < geometry.bounds.left()
             || position.x >= geometry.bounds.right()
             || position.y < geometry.bounds.top()
@@ -781,7 +781,7 @@ impl AppView {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(geometry) = self.terminal_geometry else {
+        let Some(geometry) = self.tabs.active().and_then(|tab| self.terminal_geometries.get(&tab)).copied() else {
             return;
         };
         let delta = event.delta.pixel_delta(geometry.cell_height);

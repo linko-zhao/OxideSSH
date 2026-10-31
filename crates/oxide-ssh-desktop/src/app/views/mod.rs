@@ -119,6 +119,18 @@ impl AppView {
                         view: cx.entity(),
                         tab_id,
                     })
+                    .when_some(
+                        (!matches!(state, Some(TabState::Connected) | Some(TabState::Disconnected { .. })))
+                            .then_some(state)
+                            .flatten(),
+                        |element, state| {
+                            element.child(
+                                div().absolute().inset_0().flex().items_center().justify_center()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child(self.text(tab_state_message_id(&state))),
+                            )
+                        },
+                    )
                     .when_some(disconnected.then_some(state), |element, state| {
                         let Some(TabState::Disconnected { reason }) = state else {
                             return element;

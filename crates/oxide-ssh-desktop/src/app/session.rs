@@ -5,6 +5,11 @@ use super::messages::{
 };
 use super::*;
 
+enum PendingSessionStart {
+    Local,
+    Ssh(Option<SecretString>),
+}
+
 const OUTPUT_COALESCE_BYTES: usize = 64 * 1024;
 
 impl AppView {
@@ -61,6 +66,10 @@ impl AppView {
                     self.profile_terminal_colors(&profile),
                     needs_secret,
                 );
+                if !needs_secret {
+                    self.pending_session_starts
+                        .insert(tab_id, PendingSessionStart::Ssh(None));
+                }
                 cx.notify();
                 return;
             }
@@ -73,7 +82,8 @@ impl AppView {
             needs_secret,
         );
         if !needs_secret {
-            self.start_session(tab_id, secret, cx);
+            self.pending_session_starts
+                .insert(tab_id, PendingSessionStart::Ssh(secret));
         }
         cx.notify();
     }
@@ -126,8 +136,12 @@ impl AppView {
         {
             return;
         }
-        self.clear_secret_field(window, cx);
-        self.start_session(expected_tab_id, Some(SecretString::from(value)), cx);
+        self.pending_session_starts.insert(
+            expected_tab_id,
+            PendingSessionStart::Ssh(Some(SecretString::from(value))),
+        );
+        self.secret.update(cx, |field, cx| field.set_value("", window, cx));
+        cx.notify();
     }
 
     fn start_session(
@@ -528,8 +542,8 @@ impl AppView {
             return;
         }
         if is_local {
-            // Retry on a local tab simply respawns the shell.
-            self.start_local_session(tab_id, cx);
+            self.pending_session_starts
+                .insert(tab_id, PendingSessionStart::Local);
             cx.notify();
             return;
         }
@@ -545,7 +559,8 @@ impl AppView {
                         self.status_message = None;
                     }
                 } else {
-                    self.start_session(tab_id, secret, cx);
+                    self.pending_session_starts
+                        .insert(tab_id, PendingSessionStart::Ssh(secret));
                 }
             }
             Err(error) => self.status_message = Some(credential_error_message_id(error)),
