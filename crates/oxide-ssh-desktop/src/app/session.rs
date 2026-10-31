@@ -268,11 +268,12 @@ impl AppView {
             return;
         };
         let size = tab.terminal().size();
-        let working_directory = self
+        let settings = self
             .state
             .as_ref()
-            .map(|state| state.settings().local_working_directory.as_str())
+            .map(|state| state.settings().clone())
             .unwrap_or_default();
+        let working_directory = settings.local_working_directory;
         let result = oxide_ssh_core::local::spawn_local_shell(
             CoreTerminalSize {
                 columns: size.columns as u32,
@@ -280,7 +281,9 @@ impl AppView {
                 pixel_width: size.pixel_width,
                 pixel_height: size.pixel_height,
             },
-            working_directory,
+            (!settings.local_shell_path.is_empty()).then_some(settings.local_shell_path.as_str()),
+            &settings.local_shell_args,
+            &working_directory,
         );
         match result {
             Ok(session) => {

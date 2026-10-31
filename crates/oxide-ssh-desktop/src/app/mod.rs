@@ -232,6 +232,8 @@ pub struct AppView {
     tabs: TabCollection,
     search: Entity<InputState>,
     secret: Entity<InputState>,
+    local_shell_path: Entity<InputState>,
+    local_shell_args: Entity<InputState>,
     connect_secrets: HashMap<ProfileId, SecretString>,
     connecting_profiles: std::collections::HashSet<ProfileId>,
     editor: Option<ConnectionEditor>,
@@ -375,6 +377,22 @@ impl AppView {
             cx,
             MessageId::TerminalLineHeight,
             &preferences.terminal_line_height.to_string(),
+            false,
+            locale,
+        );
+        let local_shell_path = new_input(
+            window,
+            cx,
+            MessageId::LocalShellPath,
+            &preferences.local_shell_path,
+            false,
+            locale,
+        );
+        let local_shell_args = new_input(
+            window,
+            cx,
+            MessageId::LocalShellArgs,
+            &preferences.local_shell_args.join(" "),
             false,
             locale,
         );
@@ -735,6 +753,41 @@ impl AppView {
                         }
                     },
                 ),
+                cx.observe(&local_shell_path, |this, input, cx| {
+                    let path = input.read(cx).value().to_string();
+                    let args = this
+                        .local_shell_args
+                        .read(cx)
+                        .value()
+                        .split_whitespace()
+                        .map(str::to_owned)
+                        .collect();
+                    if this
+                        .state
+                        .as_mut()
+                        .is_some_and(|state| state.set_local_shell(path, args).is_err())
+                    {
+                        this.status_message = Some(MessageId::StorageCorrupt);
+                    }
+                    cx.notify();
+                }),
+                cx.observe(&local_shell_args, |this, input, cx| {
+                    let path = this.local_shell_path.read(cx).value().to_string();
+                    let args = input
+                        .read(cx)
+                        .value()
+                        .split_whitespace()
+                        .map(str::to_owned)
+                        .collect();
+                    if this
+                        .state
+                        .as_mut()
+                        .is_some_and(|state| state.set_local_shell(path, args).is_err())
+                    {
+                        this.status_message = Some(MessageId::StorageCorrupt);
+                    }
+                    cx.notify();
+                }),
             ];
         let mut tabs = TabCollection::new();
         tabs.set_scrollback_lines(preferences.terminal_scrollback_lines);
@@ -759,6 +812,8 @@ impl AppView {
             tabs,
             search,
             secret,
+            local_shell_path,
+            local_shell_args,
             connect_secrets: HashMap::new(),
             connecting_profiles: std::collections::HashSet::new(),
             editor: None,

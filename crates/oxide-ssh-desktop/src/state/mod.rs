@@ -399,6 +399,15 @@ impl AppState {
         Ok(())
     }
 
+    pub fn set_local_shell(&mut self, path: String, args: Vec<String>) -> Result<(), StorageError> {
+        let mut config = self.config.clone();
+        config.settings.local_shell_path = path;
+        config.settings.local_shell_args = args;
+        self.store.save_config(&config)?;
+        self.config = config;
+        Ok(())
+    }
+
     pub fn reload_config(&mut self) -> Result<(), StorageError> {
         self.config = self.store.load_config()?;
         Ok(())
@@ -742,6 +751,12 @@ mod tests {
         state
             .set_terminal_settings("Test Mono".into(), 15, 19)
             .unwrap();
+        state
+            .set_local_shell(
+                "C:/Program Files/Git/bin/bash.exe".into(),
+                vec!["--login".into()],
+            )
+            .unwrap();
         state.set_ssh_compression(true).unwrap();
         state.set_ssh_term("tmux-256color").unwrap();
         state.set_ssh_term("").unwrap();
@@ -753,7 +768,17 @@ mod tests {
         assert_eq!(stored.settings.terminal_font_size, 15);
         assert_eq!(stored.settings.terminal_line_height, 19);
         assert!(stored.settings.ssh_compression);
-
+        state.set_confirm_before_close_with_sessions(false).unwrap();
+        let stored = state.store().load_config().unwrap();
+        assert_eq!(stored.schema_version(), 1);
+        assert_eq!(stored.settings.locale, LocaleSetting::ZhCn);
+        assert_eq!(stored.settings.theme, ThemeSetting::Dark);
+        assert_eq!(
+            stored.settings.local_shell_path,
+            "C:/Program Files/Git/bin/bash.exe"
+        );
+        assert_eq!(stored.settings.local_shell_args, vec!["--login".to_owned()]);
+        assert!(!stored.settings.confirm_before_close_with_sessions);
         state.set_ssh_keepalive(45, 4).unwrap();
         let stored = state.store().load_config().unwrap();
         assert_eq!(stored.settings.locale, LocaleSetting::ZhCn);

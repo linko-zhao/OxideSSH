@@ -22,13 +22,16 @@ use crate::{
     },
 };
 
-/// Spawns the platform default shell on a local PTY.
+/// Spawns the configured local shell on a PTY, or the platform default when
+/// no executable path is configured.
 ///
-/// Shell selection: `$SHELL` (Unix, falling back to `/bin/sh`); on Windows
-/// `pwsh.exe` → `powershell.exe` → `%COMSPEC%` → `cmd.exe`.
-/// An empty working directory preserves the platform home directory default.
+/// Default selection: `$SHELL` (Unix, falling back to `/bin/sh`); on Windows
+/// `pwsh.exe` → `powershell.exe` → `%COMSPEC%` → `cmd.exe`. The shell starts
+/// in the user's home directory unless a working directory is configured.
 pub fn spawn_local_shell(
     initial_size: TerminalSize,
+    shell_path: Option<&str>,
+    shell_args: &[String],
     working_directory: &str,
 ) -> Result<LocalSessionHandle, SessionError> {
     if !initial_size.is_valid() {
@@ -38,7 +41,14 @@ pub fn spawn_local_shell(
     let pair = pty
         .openpty(pty_size(initial_size))
         .map_err(|_| SessionError::LocalShellFailed)?;
-    let mut command = CommandBuilder::new(default_shell());
+    let shell = shell_path
+        .filter(|path| !path.is_empty())
+        .map(str::to_owned)
+        .unwrap_or_else(default_shell);
+    let mut command = CommandBuilder::new(shell);
+    for arg in shell_args {
+        command.arg(arg);
+    }
     if working_directory.is_empty() {
         if let Some(home) = home_dir() {
             command.cwd(home);
@@ -259,6 +269,32 @@ mod windows_tests {
     }
 
     #[test]
+    fn empty_shell_path_uses_platform_default() {
+        let size = TerminalSize {
+            columns: 80,
+            rows: 24,
+            pixel_width: 800,
+            pixel_height: 480,
+        };
+        let handle = spawn_local_shell(size, None, &[], "").unwrap();
+        drop(handle);
+    }
+
+    #[test]
+    fn configured_missing_windows_shell_returns_error_without_fallback() {
+        let size = TerminalSize {
+            columns: 80,
+            rows: 24,
+            pixel_width: 800,
+            pixel_height: 480,
+        };
+        assert_eq!(
+            spawn_local_shell(size, Some("oxide-ssh-missing-shell.exe"), &[], "").err(),
+            Some(SessionError::LocalShellFailed)
+        );
+    }
+
+    #[test]
     fn local_shell_starts_in_configured_working_directory() {
         let directory = std::env::temp_dir().join(format!("oxide-ssh-cwd-{}", SessionId::new().0));
         std::fs::create_dir(&directory).unwrap();
@@ -270,6 +306,8 @@ mod windows_tests {
                 pixel_width: 800,
                 pixel_height: 480,
             },
+            None,
+            &[],
             &expected,
         )
         .unwrap();
@@ -358,8 +396,7 @@ mod tests {
     }
     #[test]
     fn local_shell_echoes_and_exits() {
-        let mut handle = spawn_local_shell(size(), "").expect("spawn /bin/sh");
-
+        let mut handle = spawn_local_shell(size(), None, &[], "").expect("spawn /bin/sh");
         let events = handle.take_events().expect("events");
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         // Wait for Connected, then drive the shell.
@@ -391,6 +428,41 @@ mod tests {
         assert!(saw_marker, "shell output never arrived");
         assert_eq!(exit_status, Some(Some(0)));
     }
+
+    #[test]
+    fn configured_shell_arguments_are_used() {
+        let args = vec!["-c".into(), "printf configured-shell-marker".into()];
+        let mut handle = spawn_local_shell(size(), Some("/bin/sh"), &args).unwrap();
+        let events = handle.take_events().unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let mut output = Vec::new();
+        let mut exited = false;
+        while std::time::Instant::now() < deadline && !exited {
+            match events.try_recv() {
+                Ok(SessionEvent::Output(bytes)) => output.extend_from_slice(&bytes),
+                Ok(SessionEvent::Exited { .. }) => exited = true,
+                Ok(_) | Err(async_channel::TryRecvError::Empty) => {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                Err(async_channel::TryRecvError::Closed) => break,
+            }
+        }
+        assert!(exited, "configured shell did not exit");
+        assert!(
+            output
+                .windows(b"configured-shell-marker".len())
+                .any(|window| window == b"configured-shell-marker"),
+            "configured shell arguments were not executed"
+        );
+    }
+
+    #[test]
+    fn configured_missing_shell_returns_error_without_fallback() {
+        assert_eq!(
+            spawn_local_shell(size(), Some("/oxide-ssh-missing-shell"), &[]).err(),
+            Some(SessionError::LocalShellFailed)
+        );
+    }
 }
 #[cfg(test)]
 mod working_directory_tests {
@@ -407,7 +479,7 @@ mod working_directory_tests {
             pixel_height: 480,
         };
         assert!(matches!(
-            spawn_local_shell(size, directory.to_str().unwrap()),
+            spawn_local_shell(size, None, &[], directory.to_str().unwrap()),
             Err(SessionError::LocalWorkingDirectoryInvalid)
         ));
     }
@@ -423,7 +495,7 @@ mod working_directory_tests {
             pixel_height: 480,
         };
         assert!(matches!(
-            spawn_local_shell(size, file.to_str().unwrap()),
+            spawn_local_shell(size, None, &[], file.to_str().unwrap()),
             Err(SessionError::LocalWorkingDirectoryInvalid)
         ));
         std::fs::remove_file(file).unwrap();

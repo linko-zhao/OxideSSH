@@ -22,6 +22,12 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::Logs => "日志",
         MessageId::NewHost => "新建主机",
         MessageId::LocalTerminal => "本机终端",
+        MessageId::LocalShellPath => "本地 Shell 程序路径",
+        MessageId::LocalShellArgs => "本地 Shell 启动参数",
+        MessageId::LocalShellPathDescription => {
+            "新建或重启本机终端时使用的程序；留空则使用平台默认 Shell。"
+        }
+        MessageId::LocalShellArgsDescription => "以空格分隔传递给本地 Shell 的启动参数。",
         MessageId::NewTabButton => "新建标签按钮",
         MessageId::Settings => "设置",
         MessageId::General => "通用",
