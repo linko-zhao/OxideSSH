@@ -159,9 +159,12 @@ pub struct ConnectionProfile {
     #[serde(default)]
     pub ssh_keepalive_max_count: Option<usize>,
     #[serde(default)]
+    pub terminal_font_size: Option<u16>,
+    #[serde(default)]
+    pub ansi_palette: Option<[u32; 16]>,
+    #[serde(default)]
     pub environment_variables: Vec<EnvironmentVariable>,
 }
-
 #[cfg(test)]
 mod startup_command_tests {
     use super::*;
@@ -181,6 +184,8 @@ mod startup_command_tests {
             startup_command: None,
             ssh_keepalive_interval_seconds: None,
             ssh_keepalive_max_count: None,
+            terminal_font_size: None,
+            ansi_palette: None,
             environment_variables: Vec::new(),
         };
         let mut value = serde_json::to_value(profile).unwrap();
@@ -589,10 +594,21 @@ mod tests {
             startup_command: None,
             ssh_keepalive_interval_seconds: None,
             ssh_keepalive_max_count: None,
+            terminal_font_size: None,
+            ansi_palette: None,
             environment_variables: Vec::new(),
         }
     }
 
+    #[test]
+    fn legacy_profile_defaults_appearance_overrides_to_inherited() {
+        let profile: ConnectionProfile = serde_json::from_str(
+            r#"{"id":"00000000-0000-0000-0000-000000000001","name":"legacy","endpoint":{"host":"example.com","port":22},"username":"u","auth":{"method":"agent"}}"#,
+        )
+        .unwrap();
+        assert_eq!(profile.terminal_font_size, None);
+        assert_eq!(profile.ansi_palette, None);
+    }
     #[test]
     fn terminal_settings_default_and_deserialize_from_legacy_settings() {
         let defaults = AppSettings::default();

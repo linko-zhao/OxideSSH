@@ -30,6 +30,8 @@ pub struct ConnectionForm {
     pub startup_command: String,
     pub ssh_keepalive_interval_seconds: String,
     pub ssh_keepalive_max_count: String,
+    pub terminal_font_size: String,
+    pub ansi_palette: String,
     pub environment_variables_json: String,
     previous: Option<ConnectionProfile>,
     profile_id: ProfileId,
@@ -48,11 +50,13 @@ impl ConnectionForm {
             remember: false,
             tag_ids: Vec::new(),
             startup_command: String::new(),
+            terminal_font_size: String::new(),
+            ansi_palette: String::new(),
             ssh_keepalive_interval_seconds: String::new(),
             ssh_keepalive_max_count: String::new(),
+            environment_variables_json: "[]".into(),
             previous: None,
             profile_id: ProfileId::new(),
-            environment_variables_json: "[]".into(),
         }
     }
 
@@ -91,6 +95,20 @@ impl ConnectionForm {
             ssh_keepalive_max_count: profile
                 .ssh_keepalive_max_count
                 .map(|value| value.to_string())
+                .unwrap_or_default(),
+            terminal_font_size: profile
+                .terminal_font_size
+                .map(|value| value.to_string())
+                .unwrap_or_default(),
+            ansi_palette: profile
+                .ansi_palette
+                .map(|colors| {
+                    colors
+                        .iter()
+                        .map(|color| format!("{color:06x}"))
+                        .collect::<Vec<_>>()
+                        .join(",")
+                })
                 .unwrap_or_default(),
             environment_variables_json: serde_json::to_string_pretty(
                 &profile.environment_variables,
@@ -139,6 +157,11 @@ impl ConnectionForm {
         let environment_variables: Vec<EnvironmentVariable> =
             serde_json::from_str(&self.environment_variables_json)
                 .map_err(|_| FormError::EnvironmentVariable)?;
+        let terminal_font_size = parse_override(&self.terminal_font_size)?
+            .map(u16::try_from)
+            .transpose()
+            .map_err(|_| FormError::Keepalive)?;
+        let ansi_palette = parse_palette(&self.ansi_palette)?;
         let profile = ConnectionProfile {
             id: self.profile_id,
             name: self.name.trim().into(),
@@ -157,6 +180,8 @@ impl ConnectionForm {
                 .transpose()
                 .map_err(|_| FormError::Keepalive)?,
             environment_variables,
+            terminal_font_size,
+            ansi_palette,
         };
         profile.validate().map_err(FormError::from)?;
 
@@ -180,6 +205,24 @@ fn parse_override(value: &str) -> Result<Option<u64>, FormError> {
         .filter(|value| *value > 0)
         .map(Some)
         .ok_or(FormError::Keepalive)
+}
+
+fn parse_palette(value: &str) -> Result<Option<[u32; 16]>, FormError> {
+    if value.trim().is_empty() {
+        return Ok(None);
+    }
+    let values = value.split(',').map(str::trim).collect::<Vec<_>>();
+    if values.len() != 16 {
+        return Err(FormError::Keepalive);
+    }
+    let mut palette = [0; 16];
+    for (slot, color) in palette.iter_mut().zip(values) {
+        if color.len() != 6 {
+            return Err(FormError::Keepalive);
+        }
+        *slot = u32::from_str_radix(color, 16).map_err(|_| FormError::Keepalive)?;
+    }
+    Ok(Some(palette))
 }
 
 impl Default for ConnectionForm {
@@ -289,6 +332,36 @@ mod tests {
         );
         edit.ssh_keepalive_max_count = "0".into();
         assert_eq!(edit.save_request().unwrap_err(), FormError::Keepalive);
+    }
+
+    #[test]
+    fn appearance_overrides_round_trip_and_clear_to_global_inheritance() {
+        let mut form = ConnectionForm::new();
+        form.name = "fixture".into();
+        form.host = "example.com".into();
+        form.username = "oxide".into();
+        assert_eq!(
+            form.save_request().unwrap().profile.terminal_font_size,
+            None
+        );
+        assert_eq!(form.save_request().unwrap().profile.ansi_palette, None);
+
+        form.terminal_font_size = "18".into();
+        form.ansi_palette = (0..16)
+            .map(|value| format!("{value:06x}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        let saved = form.save_request().unwrap().profile;
+        assert_eq!(saved.terminal_font_size, Some(18));
+        assert_eq!(saved.ansi_palette.unwrap()[15], 15);
+
+        let mut edit = ConnectionForm::edit(saved);
+        assert_eq!(edit.terminal_font_size, "18");
+        edit.terminal_font_size.clear();
+        edit.ansi_palette.clear();
+        let cleared = edit.save_request().unwrap().profile;
+        assert_eq!(cleared.terminal_font_size, None);
+        assert_eq!(cleared.ansi_palette, None);
     }
 
     #[test]
