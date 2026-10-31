@@ -157,10 +157,11 @@ impl ConnectionForm {
         let environment_variables: Vec<EnvironmentVariable> =
             serde_json::from_str(&self.environment_variables_json)
                 .map_err(|_| FormError::EnvironmentVariable)?;
-        let terminal_font_size = parse_override(&self.terminal_font_size)?
+        let terminal_font_size = parse_override(&self.terminal_font_size)
+            .map_err(|_| FormError::TerminalFontSize)?
             .map(u16::try_from)
             .transpose()
-            .map_err(|_| FormError::Keepalive)?;
+            .map_err(|_| FormError::TerminalFontSize)?;
         let ansi_palette = parse_palette(&self.ansi_palette)?;
         let profile = ConnectionProfile {
             id: self.profile_id,
@@ -207,20 +208,21 @@ fn parse_override(value: &str) -> Result<Option<u64>, FormError> {
         .ok_or(FormError::Keepalive)
 }
 
-fn parse_palette(value: &str) -> Result<Option<[u32; 16]>, FormError> {
+pub fn parse_palette(value: &str) -> Result<Option<[u32; 16]>, FormError> {
     if value.trim().is_empty() {
         return Ok(None);
     }
     let values = value.split(',').map(str::trim).collect::<Vec<_>>();
     if values.len() != 16 {
-        return Err(FormError::Keepalive);
+        return Err(FormError::AnsiPalette);
     }
     let mut palette = [0; 16];
     for (slot, color) in palette.iter_mut().zip(values) {
+        let color = color.strip_prefix('#').unwrap_or(color);
         if color.len() != 6 {
-            return Err(FormError::Keepalive);
+            return Err(FormError::AnsiPalette);
         }
-        *slot = u32::from_str_radix(color, 16).map_err(|_| FormError::Keepalive)?;
+        *slot = u32::from_str_radix(color, 16).map_err(|_| FormError::AnsiPalette)?;
     }
     Ok(Some(palette))
 }
@@ -239,6 +241,8 @@ pub enum FormError {
     Port,
     PrivateKeyPath,
     Keepalive,
+    TerminalFontSize,
+    AnsiPalette,
     EnvironmentVariable,
 }
 
@@ -332,6 +336,28 @@ mod tests {
         );
         edit.ssh_keepalive_max_count = "0".into();
         assert_eq!(edit.save_request().unwrap_err(), FormError::Keepalive);
+    }
+
+    #[test]
+    fn invalid_appearance_overrides_report_specific_errors() {
+        let mut form = ConnectionForm::new();
+        form.name = "fixture".into();
+        form.host = "example.com".into();
+        form.username = "oxide".into();
+        form.terminal_font_size = "not-a-size".into();
+        assert_eq!(form.save_request().unwrap_err(), FormError::TerminalFontSize);
+        form.terminal_font_size = "18".into();
+        form.ansi_palette = "invalid".into();
+        assert_eq!(form.save_request().unwrap_err(), FormError::AnsiPalette);
+    }
+
+    #[test]
+    fn profile_palette_accepts_hash_colors_like_global_palette() {
+        let palette = (0..16)
+            .map(|value| format!("#{value:06x}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        assert_eq!(parse_palette(&palette), Ok(Some(std::array::from_fn(|i| i as u32))));
     }
 
     #[test]

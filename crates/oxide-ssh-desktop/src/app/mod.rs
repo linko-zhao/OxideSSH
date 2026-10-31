@@ -1381,22 +1381,14 @@ impl AppView {
     }
 
     fn save_ansi_palette(&mut self, _: &mut Window, cx: &mut Context<Self>) {
-        let parsed = self
-            .ansi_palette_input
-            .read(cx)
-            .value()
-            .split(',')
-            .map(|entry| {
-                let value = entry.trim().trim_start_matches('#');
-                (value.len() == 6)
-                    .then(|| u32::from_str_radix(value, 16).ok())
-                    .flatten()
-            })
-            .collect::<Option<Vec<_>>>();
-        let Some(values) = parsed.filter(|values| values.len() == 16) else {
+        let parsed = crate::state::connection_form::parse_palette(
+            &self.ansi_palette_input.read(cx).value(),
+        )
+        .ok()
+        .flatten();
+        let Some(palette) = parsed else {
             return;
         };
-        let palette: [u32; 16] = values.try_into().expect("length checked");
         if self
             .state
             .as_mut()

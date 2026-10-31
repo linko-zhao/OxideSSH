@@ -70,6 +70,8 @@ pub enum MessageId {
     ProfileKeepaliveInterval,
     ProfileKeepaliveMaxCount,
     InvalidKeepalive,
+    InvalidTerminalFontSize,
+    InvalidAnsiPalette,
     LocalWorkingDirectory,
     LocalWorkingDirectoryDescription,
     Osc52Clipboard,

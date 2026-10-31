@@ -77,6 +77,8 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::ProfileKeepaliveInterval => "主机保活间隔覆盖（秒；留空则继承）",
         MessageId::ProfileKeepaliveMaxCount => "主机保活最大未响应次数（留空则继承）",
         MessageId::InvalidKeepalive => "保活参数必须是正整数。",
+        MessageId::InvalidTerminalFontSize => "终端字号必须是正整数。",
+        MessageId::InvalidAnsiPalette => "请输入 16 个逗号分隔的 RGB 十六进制颜色。",
         MessageId::LocalWorkingDirectory => "本地终端工作目录",
         MessageId::LocalWorkingDirectoryDescription => "留空则使用用户主目录。",
         MessageId::Osc52Clipboard => "远程剪贴板",
