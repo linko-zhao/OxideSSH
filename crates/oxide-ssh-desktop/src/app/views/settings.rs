@@ -131,6 +131,18 @@ impl AppView {
                             .into_any_element(),
                         cx,
                     ),
+                    self.setting_row(
+                        MessageId::LocalShellPath,
+                        MessageId::LocalShellPathDescription,
+                        Input::new(&self.local_shell_path).into_any_element(),
+                        cx,
+                    ),
+                    self.setting_row(
+                        MessageId::LocalShellArgs,
+                        MessageId::LocalShellArgsDescription,
+                        Input::new(&self.local_shell_args).into_any_element(),
+                        cx,
+                    ),
                 ],
                 cx,
             ),

@@ -243,12 +243,21 @@ impl AppView {
             return;
         };
         let size = tab.terminal().size();
-        let result = oxide_ssh_core::local::spawn_local_shell(CoreTerminalSize {
-            columns: size.columns as u32,
-            rows: size.rows as u32,
-            pixel_width: size.pixel_width,
-            pixel_height: size.pixel_height,
-        });
+        let settings = self
+            .state
+            .as_ref()
+            .map(|state| state.settings().clone())
+            .unwrap_or_default();
+        let result = oxide_ssh_core::local::spawn_local_shell(
+            CoreTerminalSize {
+                columns: size.columns as u32,
+                rows: size.rows as u32,
+                pixel_width: size.pixel_width,
+                pixel_height: size.pixel_height,
+            },
+            (!settings.local_shell_path.is_empty()).then_some(settings.local_shell_path.as_str()),
+            &settings.local_shell_args,
+        );
         match result {
             Ok(session) => {
                 let session_id = session.id();

@@ -247,6 +247,19 @@ impl AppState {
         Ok(())
     }
 
+    pub fn set_local_shell(
+        &mut self,
+        path: String,
+        args: Vec<String>,
+    ) -> Result<(), StorageError> {
+        let mut config = self.config.clone();
+        config.settings.local_shell_path = path;
+        config.settings.local_shell_args = args;
+        self.store.save_config(&config)?;
+        self.config = config;
+        Ok(())
+    }
+
     pub fn reload_config(&mut self) -> Result<(), StorageError> {
         self.config = self.store.load_config()?;
         Ok(())
@@ -452,9 +465,18 @@ mod tests {
 
         state.set_locale(LocaleSetting::ZhCn).unwrap();
         state.set_theme(ThemeSetting::Dark).unwrap();
+        state
+            .set_local_shell("C:/Program Files/Git/bin/bash.exe".into(), vec!["--login".into()])
+            .unwrap();
         let stored = state.store().load_config().unwrap();
+        assert_eq!(stored.schema_version(), 1);
         assert_eq!(stored.settings.locale, LocaleSetting::ZhCn);
         assert_eq!(stored.settings.theme, ThemeSetting::Dark);
+        assert_eq!(
+            stored.settings.local_shell_path,
+            "C:/Program Files/Git/bin/bash.exe"
+        );
+        assert_eq!(stored.settings.local_shell_args, vec!["--login".to_owned()]);
         assert_eq!(state.resolved_locale(Some("en-US")), ResolvedLocale::ZhCn);
         assert_eq!(state.resolved_theme(false), ResolvedTheme::Dark);
     }

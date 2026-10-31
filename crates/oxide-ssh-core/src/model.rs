@@ -272,6 +272,10 @@ pub struct AppSettings {
     pub theme: ThemeSetting,
     #[serde(default)]
     pub new_tab_action: NewTabAction,
+    #[serde(default)]
+    pub local_shell_path: String,
+    #[serde(default)]
+    pub local_shell_args: Vec<String>,
 }
 
 #[cfg(test)]
@@ -341,6 +345,8 @@ mod tests {
             serde_json::from_str(r#"{"locale":"zh-CN","theme":"dark"}"#).unwrap();
         assert_eq!(settings.new_tab_action, NewTabAction::AddConnection);
         assert_eq!(settings.theme, ThemeSetting::Dark);
+        assert!(settings.local_shell_path.is_empty());
+        assert!(settings.local_shell_args.is_empty());
     }
 
     #[test]
