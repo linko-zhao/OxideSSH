@@ -604,6 +604,7 @@ impl AppView {
         cx: &mut Context<Self>,
     ) {
         self.terminal_geometry = Some(geometry);
+        self.terminal_geometry_tab = Some(tab_id);
         let size = TerminalSize {
             columns: geometry.columns,
             rows: geometry.rows,

@@ -67,7 +67,9 @@ impl AppView {
         };
         let state = self.tabs.tab(tab_id).map(|tab| *tab.state());
         match state {
-            Some(TabState::Connected) | Some(TabState::Disconnected { .. }) => {
+            Some(TabState::Connecting)
+            | Some(TabState::Connected)
+            | Some(TabState::Disconnected { .. }) => {
                 let disconnected = matches!(state, Some(TabState::Disconnected { .. }));
                 div()
                     .id("terminal")

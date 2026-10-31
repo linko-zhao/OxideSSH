@@ -185,7 +185,7 @@ impl AppView {
         secret: Option<SecretString>,
         cx: &mut Context<Self>,
     ) {
-        if self.terminal_geometry.is_none() {
+        if self.terminal_geometry_tab != Some(tab_id) {
             self.pending_sessions.insert(tab_id, secret);
             return;
         }
@@ -258,7 +258,7 @@ impl AppView {
     }
 
     pub(super) fn start_local_session(&mut self, tab_id: TabId, cx: &mut Context<Self>) {
-        if self.terminal_geometry.is_none() {
+        if self.terminal_geometry_tab != Some(tab_id) {
             if !self.pending_local_sessions.contains(&tab_id) {
                 self.pending_local_sessions.push(tab_id);
             }
