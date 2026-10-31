@@ -5,6 +5,22 @@ fn cursor_phase_visible(blinking: bool, focused: bool, blink_phase: bool) -> boo
     !blinking || !focused || blink_phase
 }
 
+fn resolve_cursor_shape(
+    remote_shape: alacritty_terminal::vte::ansi::CursorShape,
+    remote_owned: bool,
+    local_shape: CursorStyleSetting,
+) -> alacritty_terminal::vte::ansi::CursorShape {
+    if remote_shape == alacritty_terminal::vte::ansi::CursorShape::Hidden || remote_owned {
+        remote_shape
+    } else {
+        match local_shape {
+            CursorStyleSetting::Block => alacritty_terminal::vte::ansi::CursorShape::Block,
+            CursorStyleSetting::Beam => alacritty_terminal::vte::ansi::CursorShape::Beam,
+            CursorStyleSetting::Underline => alacritty_terminal::vte::ansi::CursorShape::Underline,
+        }
+    }
+}
+
 fn cursor_visible(blinking: bool, focused: bool, blink_phase: bool) -> bool {
     cursor_phase_visible(blinking, focused, blink_phase)
 }
@@ -265,22 +281,14 @@ impl Element for TerminalElement {
             let cursor_color = rgb(terminal_colors.cursor.to_hex());
             let cursor_x = bounds.left() + cell_width * cursor.point.column.0 as f32;
             let cursor_y = bounds.top() + cell_height * cursor_row.unwrap_or_default() as f32;
-            let shape = if model.has_remote_cursor_style() {
-                cursor.shape
-            } else {
-                match view
-                    .state
+            let shape = resolve_cursor_shape(
+                cursor.shape,
+                model.has_remote_cursor_style(),
+                view.state
                     .as_ref()
                     .map(|state| state.settings().cursor_style)
-                    .unwrap_or_default()
-                {
-                    CursorStyleSetting::Block => alacritty_terminal::vte::ansi::CursorShape::Block,
-                    CursorStyleSetting::Beam => alacritty_terminal::vte::ansi::CursorShape::Beam,
-                    CursorStyleSetting::Underline => {
-                        alacritty_terminal::vte::ansi::CursorShape::Underline
-                    }
-                }
-            };
+                    .unwrap_or_default(),
+            );
             let blinking = if model.has_remote_cursor_style() || model.has_remote_cursor_blink() {
                 model.cursor_blinking()
             } else {
@@ -788,7 +796,17 @@ impl AppView {
 
 #[cfg(test)]
 mod cursor_blink_tests {
-    use super::cursor_phase_visible;
+    use super::{cursor_phase_visible, resolve_cursor_shape};
+    use alacritty_terminal::vte::ansi::CursorShape;
+    use oxide_ssh_core::model::CursorStyleSetting;
+
+    #[test]
+    fn remote_hidden_cursor_overrides_local_shape() {
+        assert_eq!(
+            resolve_cursor_shape(CursorShape::Hidden, false, CursorStyleSetting::Beam),
+            CursorShape::Hidden
+        );
+    }
 
     #[test]
     fn cursor_visibility_tracks_blink_phase_and_focus() {
