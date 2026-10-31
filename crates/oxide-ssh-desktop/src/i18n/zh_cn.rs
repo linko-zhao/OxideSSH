@@ -99,6 +99,19 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::Quit => "退出",
         MessageId::NewWindow => "新建窗口",
         MessageId::StorageCorrupt => "配置文件已损坏，原文件未被覆盖。",
+        MessageId::ConfigBackup => "创建配置备份",
+        MessageId::ConfigExport => "导出配置",
+        MessageId::ConfigImport => "导入/恢复配置",
+        MessageId::ConfigSecretsNote => {
+            "导出文件不会包含存储在操作系统密钥环中的密码或私钥口令，也不会包含私钥文件内容；私钥配置仅保留路径。导入后需重新录入凭据。"
+        }
+        MessageId::ConfigImportSuccess => "配置已恢复。请重新录入凭据。",
+        MessageId::ConfigImportFailure => "导入配置失败；现有配置未更改。",
+        MessageId::ConfigExportSuccess => "配置已导出，未包含密钥环凭据。",
+        MessageId::ConfigExportFailure => "导出配置失败。",
+        MessageId::ConfigImportReloadFailure => {
+            "配置已恢复，但当前窗口无法重新加载；请重启应用以应用更改。"
+        }
         MessageId::ExportKnownHosts => "导出受信任主机",
         MessageId::ImportKnownHosts => "导入受信任主机",
         MessageId::ImportKeepExisting => "导入（保留现有密钥）",

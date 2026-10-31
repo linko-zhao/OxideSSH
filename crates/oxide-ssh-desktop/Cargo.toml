@@ -23,6 +23,7 @@ gpui-component-assets.workspace = true
 keyring.workspace = true
 oxide-ssh-app.workspace = true
 oxide-ssh-core.workspace = true
+rfd.workspace = true
 oxide-ssh-terminal.workspace = true
 parking_lot.workspace = true
 secrecy.workspace = true

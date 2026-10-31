@@ -122,6 +122,8 @@ Writes are atomic (temp file + rename). If the storage root is corrupt, OxideSSH
 
 Trusted hosts can be imported or exported from Settings → Security. Import lets you keep current keys or explicitly replace conflicting host keys; malformed files are rejected without changing stored trust data.
 
+Configuration can be exported, backed up, or restored from Settings → Security. Exports omit OS keyring credentials and private-key file contents; imported profiles require credentials to be entered again.
+
 ## Project layout
 
 | Crate | Responsibility |
