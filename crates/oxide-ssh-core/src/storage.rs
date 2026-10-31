@@ -209,8 +209,24 @@ impl AppStore {
             path: path.to_path_buf(),
             source,
         })?;
-        let mut config: AppConfig =
+        let document: serde_json::Value =
             serde_json::from_slice(&bytes).map_err(|source| StorageError::Corrupt {
+                path: path.to_path_buf(),
+                source,
+            })?;
+        let palette = document
+            .get("settings")
+            .and_then(|settings| settings.get("ansiPalette"));
+        if let Some(palette) = palette {
+            serde_json::from_value::<Option<[u32; 16]>>(palette.clone()).map_err(|source| {
+                StorageError::Corrupt {
+                    path: path.to_path_buf(),
+                    source,
+                }
+            })?;
+        }
+        let mut config: AppConfig =
+            serde_json::from_value(document).map_err(|source| StorageError::Corrupt {
                 path: path.to_path_buf(),
                 source,
             })?;
@@ -711,6 +727,15 @@ mod tests {
         fs::write(&bad, b"not json").unwrap();
         assert!(store.import_config(&bad).is_err());
         assert_eq!(store.load_config().unwrap().profiles[0].name, "keep");
+        let persisted = fs::read(store.config_path()).unwrap();
+        let mut malformed = serde_json::to_value(AppConfig::default()).unwrap();
+        malformed["settings"]["ansiPalette"] = serde_json::json!([1]);
+        fs::write(&bad, serde_json::to_vec(&malformed).unwrap()).unwrap();
+        assert!(matches!(
+            store.import_config(&bad),
+            Err(StorageError::Corrupt { .. })
+        ));
+        assert_eq!(fs::read(store.config_path()).unwrap(), persisted);
     }
 
     #[test]

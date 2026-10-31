@@ -1178,6 +1178,69 @@ impl AppView {
         });
     }
 
+    fn sync_settings_inputs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(settings) = self.state.as_ref().map(|state| state.settings().clone()) else {
+            return;
+        };
+        let values = [
+            (&self.local_shell_path, settings.local_shell_path),
+            (
+                &self.local_shell_args,
+                format_shell_args(&settings.local_shell_args),
+            ),
+            (
+                &self.local_working_directory,
+                settings.local_working_directory,
+            ),
+            (&self.terminal_font_family, settings.terminal_font_family),
+            (
+                &self.terminal_font_size,
+                settings.terminal_font_size.to_string(),
+            ),
+            (
+                &self.terminal_line_height,
+                settings.terminal_line_height.to_string(),
+            ),
+            (
+                &self.ssh_keepalive_interval,
+                settings.ssh_keepalive_interval_seconds.to_string(),
+            ),
+            (
+                &self.ssh_keepalive_max_count,
+                settings.ssh_keepalive_max_count.to_string(),
+            ),
+            (&self.ssh_term_input, settings.ssh_term),
+            (
+                &self.scrollback_input,
+                settings.terminal_scrollback_lines.to_string(),
+            ),
+        ];
+        for (input, value) in values {
+            input.update(cx, |input, cx| input.set_value(value, window, cx));
+        }
+        let palette = settings
+            .ansi_palette
+            .map(|colors| {
+                colors
+                    .iter()
+                    .map(|color| format!("{color:06x}"))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            })
+            .unwrap_or_else(|| {
+                self.theme
+                    .terminal_colors(None)
+                    .ansi
+                    .iter()
+                    .map(|color| format!("{:06x}", color.to_hex()))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            });
+        self.ansi_palette_input
+            .update(cx, |input, cx| input.set_value(palette, window, cx));
+        self.update_setting_selects(window, cx);
+    }
+
     fn update_input_placeholders(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let locale = self.locale;
         self.search.update(cx, |field, cx| {
