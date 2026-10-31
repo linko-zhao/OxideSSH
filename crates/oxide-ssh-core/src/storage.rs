@@ -642,9 +642,20 @@ mod tests {
         let mut migration_profile = profile("migration");
         migration_profile.tag_ids.push(tag.id);
         config.profiles.push(migration_profile);
+        let mut key_profile = profile("private key");
+        let key_profile_id = key_profile.id;
+        key_profile.auth = AuthConfig::PrivateKey {
+            path: PathBuf::from("keys/id_ed25519"),
+            passphrase_ref: Some(CredentialRef::private_key_passphrase(key_profile_id)),
+        };
+        config.profiles.push(key_profile);
         source.save_config(&config).unwrap();
         let file = target_dir.path().join("export.json");
         source.export_config(&file).unwrap();
+        let exported: serde_json::Value =
+            serde_json::from_slice(&fs::read(&file).unwrap()).unwrap();
+        assert!(exported["profiles"][0]["auth"]["credentialRef"].is_null());
+        assert!(exported["profiles"][1]["auth"]["passphraseRef"].is_null());
         let backup = target_dir.path().join("backup.json");
         source.backup_config(&backup).unwrap();
         assert_eq!(fs::read(&backup).unwrap(), fs::read(&file).unwrap());
@@ -652,7 +663,7 @@ mod tests {
         target.import_config(&file).unwrap();
         let reopened = AppStore::open(target_dir.path().join("store")).unwrap();
         let imported = reopened.load_config().unwrap();
-        assert_eq!(imported.profiles.len(), 1);
+        assert_eq!(imported.profiles.len(), 2);
         assert_eq!(imported.profiles[0].name, "migration");
         assert_eq!(imported.settings.locale, LocaleSetting::ZhCn);
         assert_eq!(imported.settings.theme, ThemeSetting::Dark);
@@ -662,6 +673,13 @@ mod tests {
             imported.profiles[0].auth,
             AuthConfig::Password {
                 credential_ref: None
+            }
+        ));
+        assert!(matches!(
+            imported.profiles[1].auth,
+            AuthConfig::PrivateKey {
+                passphrase_ref: None,
+                ..
             }
         ));
         let legacy = target_dir.path().join("legacy.json");
