@@ -363,7 +363,7 @@ impl AppView {
             window,
             cx,
             MessageId::LocalShellArgs,
-            &preferences.local_shell_args.join(" "),
+            &format_shell_args(&preferences.local_shell_args),
             false,
             locale,
         );
@@ -699,19 +699,13 @@ impl AppView {
                 ),
                 cx.observe(&local_shell_path, |this, input, cx| {
                     let path = input.read(cx).value().to_string();
-                    let args = this.local_shell_args.read(cx).value().split_whitespace().map(str::to_owned).collect();
-                    if this.state.as_mut().is_some_and(|state| state.set_local_shell(path, args).is_err()) {
-                        this.status_message = Some(MessageId::StorageCorrupt);
-                    }
-                    cx.notify();
+                    let args = parse_shell_args(&this.local_shell_args.read(cx).value());
+                    this.set_local_shell(path, args, cx);
                 }),
                 cx.observe(&local_shell_args, |this, input, cx| {
                     let path = this.local_shell_path.read(cx).value().to_string();
-                    let args = input.read(cx).value().split_whitespace().map(str::to_owned).collect();
-                    if this.state.as_mut().is_some_and(|state| state.set_local_shell(path, args).is_err()) {
-                        this.status_message = Some(MessageId::StorageCorrupt);
-                    }
-                    cx.notify();
+                    let args = parse_shell_args(&input.read(cx).value());
+                    this.set_local_shell(path, args, cx);
                 }),
             ];
         let mut tabs = TabCollection::new();
@@ -1139,6 +1133,16 @@ impl AppView {
             return;
         }
         self.tabs.set_scrollback_lines(lines);
+        cx.notify();
+    }
+    fn set_local_shell(&mut self, path: String, args: Vec<String>, cx: &mut Context<Self>) {
+        if self
+            .state
+            .as_mut()
+            .is_some_and(|state| state.set_local_shell(path, args).is_err())
+        {
+            self.status_message = Some(MessageId::StorageCorrupt);
+        }
         cx.notify();
     }
 
@@ -1668,5 +1672,73 @@ fn play_terminal_bell() {
                 .arg("/usr/share/sounds/freedesktop/stereo/bell.oga")
                 .spawn();
         }
+    }
+}
+
+fn format_shell_args(args: &[String]) -> String {
+    args.iter()
+        .map(|arg| format!("'{}'", arg.replace('\'', "'\\''")))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn parse_shell_args(input: &str) -> Vec<String> {
+    let mut args = Vec::new();
+    let mut arg = String::new();
+    let mut quote = None;
+    let mut escaped = false;
+    let mut started = false;
+    for ch in input.chars() {
+        if escaped {
+            arg.push(ch);
+            escaped = false;
+            started = true;
+        } else if ch == '\\' && quote != Some('\'') {
+            escaped = true;
+            started = true;
+        } else if matches!(ch, '\'' | '"') {
+            if quote == Some(ch) {
+                quote = None;
+            } else if quote.is_none() {
+                quote = Some(ch);
+                started = true;
+            } else {
+                arg.push(ch);
+            }
+        } else if ch.is_whitespace() && quote.is_none() {
+            if started {
+                args.push(std::mem::take(&mut arg));
+                started = false;
+            }
+        } else {
+            arg.push(ch);
+            started = true;
+        }
+    }
+    if escaped {
+        arg.push('\\');
+    }
+    if started {
+        args.push(arg);
+    }
+    args
+}
+
+#[cfg(test)]
+mod shell_args_tests {
+    use super::{format_shell_args, parse_shell_args};
+
+    #[test]
+    fn shell_argument_editor_round_trips_spaces_quotes_and_empty_arguments() {
+        let args = vec![
+            "two words".to_owned(),
+            String::new(),
+            "literal ' quote".to_owned(),
+            "plain".to_owned(),
+        ];
+        assert_eq!(
+            parse_shell_args(&format_shell_args(&args)),
+            ["two words", "", "literal ' quote", "plain"]
+        );
     }
 }

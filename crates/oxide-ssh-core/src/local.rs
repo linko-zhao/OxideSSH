@@ -327,7 +327,7 @@ mod tests {
         let directory = std::env::temp_dir().join(format!("oxide-ssh-cwd-{}", SessionId::new().0));
         std::fs::create_dir(&directory).unwrap();
         let expected = directory.to_string_lossy().into_owned();
-        let mut handle = spawn_local_shell(size(), &expected).unwrap();
+        let mut handle = spawn_local_shell(size(), None, &[], &expected).unwrap();
         let events = handle.take_events().unwrap();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         while !matches!(
@@ -390,7 +390,7 @@ mod tests {
     #[test]
     fn configured_shell_arguments_are_used() {
         let args = vec!["-c".into(), "printf configured-shell-marker".into()];
-        let mut handle = spawn_local_shell(size(), Some("/bin/sh"), &args).unwrap();
+        let mut handle = spawn_local_shell(size(), Some("/bin/sh"), &args, "").unwrap();
         let events = handle.take_events().unwrap();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         let mut output = Vec::new();
@@ -417,7 +417,7 @@ mod tests {
     #[test]
     fn configured_missing_shell_returns_error_without_fallback() {
         assert_eq!(
-            spawn_local_shell(size(), Some("/oxide-ssh-missing-shell"), &[])
+            spawn_local_shell(size(), Some("/oxide-ssh-missing-shell"), &[], "")
                 .err(),
             Some(SessionError::LocalShellFailed)
         );
