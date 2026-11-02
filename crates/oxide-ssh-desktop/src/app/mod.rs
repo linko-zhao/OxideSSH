@@ -1876,6 +1876,7 @@ impl Render for AppView {
                 .child(
                     div()
                         .flex_1()
+                        .min_h(px(0.))
                         .flex()
                         .gap(px(CARD_GAP))
                         .p(px(CARD_GAP))
