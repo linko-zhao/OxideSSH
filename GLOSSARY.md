@@ -13,6 +13,10 @@ _Avoid_: 原生标题栏、系统标题栏
 
 ## Language
 
+**终端引擎 (Terminal Engine)**:
+在会话传输与终端界面之间维护终端状态的后端无关模块；统一表达终端内容、输入模式、选区与动作，使界面和会话编排无需识别具体终端实现。
+_Avoid_: 终端核心
+
 **本地会话 (Local session)**:
 不关联主机的终端会话，在本机 PTY 中运行用户配置的 shell 和启动参数；shell 路径未设置时使用平台默认回退链（Unix 为 `$SHELL` 回退 `/bin/sh`；Windows 按 PATH 探测 `pwsh.exe` → `powershell.exe`，回退 `%COMSPEC%`/`cmd.exe`），工作目录为用户主目录。不持久化、不参与标签过滤，退出或关闭即销毁；重连语义为重新启动 shell。
 _Avoid_: 本地主机、本机主机
