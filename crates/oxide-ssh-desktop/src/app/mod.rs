@@ -1826,7 +1826,7 @@ impl AppView {
     }
 
     fn on_copy(&mut self, _: &Copy, window: &mut Window, cx: &mut Context<Self>) {
-        if self.focus_handle.is_focused(window) {
+        if self.terminal_focus.is_focused(window) {
             self.copy_terminal_selection(cx);
             cx.stop_propagation();
         }
@@ -1843,7 +1843,7 @@ impl AppView {
     }
 
     fn on_paste(&mut self, _: &Paste, window: &mut Window, cx: &mut Context<Self>) {
-        if self.focus_handle.is_focused(window) {
+        if self.terminal_focus.is_focused(window) {
             self.paste_terminal(cx);
             cx.stop_propagation();
         }
