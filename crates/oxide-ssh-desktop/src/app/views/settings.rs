@@ -6,6 +6,7 @@ use gpui_component::select::Select;
 fn settings_card(rows: Vec<AnyElement>, cx: &Context<AppView>) -> AnyElement {
     let mut card = div()
         .w_full()
+        .min_w(px(0.))
         .flex()
         .flex_col()
         .rounded(cx.theme().radius_lg)
@@ -24,6 +25,7 @@ fn settings_card(rows: Vec<AnyElement>, cx: &Context<AppView>) -> AnyElement {
 fn settings_page(title: &'static str, rows: Vec<AnyElement>, cx: &Context<AppView>) -> AnyElement {
     div()
         .w_full()
+        .min_w(px(0.))
         .max_w(px(880.))
         .mx_auto()
         .flex()
@@ -277,13 +279,17 @@ impl AppView {
                         self.setting_row(
                             MessageId::LocalShellPath,
                             MessageId::LocalShellPathDescription,
-                            Input::new(&self.local_shell_path).into_any_element(),
+                            Input::new(&self.local_shell_path)
+                                .w(px(280.))
+                                .into_any_element(),
                             cx,
                         ),
                         self.setting_row(
                             MessageId::LocalShellArgs,
                             MessageId::LocalShellArgsDescription,
-                            Input::new(&self.local_shell_args).into_any_element(),
+                            Input::new(&self.local_shell_args)
+                                .w(px(280.))
+                                .into_any_element(),
                             cx,
                         ),
                     ],
@@ -357,7 +363,7 @@ impl AppView {
                             .flex()
                             .flex_col()
                             .gap(px(8.))
-                            .child(Input::new(&self.ansi_palette_input))
+                            .child(Input::new(&self.ansi_palette_input).w(px(280.)))
                             .child(
                                 h_flex()
                                     .gap(px(8.))
@@ -490,6 +496,7 @@ impl AppView {
                 }
                 rows.push(
                     h_flex()
+                        .flex_wrap()
                         .gap(px(8.))
                         .p(px(16.))
                         .child(
@@ -556,6 +563,7 @@ impl AppView {
                             )
                             .child(
                                 h_flex()
+                                    .flex_wrap()
                                     .gap(px(8.))
                                     .child(
                                         Button::new("config-export")
@@ -713,6 +721,7 @@ impl AppView {
                         div()
                             .id("settings-scroll")
                             .flex_1()
+                            .min_w(px(0.))
                             .h_full()
                             .overflow_y_scroll()
                             .p(px(32.))
