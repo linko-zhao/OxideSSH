@@ -13,7 +13,6 @@ name = "oxide-ssh"
 path = "src/main.rs"
 
 [dependencies]
-alacritty_terminal.workspace = true
 async-channel.workspace = true
 bytes.workspace = true
 directories.workspace = true

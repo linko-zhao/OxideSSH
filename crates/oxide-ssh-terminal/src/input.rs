@@ -82,7 +82,7 @@ impl std::fmt::Display for PasteError {
 
 impl std::error::Error for PasteError {}
 
-pub struct InputEncoder;
+pub(crate) struct InputEncoder;
 
 impl InputEncoder {
     pub fn encode(input: KeyInput<'_>, mode: TermMode) -> SmallVec<[u8; 16]> {
@@ -204,128 +204,5 @@ fn key_sequence(key: Key<'_>, shift: bool, mode: TermMode) -> Option<&'static [u
         Key::Function(11) => Some(b"\x1b[23~"),
         Key::Function(12) => Some(b"\x1b[24~"),
         Key::Function(_) => None,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use alacritty_terminal::term::TermMode;
-
-    use super::*;
-
-    #[test]
-    fn shift_tab_encodes_backwards_tab() {
-        assert_eq!(
-            InputEncoder::encode(KeyInput::new(Key::Tab), TermMode::empty()),
-            SmallVec::<[u8; 16]>::from_slice(b"\t")
-        );
-        assert_eq!(
-            InputEncoder::encode(KeyInput::new(Key::Tab).shift(), TermMode::empty()),
-            SmallVec::<[u8; 16]>::from_slice(b"\x1b[Z")
-        );
-    }
-
-    #[test]
-    fn fixed_keys_and_function_keys_use_standard_sequences() {
-        let cases = [
-            (Key::Enter, b"\r".as_slice()),
-            (Key::Backspace, b"\x7f"),
-            (Key::Tab, b"\t"),
-            (Key::Escape, b"\x1b"),
-            (Key::Insert, b"\x1b[2~"),
-            (Key::Delete, b"\x1b[3~"),
-            (Key::PageUp, b"\x1b[5~"),
-            (Key::PageDown, b"\x1b[6~"),
-            (Key::Function(1), b"\x1bOP"),
-            (Key::Function(4), b"\x1bOS"),
-            (Key::Function(5), b"\x1b[15~"),
-            (Key::Function(12), b"\x1b[24~"),
-        ];
-
-        for (key, expected) in cases {
-            assert_eq!(
-                InputEncoder::encode(KeyInput::new(key), TermMode::empty()).as_slice(),
-                expected,
-                "{key:?}",
-            );
-        }
-    }
-
-    #[test]
-    fn application_cursor_keys_are_encoded() {
-        let cases = [
-            (Key::ArrowUp, b"\x1b[A".as_slice(), b"\x1bOA".as_slice()),
-            (Key::ArrowDown, b"\x1b[B", b"\x1bOB"),
-            (Key::ArrowRight, b"\x1b[C", b"\x1bOC"),
-            (Key::ArrowLeft, b"\x1b[D", b"\x1bOD"),
-            (Key::Home, b"\x1b[H", b"\x1bOH"),
-            (Key::End, b"\x1b[F", b"\x1bOF"),
-        ];
-
-        for (key, normal, application) in cases {
-            assert_eq!(
-                InputEncoder::encode(KeyInput::new(key), TermMode::empty()).as_slice(),
-                normal,
-            );
-            assert_eq!(
-                InputEncoder::encode(KeyInput::new(key), TermMode::APP_CURSOR).as_slice(),
-                application,
-            );
-        }
-    }
-
-    #[test]
-    fn text_control_and_alt_are_encoded_without_loss() {
-        assert_eq!(
-            InputEncoder::encode(KeyInput::text("你a"), TermMode::empty()).as_slice(),
-            "你a".as_bytes(),
-        );
-
-        for (text, expected) in [
-            ("a", 0x01),
-            ("Z", 0x1a),
-            ("[", 0x1b),
-            ("\\", 0x1c),
-            ("]", 0x1d),
-            ("^", 0x1e),
-            ("_", 0x1f),
-        ] {
-            let input = KeyInput::text(text).control();
-            assert_eq!(
-                InputEncoder::encode(input, TermMode::empty()).as_slice(),
-                &[expected],
-            );
-        }
-
-        assert_eq!(
-            InputEncoder::encode(KeyInput::text("x").alt(), TermMode::empty()).as_slice(),
-            b"\x1bx",
-        );
-        assert!(InputEncoder::encode(KeyInput::text("你").control(), TermMode::empty()).is_empty());
-    }
-
-    #[test]
-    fn paste_filters_escape_and_honors_bracketed_mode() {
-        let source = "one\r\ntwo\rthree\0\x1bfour";
-        assert_eq!(
-            InputEncoder::paste(source, TermMode::empty()).unwrap(),
-            bytes::Bytes::from_static(b"one\rtwo\rthreefour"),
-        );
-        assert_eq!(
-            InputEncoder::paste(source, TermMode::BRACKETED_PASTE).unwrap(),
-            bytes::Bytes::from_static(b"\x1b[200~one\ntwo\nthreefour\x1b[201~"),
-        );
-    }
-
-    #[test]
-    fn paste_limit_is_inclusive() {
-        let accepted = "x".repeat(MAX_PASTE_BYTES);
-        assert!(InputEncoder::paste(&accepted, TermMode::empty()).is_ok());
-
-        let rejected = "x".repeat(MAX_PASTE_BYTES + 1);
-        assert_eq!(
-            InputEncoder::paste(&rejected, TermMode::empty()),
-            Err(PasteError::TooLarge)
-        );
     }
 }

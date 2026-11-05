@@ -33,7 +33,7 @@ OxideSSH 是用 Rust 编写的桌面 SSH 客户端，采用原生 GPU 渲染界�
 - **本地终端** — 在主目录中运行平台默认 shell（`$SHELL` 或 `/bin/sh`；Windows 按 PATH 探测 `pwsh.exe` → `powershell.exe`，回退 `%COMSPEC%`/`cmd.exe`）的标签页。
 
 ### 终端
-- 基于 Alacritty 的终端仿真，保留 10,000 行回滚历史。
+- Terminal Engine 终端仿真，保留 10,000 行回滚历史，并提供后端无关的渲染接口。
 - 鼠标选择与复制/粘贴，支持 bracketed paste、大段粘贴确认阈值配置、1 MiB 粘贴上限及 Ctrl/Alt/Shift 组合键。
 - 支持 IME 文本输入、宽字符，终端尺寸变化会同步到远端会话。
 - 主题（浅色 / 深色 / 跟随系统）与英文 / 简体中文界面。
@@ -128,7 +128,7 @@ OxideSSH 使用操作系统标准的应用配置目录。典型位置如下（�
 | Crate | 职责 |
 | --- | --- |
 | `oxide-ssh-core` | 连接配置、标签、设置、存储、凭据、主机密钥信任，以及 SSH 传输（`russh`） |
-| `oxide-ssh-terminal` | 终端模型（`alacritty_terminal`）、输入编码、选择与渲染快照 |
+| `oxide-ssh-terminal` | Terminal Engine facade、内部 Alacritty adapter、输入编码、选择与借用渲染快照 |
 | `oxide-ssh-app` | 与 UI 工具包无关的标签页与会话编排 |
 | `oxide-ssh-desktop` | GPUI 桌面应用：工作区、编辑器、终端视图、设置、国际化 |
 

@@ -6,17 +6,17 @@ fn cursor_phase_visible(blinking: bool, focused: bool, blink_phase: bool) -> boo
 }
 
 fn resolve_cursor_shape(
-    remote_shape: alacritty_terminal::vte::ansi::CursorShape,
+    remote_shape: TerminalCursorShape,
     remote_owned: bool,
     local_shape: CursorStyleSetting,
-) -> alacritty_terminal::vte::ansi::CursorShape {
-    if remote_shape == alacritty_terminal::vte::ansi::CursorShape::Hidden || remote_owned {
+) -> TerminalCursorShape {
+    if remote_shape == TerminalCursorShape::Hidden || remote_owned {
         remote_shape
     } else {
         match local_shape {
-            CursorStyleSetting::Block => alacritty_terminal::vte::ansi::CursorShape::Block,
-            CursorStyleSetting::Beam => alacritty_terminal::vte::ansi::CursorShape::Beam,
-            CursorStyleSetting::Underline => alacritty_terminal::vte::ansi::CursorShape::Underline,
+            CursorStyleSetting::Block => TerminalCursorShape::Block,
+            CursorStyleSetting::Beam => TerminalCursorShape::Beam,
+            CursorStyleSetting::Underline => TerminalCursorShape::Underline,
         }
     }
 }
@@ -151,10 +151,9 @@ impl Element for TerminalElement {
             .map(|profile| view.profile_terminal_colors(profile))
             .unwrap_or_else(|| view.terminal_colors());
         let selection_color = terminal_selection_color(view.theme);
-        let content = model.renderable_content();
-        let selection = content.selection;
-        let cursor = content.cursor;
-        let display_offset = content.display_offset as i32;
+        let content = model.snapshot();
+        let cursor = content.cursor();
+        let display_offset = content.display_offset() as i32;
 
         let mut row_text = Vec::with_capacity(geometry.rows);
         let mut row_runs = Vec::with_capacity(geometry.rows);
@@ -168,16 +167,16 @@ impl Element for TerminalElement {
         let mut backgrounds = Vec::with_capacity(geometry.rows * 4);
         let mut background_segment: Option<(usize, usize, usize, u32)> = None;
         let default_background = terminal_colors.background.to_hex();
-        for indexed in content.display_iter {
-            let Ok(row) = usize::try_from(indexed.point.line.0 + display_offset) else {
+        for indexed in content.cells() {
+            let Ok(row) = usize::try_from(indexed.point.line + display_offset) else {
                 continue;
             };
-            let column = indexed.point.column.0;
+            let column = indexed.point.column;
             if row >= geometry.rows || column >= geometry.columns {
                 continue;
             }
-            let style = model.cell_render_style(indexed.cell);
-            let selected = selection.is_some_and(|range| range.contains(indexed.point));
+            let style = indexed.style;
+            let selected = indexed.selected;
             let background = if selected {
                 selection_color
             } else {
@@ -219,8 +218,8 @@ impl Element for TerminalElement {
             }
             let text = &mut row_text[row];
             let before = text.len();
-            text.push(indexed.cell.c);
-            if let Some(zerowidth) = indexed.cell.zerowidth() {
+            text.push(indexed.character);
+            if let Some(zerowidth) = indexed.zerowidth() {
                 text.extend(zerowidth);
             }
             let byte_len = text.len() - before;
@@ -275,14 +274,14 @@ impl Element for TerminalElement {
             ));
         }
 
-        let cursor_row = usize::try_from(cursor.point.line.0 + display_offset).ok();
+        let cursor_row = usize::try_from(cursor.point.line + display_offset).ok();
         let cursor = if cursor_row.is_none_or(|row| row >= geometry.rows)
-            || cursor.point.column.0 >= geometry.columns
+            || cursor.point.column >= geometry.columns
         {
             Vec::new()
         } else {
             let cursor_color = rgb(terminal_colors.cursor.to_hex());
-            let cursor_x = bounds.left() + cell_width * cursor.point.column.0 as f32;
+            let cursor_x = bounds.left() + cell_width * cursor.point.column as f32;
             let cursor_y = bounds.top() + cell_height * cursor_row.unwrap_or_default() as f32;
             let shape = resolve_cursor_shape(
                 cursor.shape,
@@ -303,22 +302,22 @@ impl Element for TerminalElement {
                 Vec::new()
             } else {
                 match shape {
-                    alacritty_terminal::vte::ansi::CursorShape::Hidden => Vec::new(),
-                    alacritty_terminal::vte::ansi::CursorShape::Beam => vec![fill(
+                    TerminalCursorShape::Hidden => Vec::new(),
+                    TerminalCursorShape::Beam => vec![fill(
                         Bounds::new(point(cursor_x, cursor_y), size(px(2.), cell_height)),
                         cursor_color,
                     )],
-                    alacritty_terminal::vte::ansi::CursorShape::Underline => vec![fill(
+                    TerminalCursorShape::Underline => vec![fill(
                         Bounds::new(
                             point(cursor_x, cursor_y + cell_height - px(2.)),
                             size(cell_width, px(2.)),
                         ),
                         cursor_color,
                     )],
-                    alacritty_terminal::vte::ansi::CursorShape::HollowBlock => {
+                    TerminalCursorShape::HollowBlock => {
                         terminal_outline(cursor_x, cursor_y, cell_width, cell_height, cursor_color)
                     }
-                    alacritty_terminal::vte::ansi::CursorShape::Block => vec![fill(
+                    TerminalCursorShape::Block => vec![fill(
                         Bounds::new(point(cursor_x, cursor_y), size(cell_width, cell_height)),
                         gpui::Rgba {
                             a: 0.45,
@@ -809,14 +808,14 @@ impl AppView {
 #[cfg(test)]
 mod cursor_blink_tests {
     use super::{cursor_phase_visible, resolve_cursor_shape};
-    use alacritty_terminal::vte::ansi::CursorShape;
     use oxide_ssh_core::model::CursorStyleSetting;
+    use oxide_ssh_terminal::TerminalCursorShape;
 
     #[test]
     fn remote_hidden_cursor_overrides_local_shape() {
         assert_eq!(
-            resolve_cursor_shape(CursorShape::Hidden, false, CursorStyleSetting::Beam),
-            CursorShape::Hidden
+            resolve_cursor_shape(TerminalCursorShape::Hidden, false, CursorStyleSetting::Beam),
+            TerminalCursorShape::Hidden
         );
     }
 

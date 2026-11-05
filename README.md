@@ -33,7 +33,7 @@ OxideSSH is a desktop SSH client written in Rust with a native GPU-rendered UI (
 - **Local terminal** — a tab running the platform default shell (`$SHELL` or `/bin/sh`; on Windows `pwsh.exe` → `powershell.exe` → `%COMSPEC%`/`cmd.exe`) in your home directory.
 
 ### Terminal
-- Alacritty-based terminal emulation with 10,000 lines of scrollback.
+- Terminal Engine emulation with 10,000 lines of scrollback and a backend-neutral rendering interface.
 - Mouse selection and copy/paste, including bracketed paste, configurable confirmation for large pastes, a 1 MiB paste limit, and Ctrl/Alt/Shift modified keys.
 - IME text input, wide characters, and terminal resize propagated to the remote session.
 - Color themes (light / dark / follow system) and English / 简体中文 UI.
@@ -129,7 +129,7 @@ Configuration can be exported, backed up, or restored from Settings → Security
 | Crate | Responsibility |
 | --- | --- |
 | `oxide-ssh-core` | Profiles, tags, settings, storage, credentials, host-key trust, and the SSH transport (`russh`) |
-| `oxide-ssh-terminal` | Terminal model (`alacritty_terminal`), input encoding, selection, and render snapshots |
+| `oxide-ssh-terminal` | Terminal Engine facade, internal Alacritty adapter, input encoding, selection, and borrowed render snapshots |
 | `oxide-ssh-app` | Toolkit-independent tab and session orchestration |
 | `oxide-ssh-desktop` | GPUI desktop application: workspace, editor, terminal view, settings, i18n |
 

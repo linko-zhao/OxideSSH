@@ -7,15 +7,17 @@ use alacritty_terminal::{
     selection::{Selection, SelectionType},
     term::{
         ClipboardType, Config, MIN_COLUMNS, MIN_SCREEN_LINES, Osc52, RenderableContent, Term,
-        TermDamage, TermMode,
+        TermMode,
         cell::{Cell, Flags},
         color,
     },
-    vte::ansi::{Color, Processor, Rgb},
+    vte::ansi::{Color, CursorShape, Processor, Rgb},
 };
 use bytes::Bytes;
 use parking_lot::Mutex;
 use smallvec::SmallVec;
+
+use crate::input::{InputEncoder, KeyInput, PasteError};
 
 pub const SCROLLBACK_HISTORY_LINES: usize = 10_000;
 
@@ -119,6 +121,87 @@ pub struct CellRenderStyle {
     pub wide_spacer: bool,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TerminalPoint {
+    pub line: i32,
+    pub column: usize,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TerminalCursorShape {
+    Hidden,
+    Beam,
+    HollowBlock,
+    Block,
+    Underline,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TerminalCursor {
+    pub point: TerminalPoint,
+    pub shape: TerminalCursorShape,
+}
+
+pub struct TerminalCell<'a> {
+    pub point: TerminalPoint,
+    pub character: char,
+    pub style: CellRenderStyle,
+    pub selected: bool,
+    cell: &'a Cell,
+}
+
+impl TerminalCell<'_> {
+    pub fn zerowidth(&self) -> Option<&[char]> {
+        self.cell.zerowidth()
+    }
+}
+
+pub struct TerminalSnapshot<'a> {
+    engine: &'a TerminalEngine,
+    content: RenderableContent<'a>,
+}
+
+impl<'a> TerminalSnapshot<'a> {
+    pub fn cells(self) -> impl Iterator<Item = TerminalCell<'a>> + 'a {
+        let engine = self.engine;
+        let selection = self.content.selection;
+        self.content.display_iter.map(move |indexed| TerminalCell {
+            point: TerminalPoint {
+                line: indexed.point.line.0,
+                column: indexed.point.column.0,
+            },
+            character: indexed.cell.c,
+            style: engine.cell_render_style(indexed.cell),
+            selected: selection.is_some_and(|range| range.contains(indexed.point)),
+            cell: indexed.cell,
+        })
+    }
+
+    pub fn display_offset(&self) -> usize {
+        self.content.display_offset
+    }
+
+    pub fn is_alternate_screen(&self) -> bool {
+        self.content.mode.contains(TermMode::ALT_SCREEN)
+    }
+
+    pub fn cursor(&self) -> TerminalCursor {
+        TerminalCursor {
+            point: TerminalPoint {
+                line: self.content.cursor.point.line.0,
+                column: self.content.cursor.point.column.0,
+            },
+            shape: match self.content.cursor.shape {
+                CursorShape::Hidden => TerminalCursorShape::Hidden,
+                CursorShape::Beam => TerminalCursorShape::Beam,
+                CursorShape::HollowBlock => TerminalCursorShape::HollowBlock,
+                CursorShape::Block => TerminalCursorShape::Block,
+                CursorShape::Underline => TerminalCursorShape::Underline,
+            },
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TerminalAction {
     WriteBack(Bytes),
@@ -166,7 +249,7 @@ impl EventListener for TerminalEventProxy {
     }
 }
 
-pub struct TerminalModel {
+pub struct TerminalEngine {
     term: Term<TerminalEventProxy>,
     processor: Processor,
     pending_events: Arc<Mutex<Vec<Event>>>,
@@ -178,7 +261,7 @@ pub struct TerminalModel {
     cursor_style_command_in_progress: bool,
 }
 
-impl TerminalModel {
+impl TerminalEngine {
     pub fn new(size: TerminalSize) -> Result<Self, TerminalError> {
         Self::with_scrollback(size, TerminalColors::default(), SCROLLBACK_HISTORY_LINES)
     }
@@ -324,16 +407,23 @@ impl TerminalModel {
         self.default_colors = colors;
     }
 
-    pub fn mode(&self) -> TermMode {
-        *self.term.mode()
+    pub fn encode_key(&self, input: KeyInput<'_>) -> SmallVec<[u8; 16]> {
+        InputEncoder::encode(input, *self.term.mode())
+    }
+
+    pub fn encode_paste(&self, text: &str) -> Result<Bytes, PasteError> {
+        InputEncoder::paste(text, *self.term.mode())
     }
 
     pub fn history_size(&self) -> usize {
         self.term.grid().history_size()
     }
 
-    pub fn renderable_content(&self) -> RenderableContent<'_> {
-        self.term.renderable_content()
+    pub fn snapshot(&self) -> TerminalSnapshot<'_> {
+        TerminalSnapshot {
+            engine: self,
+            content: self.term.renderable_content(),
+        }
     }
 
     pub fn cursor_blinking(&self) -> bool {
@@ -348,7 +438,7 @@ impl TerminalModel {
         self.remote_cursor_blink
     }
 
-    pub fn cell_render_style(&self, cell: &Cell) -> CellRenderStyle {
+    fn cell_render_style(&self, cell: &Cell) -> CellRenderStyle {
         let bold = cell.flags.contains(Flags::BOLD);
         let dim = cell.flags.contains(Flags::DIM);
         let mut foreground = self.resolve_color(cell.fg, bold, dim);
@@ -369,14 +459,6 @@ impl TerminalModel {
             wide: cell.flags.contains(Flags::WIDE_CHAR),
             wide_spacer: cell.flags.contains(Flags::WIDE_CHAR_SPACER),
         }
-    }
-
-    pub fn damage(&mut self) -> TermDamage<'_> {
-        self.term.damage()
-    }
-
-    pub fn reset_damage(&mut self) {
-        self.term.reset_damage();
     }
 
     pub fn scroll_display(&mut self, lines: i32) {
@@ -458,20 +540,6 @@ impl TerminalModel {
             259..=266 => self.default_colors.foreground.into(),
             _ => self.default_colors.background.into(),
         }
-    }
-}
-
-impl Dimensions for TerminalModel {
-    fn total_lines(&self) -> usize {
-        self.term.total_lines()
-    }
-
-    fn screen_lines(&self) -> usize {
-        self.term.screen_lines()
-    }
-
-    fn columns(&self) -> usize {
-        self.term.columns()
     }
 }
 
@@ -584,12 +652,6 @@ fn xterm_color(index: usize) -> Rgb {
 
 #[cfg(test)]
 mod tests {
-    use alacritty_terminal::{
-        grid::Dimensions,
-        index::{Column, Line},
-        term::{TermMode, cell::Flags},
-    };
-
     use super::*;
 
     fn size(columns: usize, rows: usize) -> TerminalSize {
@@ -601,23 +663,17 @@ mod tests {
         }
     }
 
-    fn visible_text(model: &TerminalModel) -> String {
+    fn visible_text(model: &TerminalEngine) -> String {
         model
-            .renderable_content()
-            .display_iter
-            .filter_map(|indexed| {
-                (!indexed
-                    .cell
-                    .flags
-                    .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER))
-                .then_some(indexed.cell.c)
-            })
+            .snapshot()
+            .cells()
+            .filter_map(|cell| (!cell.style.wide_spacer).then_some(cell.character))
             .collect()
     }
 
     #[test]
     fn remote_cursor_style_updates_blinking_and_wakes_renderer() {
-        let mut model = TerminalModel::new(size(80, 24)).unwrap();
+        let mut model = TerminalEngine::new(size(80, 24)).unwrap();
         assert!(!model.cursor_blinking());
         assert!(!model.has_remote_cursor_style());
         let actions = model.process_output(b"\x1b[5 q");
@@ -629,14 +685,14 @@ mod tests {
 
     #[test]
     fn explicit_cursor_style_same_as_default_takes_remote_ownership() {
-        let mut model = TerminalModel::new(size(80, 24)).unwrap();
+        let mut model = TerminalEngine::new(size(80, 24)).unwrap();
         model.process_output(b"\x1b[2 q");
         assert!(model.has_remote_cursor_style());
     }
 
     #[test]
     fn cursor_style_commands_take_remote_ownership_even_if_shape_returns_to_initial() {
-        let mut model = TerminalModel::new(size(80, 24)).unwrap();
+        let mut model = TerminalEngine::new(size(80, 24)).unwrap();
         model.process_output(b"\x1b[5 q\x1b[2 q");
         assert!(model.has_remote_cursor_style());
         assert!(!model.cursor_blinking());
@@ -644,8 +700,8 @@ mod tests {
 
     #[test]
     fn reset_then_cursor_style_in_same_chunk_matches_split_chunks() {
-        let mut together = TerminalModel::new(size(80, 24)).unwrap();
-        let mut split = TerminalModel::new(size(80, 24)).unwrap();
+        let mut together = TerminalEngine::new(size(80, 24)).unwrap();
+        let mut split = TerminalEngine::new(size(80, 24)).unwrap();
 
         together.process_output(b"\x1bc\x1b[5 q");
         split.process_output(b"\x1bc");
@@ -666,7 +722,7 @@ mod tests {
     }
     #[test]
     fn terminal_reset_restores_local_cursor_precedence() {
-        let mut model = TerminalModel::new(size(80, 24)).unwrap();
+        let mut model = TerminalEngine::new(size(80, 24)).unwrap();
         model.process_output(b"\x1b[5 q");
         assert!(model.has_remote_cursor_style());
         assert!(model.has_remote_cursor_blink());
@@ -677,8 +733,8 @@ mod tests {
     }
 
     #[test]
-    fn output_updates_borrowed_renderable_content() {
-        let mut model = TerminalModel::new(size(12, 3)).unwrap();
+    fn output_updates_borrowed_snapshot() {
+        let mut model = TerminalEngine::new(size(12, 3)).unwrap();
         assert_eq!(
             model.process_output("hello 你".as_bytes()).as_slice(),
             &[TerminalAction::Wakeup],
@@ -686,12 +742,11 @@ mod tests {
 
         let text = visible_text(&model);
         assert!(text.contains("hello 你"));
-        assert_eq!(model.renderable_content().mode, TermMode::default());
     }
 
     #[test]
     fn bell_and_osc52_clipboard_requests_are_reported() {
-        let mut model = TerminalModel::new(size(80, 24)).unwrap();
+        let mut model = TerminalEngine::new(size(80, 24)).unwrap();
         let actions = model.process_output(
             b"\x07\x1b[6n\x1b]0;ignored title\x07\x1b]52;c;YQ==\x07\x1b]52;c;Yg==\x07",
         );
@@ -722,7 +777,7 @@ mod tests {
 
     #[test]
     fn color_and_text_area_queries_write_back_terminal_values() {
-        let mut model = TerminalModel::with_colors(
+        let mut model = TerminalEngine::with_colors(
             size(80, 24),
             TerminalColors {
                 foreground: RgbColor::new(0xe6, 0xe8, 0xeb),
@@ -755,23 +810,20 @@ mod tests {
 
     #[test]
     fn alternate_screen_and_256_colors_render() {
-        let mut model = TerminalModel::new(size(20, 3)).unwrap();
+        let mut model = TerminalEngine::new(size(20, 3)).unwrap();
         model.process_output(b"\x1b[38;5;196mred\x1b[0m");
         let red_cell = model
-            .renderable_content()
-            .display_iter
-            .find(|indexed| indexed.cell.c == 'r')
+            .snapshot()
+            .cells()
+            .find(|cell| cell.character == 'r')
             .unwrap();
-        assert_eq!(
-            model.cell_render_style(red_cell.cell).foreground,
-            RgbColor::new(255, 0, 0)
-        );
+        assert_eq!(red_cell.style.foreground, RgbColor::new(255, 0, 0));
 
         model.process_output(b"\x1b[?1049halt");
-        assert!(model.mode().contains(TermMode::ALT_SCREEN));
+        assert!(model.snapshot().is_alternate_screen());
         assert!(visible_text(&model).contains("alt"));
         model.process_output(b"\x1b[?1049l");
-        assert!(!model.mode().contains(TermMode::ALT_SCREEN));
+        assert!(!model.snapshot().is_alternate_screen());
         assert!(visible_text(&model).contains("red"));
     }
 
@@ -781,35 +833,35 @@ mod tests {
         let mut colors = TerminalColors::default();
         colors.ansi[1] = custom;
         colors.ansi[9] = RgbColor::new(0x65, 0x43, 0x21);
-        let mut model = TerminalModel::with_colors(size(20, 2), colors).unwrap();
+        let mut model = TerminalEngine::with_colors(size(20, 2), colors).unwrap();
         model.process_output(b"\x1b[31mstandard\x1b[91mbright");
         let styles: Vec<_> = model
-            .renderable_content()
-            .display_iter
-            .filter(|indexed| matches!(indexed.cell.c, 's' | 'b'))
-            .map(|indexed| model.cell_render_style(indexed.cell).foreground)
+            .snapshot()
+            .cells()
+            .filter(|cell| matches!(cell.character, 's' | 'b'))
+            .map(|cell| cell.style.foreground)
             .collect();
         assert_eq!(styles, [custom, RgbColor::new(0x65, 0x43, 0x21)]);
     }
     #[test]
     fn wide_cjk_cells_survive_resize() {
-        let mut model = TerminalModel::new(size(10, 2)).unwrap();
+        let mut model = TerminalEngine::new(size(10, 2)).unwrap();
         model.process_output("A你B".as_bytes());
 
         model.resize(size(20, 4)).unwrap();
 
         assert!(visible_text(&model).contains("A你B"));
         let cjk_cells = model
-            .renderable_content()
-            .display_iter
-            .filter(|indexed| indexed.cell.c == '你')
+            .snapshot()
+            .cells()
+            .filter(|cell| cell.character == '你')
             .count();
         assert_eq!(cjk_cells, 1);
     }
 
     #[test]
     fn theme_change_preserves_content_and_updates_default_colors() {
-        let mut model = TerminalModel::new(size(10, 2)).unwrap();
+        let mut model = TerminalEngine::new(size(10, 2)).unwrap();
         model.process_output(b"content");
         let light = TerminalColors {
             foreground: RgbColor::new(0x11, 0x22, 0x33),
@@ -822,20 +874,17 @@ mod tests {
 
         assert!(visible_text(&model).contains("content"));
         let cell = model
-            .renderable_content()
-            .display_iter
-            .find(|indexed| indexed.cell.c == 'c')
+            .snapshot()
+            .cells()
+            .find(|cell| cell.character == 'c')
             .unwrap();
-        assert_eq!(
-            model.cell_render_style(cell.cell).foreground,
-            light.foreground
-        );
+        assert_eq!(cell.style.foreground, light.foreground);
     }
 
     #[test]
     fn configured_scrollback_discards_oldest_history() {
         let mut model =
-            TerminalModel::with_scrollback(size(10, 2), TerminalColors::default(), 2).unwrap();
+            TerminalEngine::with_scrollback(size(10, 2), TerminalColors::default(), 2).unwrap();
         model.process_output(b"one\r\ntwo\r\nthree\r\nfour\r\nfive");
         assert_eq!(model.history_size(), 2);
         assert!(visible_text(&model).contains("five"));
@@ -843,31 +892,39 @@ mod tests {
 
     #[test]
     fn history_alt_screen_resize_and_modes_are_preserved() {
-        let mut model = TerminalModel::new(size(10, 2)).unwrap();
+        let mut model = TerminalEngine::new(size(10, 2)).unwrap();
         model.process_output(b"one\r\ntwo\r\nthree");
         assert!(model.history_size() > 0);
         assert!(model.history_size() <= SCROLLBACK_HISTORY_LINES);
 
         model.process_output(b"\x1b[?1049halt");
-        assert!(model.mode().contains(TermMode::ALT_SCREEN));
+        assert!(model.snapshot().is_alternate_screen());
         assert!(visible_text(&model).contains("alt"));
         model.process_output(b"\x1b[?1049l");
-        assert!(!model.mode().contains(TermMode::ALT_SCREEN));
+        assert!(!model.snapshot().is_alternate_screen());
         assert!(visible_text(&model).contains("three"));
 
         model.process_output(b"\x1b[?2004h\x1b[?1h");
-        assert!(model.mode().contains(TermMode::BRACKETED_PASTE));
-        assert!(model.mode().contains(TermMode::APP_CURSOR));
+        assert_eq!(
+            model.encode_paste("x").unwrap(),
+            Bytes::from_static(b"\x1b[200~x\x1b[201~")
+        );
+        assert_eq!(
+            model
+                .encode_key(crate::KeyInput::new(crate::Key::ArrowUp))
+                .as_slice(),
+            b"\x1bOA"
+        );
 
         model.resize(size(132, 43)).unwrap();
-        assert_eq!(model.columns(), 132);
-        assert_eq!(model.screen_lines(), 43);
+        assert_eq!(model.size().columns, 132);
+        assert_eq!(model.size().rows, 43);
         assert_eq!(model.size(), size(132, 43));
     }
 
     #[test]
     fn selection_copies_visible_text() {
-        let mut model = TerminalModel::new(size(10, 2)).unwrap();
+        let mut model = TerminalEngine::new(size(10, 2)).unwrap();
         model.process_output(b"hello");
         model.start_selection(0, 0, CellSide::Left);
         model.update_selection(0, 4, CellSide::Right);
@@ -879,7 +936,7 @@ mod tests {
 
     #[test]
     fn invalid_resize_preserves_existing_dimensions() {
-        let mut model = TerminalModel::new(size(80, 24)).unwrap();
+        let mut model = TerminalEngine::new(size(80, 24)).unwrap();
         let invalid = TerminalSize {
             columns: 1,
             rows: 0,
@@ -887,11 +944,10 @@ mod tests {
             pixel_height: 0,
         };
         assert_eq!(model.resize(invalid), Err(TerminalError::InvalidSize));
-        assert_eq!(model.columns(), 80);
-        assert_eq!(model.screen_lines(), 24);
+        assert_eq!(model.size().columns, 80);
+        assert_eq!(model.size().rows, 24);
 
-        let content = model.renderable_content();
-        assert_eq!(content.cursor.point.line, Line(0));
-        assert_eq!(content.cursor.point.column, Column(0));
+        let cursor = model.snapshot().cursor();
+        assert_eq!(cursor.point, TerminalPoint { line: 0, column: 0 });
     }
 }

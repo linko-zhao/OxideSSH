@@ -40,7 +40,9 @@ use oxide_ssh_core::{
     },
     storage::StorageError,
 };
-use oxide_ssh_terminal::{CellRenderStyle, CellSide, Key, KeyInput, TerminalSize};
+use oxide_ssh_terminal::{
+    CellRenderStyle, CellSide, Key, KeyInput, TerminalCursorShape, TerminalSize,
+};
 use secrecy::SecretString;
 use uuid::Uuid;
 

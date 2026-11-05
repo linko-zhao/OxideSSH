@@ -10,8 +10,8 @@ use oxide_ssh_core::{
     },
 };
 use oxide_ssh_terminal::{
-    InputEncoder, KeyInput, PasteError, TerminalAction, TerminalColors, TerminalError,
-    TerminalModel, TerminalSize,
+    KeyInput, PasteError, TerminalAction, TerminalColors, TerminalEngine, TerminalError,
+    TerminalSize,
 };
 use uuid::Uuid;
 
@@ -113,7 +113,7 @@ pub struct Tab {
     id: TabId,
     kind: TabKind,
     state: TabState,
-    terminal: TerminalModel,
+    terminal: TerminalEngine,
     session: Option<Session>,
     session_id: Option<SessionId>,
     closing: bool,
@@ -136,7 +136,7 @@ impl Tab {
             } else {
                 TabState::Connecting
             },
-            terminal: TerminalModel::with_scrollback(size, colors, scrollback_lines)?,
+            terminal: TerminalEngine::with_scrollback(size, colors, scrollback_lines)?,
             session: None,
             session_id: None,
             closing: false,
@@ -176,11 +176,11 @@ impl Tab {
         matches!(self.state, TabState::Disconnected { .. })
     }
 
-    pub fn terminal(&self) -> &TerminalModel {
+    pub fn terminal(&self) -> &TerminalEngine {
         &self.terminal
     }
 
-    pub fn terminal_mut(&mut self) -> &mut TerminalModel {
+    pub fn terminal_mut(&mut self) -> &mut TerminalEngine {
         &mut self.terminal
     }
 
@@ -290,7 +290,7 @@ impl Tab {
     }
 
     pub fn send_key(&mut self, input: KeyInput<'_>) -> Result<(), TabLocalError> {
-        let bytes = InputEncoder::encode(input, self.terminal.mode());
+        let bytes = self.terminal.encode_key(input);
         if bytes.is_empty() {
             return Ok(());
         }
@@ -302,8 +302,10 @@ impl Tab {
     }
 
     pub fn paste(&mut self, text: &str) -> Result<(), TabLocalError> {
-        let bytes =
-            InputEncoder::paste(text, self.terminal.mode()).map_err(|error| match error {
+        let bytes = self
+            .terminal
+            .encode_paste(text)
+            .map_err(|error| match error {
                 PasteError::TooLarge => TabLocalError::PasteTooLarge,
             })?;
         self.send_bytes(bytes)
@@ -398,7 +400,7 @@ impl Tab {
         }
         self.session_id = None;
         self.closing = false;
-        self.terminal = TerminalModel::with_scrollback(size, colors, scrollback_lines)?;
+        self.terminal = TerminalEngine::with_scrollback(size, colors, scrollback_lines)?;
         self.state = TabState::Connecting;
         self.local_error = None;
         Ok(())
@@ -1227,11 +1229,11 @@ mod tests {
             let tab = tabs.tab(id).unwrap();
             let cell = tab
                 .terminal()
-                .renderable_content()
-                .display_iter
-                .find(|indexed| indexed.cell.c == 'X')
+                .snapshot()
+                .cells()
+                .find(|cell| cell.character == 'X')
                 .unwrap();
-            tab.terminal().cell_render_style(cell.cell).foreground
+            cell.style.foreground
         };
         assert_eq!(
             foreground(custom),
@@ -1263,16 +1265,11 @@ mod tests {
         assert!(visible_text(tab).contains("content"));
         let content_cell = tab
             .terminal()
-            .renderable_content()
-            .display_iter
-            .find(|indexed| indexed.cell.c == 'c')
+            .snapshot()
+            .cells()
+            .find(|cell| cell.character == 'c')
             .unwrap();
-        assert_eq!(
-            tab.terminal()
-                .cell_render_style(content_cell.cell)
-                .foreground,
-            light.foreground
-        );
+        assert_eq!(content_cell.style.foreground, light.foreground);
     }
 
     #[test]
@@ -1296,9 +1293,9 @@ mod tests {
 
     fn visible_text(tab: &Tab) -> String {
         tab.terminal()
-            .renderable_content()
-            .display_iter
-            .map(|indexed| indexed.cell.c)
+            .snapshot()
+            .cells()
+            .map(|cell| cell.character)
             .collect()
     }
 }
