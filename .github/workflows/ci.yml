@@ -46,10 +46,9 @@ jobs:
         with:
           version: ${{ env.ZIG_TOOLCHAIN }}
 
-      - name: Build pinned libghostty-vt
-        run: bash scripts/build-libghostty-vt.sh "${{ matrix.target }}"
-        shell: bash
-
+      - name: Install pkg-config
+        if: runner.os == 'Windows'
+        run: choco install pkgconfiglite --yes --no-progress
 
       - name: Install Rust toolchain
         run: rustup toolchain install ${{ env.RUST_TOOLCHAIN }} --profile minimal --component rustfmt,clippy --target ${{ matrix.target }}
@@ -62,6 +61,10 @@ jobs:
         with:
           shared-key: desktop-${{ matrix.target }}
           cache-on-failure: false
+
+      - name: Build pinned libghostty-vt
+        run: bash scripts/build-libghostty-vt.sh "${{ matrix.target }}"
+        shell: bash
 
       - name: Check formatting
         run: cargo fmt --all --check
