@@ -31,6 +31,13 @@ unsafe extern "C" {
         rows: u16,
     ) -> i32;
     fn ghostty_terminal_vt_write(terminal: *mut TerminalOpaque, data: *const u8, len: usize);
+    fn ghostty_terminal_resize(
+        terminal: *mut TerminalOpaque,
+        cols: u16,
+        rows: u16,
+        cell_width_px: u32,
+        cell_height_px: u32,
+    ) -> i32;
     fn ghostty_terminal_free(terminal: *mut TerminalOpaque);
     fn ghostty_render_state_new(
         allocator: *const std::ffi::c_void,
@@ -89,6 +96,24 @@ impl GhosttyTerminal {
     pub fn write(&mut self, bytes: &[u8]) {
         // SAFETY: live handle and bytes are valid for the call duration.
         unsafe { ghostty_terminal_vt_write(self.0.as_ptr(), bytes.as_ptr(), bytes.len()) };
+    }
+
+    pub fn resize(
+        &mut self,
+        cols: u16,
+        rows: u16,
+        cell_width_px: u32,
+        cell_height_px: u32,
+    ) -> Result<(), &'static str> {
+        // SAFETY: the terminal is live and the dimensions are plain values.
+        let result = unsafe {
+            ghostty_terminal_resize(self.0.as_ptr(), cols, rows, cell_width_px, cell_height_px)
+        };
+        if result == 0 {
+            Ok(())
+        } else {
+            Err("libghostty-vt terminal resize failed")
+        }
     }
 
     pub fn cell(&mut self, x: u16, y: u16) -> Result<String, &'static str> {

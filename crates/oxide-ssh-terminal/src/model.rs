@@ -147,12 +147,12 @@ pub struct TerminalCell<'a> {
     pub character: char,
     pub style: CellRenderStyle,
     pub selected: bool,
-    cell: &'a Cell,
+    pub(crate) zerowidth: Option<&'a [char]>,
 }
 
 impl TerminalCell<'_> {
     pub fn zerowidth(&self) -> Option<&[char]> {
-        self.cell.zerowidth()
+        self.zerowidth
     }
 }
 
@@ -173,7 +173,7 @@ impl<'a> TerminalSnapshot<'a> {
             character: indexed.cell.c,
             style: engine.cell_render_style(indexed.cell),
             selected: selection.is_some_and(|range| range.contains(indexed.point)),
-            cell: indexed.cell,
+            zerowidth: indexed.cell.zerowidth(),
         })
     }
 
