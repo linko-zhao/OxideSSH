@@ -15,3 +15,7 @@
 - 输入编码在引擎内部读取终端模式；renderer 通过后端无关快照读取单元、样式、选区和游标。
 - 契约测试只通过公开 interface 观察行为，不读取 Alacritty 内部网格。
 - 本期不实现 libghostty-vt FFI；未来接入时需固定 C API 版本并维护 Rust 绑定。
+
+## 后续实现状态（Ghostty ticket #5）
+
+`ghostty-vt` feature 已加入私有的 libghostty-vt render-state adapter，可生成现有的后端无关 `TerminalSnapshot`。`TerminalEngine` 仍由 Alacritty 实现；此快照接入不改变应用运行时，也不公开 Ghostty FFI 类型。

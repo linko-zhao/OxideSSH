@@ -4,7 +4,7 @@ use alacritty_terminal::{
     event::{Event, EventListener, WindowSize},
     grid::{Dimensions, Scroll},
     index::{Column, Point, Side},
-    selection::{Selection, SelectionType},
+    selection::{Selection, SelectionRange, SelectionType},
     term::{
         ClipboardType, Config, MIN_COLUMNS, MIN_SCREEN_LINES, Osc52, RenderableContent, Term,
         TermMode,
@@ -156,48 +156,154 @@ impl TerminalCell<'_> {
     }
 }
 
-pub struct TerminalSnapshot<'a> {
-    engine: &'a TerminalEngine,
-    content: RenderableContent<'a>,
+#[cfg(feature = "ghostty-vt")]
+pub(crate) struct SnapshotCellData {
+    pub point: TerminalPoint,
+    pub character: char,
+    pub style: CellRenderStyle,
+    pub zerowidth: Vec<char>,
 }
 
-impl<'a> TerminalSnapshot<'a> {
-    pub fn cells(self) -> impl Iterator<Item = TerminalCell<'a>> + 'a {
-        let engine = self.engine;
-        let selection = self.content.selection;
-        self.content.display_iter.map(move |indexed| TerminalCell {
+#[cfg(feature = "ghostty-vt")]
+pub(crate) struct GhosttySnapshotData {
+    pub size: TerminalSize,
+    pub cells: Vec<SnapshotCellData>,
+    pub display_offset: usize,
+    pub alternate_screen: bool,
+    pub cursor: TerminalCursor,
+}
+
+enum SnapshotContent<'a> {
+    Alacritty {
+        engine: &'a TerminalEngine,
+        content: RenderableContent<'a>,
+    },
+    #[cfg(feature = "ghostty-vt")]
+    Ghostty(&'a GhosttySnapshotData),
+}
+
+pub struct TerminalSnapshot<'a> {
+    content: SnapshotContent<'a>,
+}
+
+struct AlacrittyCells<'a> {
+    engine: &'a TerminalEngine,
+    iter: alacritty_terminal::grid::GridIterator<'a, Cell>,
+    selection: Option<SelectionRange>,
+}
+
+impl<'a> Iterator for AlacrittyCells<'a> {
+    type Item = TerminalCell<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let indexed = self.iter.next()?;
+        Some(TerminalCell {
             point: TerminalPoint {
                 line: indexed.point.line.0,
                 column: indexed.point.column.0,
             },
             character: indexed.cell.c,
-            style: engine.cell_render_style(indexed.cell),
-            selected: selection.is_some_and(|range| range.contains(indexed.point)),
+            style: self.engine.cell_render_style(indexed.cell),
+            selected: self
+                .selection
+                .is_some_and(|range| range.contains(indexed.point)),
             zerowidth: indexed.cell.zerowidth(),
         })
     }
+}
+
+enum SnapshotCells<'a> {
+    Alacritty(AlacrittyCells<'a>),
+    #[cfg(feature = "ghostty-vt")]
+    Ghostty(std::slice::Iter<'a, SnapshotCellData>),
+}
+
+impl<'a> Iterator for SnapshotCells<'a> {
+    type Item = TerminalCell<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Alacritty(iter) => iter.next(),
+            #[cfg(feature = "ghostty-vt")]
+            Self::Ghostty(iter) => {
+                let cell = iter.next()?;
+                Some(TerminalCell {
+                    point: cell.point,
+                    character: cell.character,
+                    style: cell.style,
+                    selected: false,
+                    zerowidth: (!cell.zerowidth.is_empty()).then_some(cell.zerowidth.as_slice()),
+                })
+            }
+        }
+    }
+}
+
+impl<'a> TerminalSnapshot<'a> {
+    #[cfg(feature = "ghostty-vt")]
+    pub(crate) fn ghostty(data: &'a GhosttySnapshotData) -> Self {
+        Self {
+            content: SnapshotContent::Ghostty(data),
+        }
+    }
+
+    pub fn cells(self) -> impl Iterator<Item = TerminalCell<'a>> + 'a {
+        match self.content {
+            SnapshotContent::Alacritty { engine, content } => {
+                SnapshotCells::Alacritty(AlacrittyCells {
+                    engine,
+                    iter: content.display_iter,
+                    selection: content.selection,
+                })
+            }
+            #[cfg(feature = "ghostty-vt")]
+            SnapshotContent::Ghostty(data) => SnapshotCells::Ghostty(data.cells.iter()),
+        }
+    }
+
+    pub fn size(&self) -> TerminalSize {
+        match &self.content {
+            SnapshotContent::Alacritty { engine, .. } => engine.size,
+            #[cfg(feature = "ghostty-vt")]
+            SnapshotContent::Ghostty(data) => data.size,
+        }
+    }
 
     pub fn display_offset(&self) -> usize {
-        self.content.display_offset
+        match &self.content {
+            SnapshotContent::Alacritty { content, .. } => content.display_offset,
+            #[cfg(feature = "ghostty-vt")]
+            SnapshotContent::Ghostty(data) => data.display_offset,
+        }
     }
 
     pub fn is_alternate_screen(&self) -> bool {
-        self.content.mode.contains(TermMode::ALT_SCREEN)
+        match &self.content {
+            SnapshotContent::Alacritty { content, .. } => {
+                content.mode.contains(TermMode::ALT_SCREEN)
+            }
+            #[cfg(feature = "ghostty-vt")]
+            SnapshotContent::Ghostty(data) => data.alternate_screen,
+        }
     }
 
     pub fn cursor(&self) -> TerminalCursor {
-        TerminalCursor {
-            point: TerminalPoint {
-                line: self.content.cursor.point.line.0,
-                column: self.content.cursor.point.column.0,
+        match &self.content {
+            SnapshotContent::Alacritty { content, .. } => TerminalCursor {
+                point: TerminalPoint {
+                    line: content.cursor.point.line.0,
+                    column: content.cursor.point.column.0,
+                },
+                shape: match content.cursor.shape {
+                    CursorShape::Hidden => TerminalCursorShape::Hidden,
+                    CursorShape::Beam => TerminalCursorShape::Beam,
+                    CursorShape::HollowBlock => TerminalCursorShape::HollowBlock,
+                    CursorShape::Block => TerminalCursorShape::Block,
+                    CursorShape::Underline => TerminalCursorShape::Underline,
+                },
             },
-            shape: match self.content.cursor.shape {
-                CursorShape::Hidden => TerminalCursorShape::Hidden,
-                CursorShape::Beam => TerminalCursorShape::Beam,
-                CursorShape::HollowBlock => TerminalCursorShape::HollowBlock,
-                CursorShape::Block => TerminalCursorShape::Block,
-                CursorShape::Underline => TerminalCursorShape::Underline,
-            },
+            #[cfg(feature = "ghostty-vt")]
+            SnapshotContent::Ghostty(data) => data.cursor,
         }
     }
 }
@@ -421,8 +527,10 @@ impl TerminalEngine {
 
     pub fn snapshot(&self) -> TerminalSnapshot<'_> {
         TerminalSnapshot {
-            engine: self,
-            content: self.term.renderable_content(),
+            content: SnapshotContent::Alacritty {
+                engine: self,
+                content: self.term.renderable_content(),
+            },
         }
     }
 
