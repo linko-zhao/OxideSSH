@@ -17,6 +17,7 @@ env:
   CARGO_TERM_COLOR: always
   RUST_TOOLCHAIN: 1.97.1
   CARGO_PACKAGER_VERSION: 0.11.8
+  ZIG_TOOLCHAIN: 0.17.1
 
 jobs:
   package:
@@ -41,9 +42,20 @@ jobs:
               target/package/**/*.app/**
               target/package/**/*.dmg
     runs-on: ${{ matrix.os }}
+    env:
+      LIBGHOSTTY_VT_LIB_DIR: ${{ github.workspace }}/target/libghostty-vt/${{ matrix.target }}/stage/usr/lib
     steps:
       - name: Check out source
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - name: Install Zig
+        uses: mlugg/setup-zig@8d6198c65fb0feaa111df26e6b467fea8345e46f # v2.0.5
+        with:
+          version: ${{ env.ZIG_TOOLCHAIN }}
+
+      - name: Build pinned libghostty-vt
+        run: bash scripts/build-libghostty-vt.sh "${{ matrix.target }}"
+        shell: bash
+
 
       - name: Install Rust toolchain
         run: rustup toolchain install ${{ env.RUST_TOOLCHAIN }} --profile minimal --target ${{ matrix.target }}
