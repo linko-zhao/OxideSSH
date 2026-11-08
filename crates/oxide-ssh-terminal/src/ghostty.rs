@@ -340,6 +340,7 @@ pub struct GhosttyTerminal {
     encoder: NonNull<KeyEncoderOpaque>,
     event: NonNull<KeyEventOpaque>,
     selection: Option<(TerminalPoint, TerminalPoint)>,
+    selection_cells: std::collections::BTreeMap<(i32, usize), (char, Vec<char>)>,
 }
 
 impl GhosttyTerminal {
@@ -412,6 +413,7 @@ impl GhosttyTerminal {
             encoder,
             event,
             selection: None,
+            selection_cells: std::collections::BTreeMap::new(),
         })
     }
 
@@ -458,28 +460,73 @@ impl GhosttyTerminal {
         }
     }
     pub fn start_selection(&mut self, row: usize, column: usize, _side: CellSide) {
+        let offset = self
+            .snapshot()
+            .map(|snapshot| snapshot.display_offset())
+            .unwrap_or(0);
         let point = TerminalPoint {
-            line: row as i32,
+            line: row as i32 - i32::try_from(offset).unwrap_or(i32::MAX),
             column,
         };
         self.selection = Some((point, point));
+        self.selection_cells.clear();
+        self.update_selection(row, column, _side);
     }
 
     pub fn update_selection(&mut self, row: usize, column: usize, _side: CellSide) {
+        let offset = self
+            .snapshot()
+            .map(|snapshot| snapshot.display_offset())
+            .unwrap_or(0);
         if let Some((_, end)) = &mut self.selection {
             *end = TerminalPoint {
-                line: row as i32,
+                line: row as i32 - i32::try_from(offset).unwrap_or(i32::MAX),
                 column,
             };
+        }
+            self.cache_visible_selection();
+        }
+
+    fn cache_visible_selection(&mut self) {
+        let Some((start, end)) = self.selection else {
+            return;
+        };
+        let (first, last) = if (start.line, start.column) <= (end.line, end.column) {
+            (start, end)
+        } else {
+            (end, start)
+        };
+        let Ok(snapshot) = self.snapshot() else {
+            return;
+        };
+        let offset = i32::try_from(snapshot.display_offset()).unwrap_or(i32::MAX);
+        let visible: Vec<_> = snapshot
+            .cells()
+            .filter_map(|cell| {
+                let point = (cell.point.line - offset, cell.point.column);
+                ((point.0, point.1) >= (first.line, first.column)
+                    && (point.0, point.1) <= (last.line, last.column))
+                .then(|| {
+                    (
+                        point,
+                        cell.character,
+                        cell.zerowidth().unwrap_or(&[]).to_vec(),
+                    )
+                })
+            })
+            .collect();
+        for (point, character, zerowidth) in visible {
+            self.selection_cells
+                .insert(point, (character, zerowidth));
         }
     }
 
     pub fn clear_selection(&mut self) {
         self.selection = None;
+        self.selection_cells.clear();
     }
 
-    pub fn selected_text(&mut self) -> Option<String> {
-        self.snapshot().ok()?;
+    pub fn selected_text(&self) -> Option<String> {
         let (start, end) = self.selection?;
         let (first, last) = if (start.line, start.column) <= (end.line, end.column) {
             (start, end)
@@ -487,14 +534,19 @@ impl GhosttyTerminal {
             (end, start)
         };
         let mut text = String::new();
-        for cell in &self.snapshot.cells {
-            let point = cell.point;
-            if (point.line, point.column) >= (first.line, first.column)
-                && (point.line, point.column) <= (last.line, last.column)
+        let mut previous_line = None;
+        for (&(line, column), (character, zerowidth)) in &self.selection_cells {
+            if (line, column) < (first.line, first.column)
+                || (line, column) > (last.line, last.column)
             {
-                text.push(cell.character);
-                text.extend(cell.zerowidth.iter());
+                continue;
             }
+            if previous_line.is_some_and(|previous| previous != line) {
+                text.push('\n');
+            }
+            text.push(*character);
+            text.extend(zerowidth);
+            previous_line = Some(line);
         }
         Some(text.trim_end().to_owned())
     }
@@ -502,6 +554,7 @@ impl GhosttyTerminal {
         let Ok(snapshot) = self.snapshot() else {
             return;
         };
+        let offset = i32::try_from(snapshot.display_offset()).unwrap_or(i32::MAX);
         let mut cells: Vec<_> = snapshot
             .cells()
             .filter(|cell| cell.point.line == row as i32)
@@ -522,15 +575,17 @@ impl GhosttyTerminal {
             last += 1;
         }
         let start = TerminalPoint {
-            line: row as i32,
+            line: row as i32 - offset,
             column: cells[first].point.column,
         };
         let end = TerminalPoint {
-            line: row as i32,
+            line: row as i32 - offset,
             column: cells[last].point.column,
         };
         drop(cells);
         self.selection = Some((start, end));
+        self.selection_cells.clear();
+        self.cache_visible_selection();
     }
 
 
@@ -773,7 +828,8 @@ impl GhosttyTerminal {
                             },
                             selected: self.selection.is_some_and(|(start, end)| {
                                 let point = TerminalPoint {
-                                    line: i32::from(y),
+                                    line: i32::from(y)
+                                        - i32::try_from(data.display_offset).unwrap_or(i32::MAX),
                                     column: usize::from(x),
                                 };
                                 let (first, last) =
