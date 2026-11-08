@@ -16,8 +16,8 @@ fn main() {
     };
     println!("cargo:rustc-link-lib=static={lib}");
     if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
-        println!("cargo:rustc-link-lib=static=ws2_32");
-        println!("cargo:rustc-link-lib=static=advapi32");
-        println!("cargo:rustc-link-lib=static=userenv");
+        println!("cargo:rustc-link-lib=dylib=ws2_32");
+        println!("cargo:rustc-link-lib=dylib=advapi32");
+        println!("cargo:rustc-link-lib=dylib=userenv");
     }
 }
