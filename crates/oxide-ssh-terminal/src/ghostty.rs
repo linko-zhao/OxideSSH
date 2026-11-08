@@ -2,7 +2,69 @@ use crate::model::{
     CellRenderStyle, GhosttySnapshotData, RgbColor, SnapshotCellData, TerminalCursor,
     TerminalCursorShape, TerminalPoint, TerminalSize, TerminalSnapshot,
 };
-use std::ptr::NonNull;
+use alacritty_terminal::term::TermMode;
+use bytes::Bytes;
+use parking_lot::Mutex;
+use smallvec::SmallVec;
+use std::{ffi::c_void, ptr::NonNull};
+
+use crate::{Key, KeyInput, PasteError, TerminalAction};
+
+const OPT_USERDATA: i32 = 1;
+const OPT_WRITE_PTY: i32 = 2;
+const OPT_BELL: i32 = 3;
+const OPT_CLIPBOARD_WRITE: i32 = 27;
+
+const OPT_KITTY_FLAGS: i32 = 6;
+const DATA_MODE: i32 = 37;
+
+#[repr(C)]
+struct KeyEncoderOpaque {
+    _private: [u8; 0],
+}
+#[repr(C)]
+struct KeyEventOpaque {
+    _private: [u8; 0],
+}
+#[repr(C)]
+struct TerminalModeConfig {
+    mode: u16,
+    value: bool,
+}
+
+#[repr(C)]
+struct GhosttyString {
+    ptr: *const u8,
+    len: usize,
+}
+
+#[repr(C)]
+struct ClipboardContent {
+    mime: GhosttyString,
+    data: GhosttyString,
+}
+
+#[repr(C)]
+struct ClipboardWriteReply {
+    size: usize,
+    result: i32,
+    remember: bool,
+}
+
+type ClipboardWriteReplyFn =
+    unsafe extern "C" fn(*const ClipboardWrite, *const ClipboardWriteReply);
+
+#[repr(C)]
+struct ClipboardWrite {
+    location: i32,
+    contents: *const ClipboardContent,
+    contents_len: usize,
+    name: GhosttyString,
+    granted: bool,
+    can_remember: bool,
+    ctx: *const c_void,
+    reply: Option<ClipboardWriteReplyFn>,
+}
 
 #[repr(C)]
 struct TerminalOpaque {
@@ -90,10 +152,15 @@ fn rgb(color: GhosttyRgb) -> RgbColor {
 
 unsafe extern "C" {
     fn ghostty_terminal_new(
-        allocator: *const std::ffi::c_void,
+        allocator: *const c_void,
         terminal: *mut *mut TerminalOpaque,
         cols: u16,
         rows: u16,
+    ) -> i32;
+    fn ghostty_terminal_set(
+        terminal: *mut TerminalOpaque,
+        option: i32,
+        value: *const c_void,
     ) -> i32;
     fn ghostty_terminal_vt_write(terminal: *mut TerminalOpaque, data: *const u8, len: usize);
     fn ghostty_terminal_resize(
@@ -110,7 +177,7 @@ unsafe extern "C" {
     ) -> i32;
     fn ghostty_terminal_free(terminal: *mut TerminalOpaque);
     fn ghostty_render_state_new(
-        allocator: *const std::ffi::c_void,
+        allocator: *const c_void,
         state: *mut *mut RenderStateOpaque,
     ) -> i32;
     fn ghostty_render_state_free(state: *mut RenderStateOpaque);
@@ -119,23 +186,19 @@ unsafe extern "C" {
         terminal: *mut TerminalOpaque,
     ) -> i32;
     fn ghostty_render_state_row_iterator_new(
-        allocator: *const std::ffi::c_void,
+        allocator: *const c_void,
         out: *mut *mut RowIteratorOpaque,
     ) -> i32;
     fn ghostty_render_state_row_iterator_free(iterator: *mut RowIteratorOpaque);
-    fn ghostty_render_state_get(
-        state: *mut RenderStateOpaque,
-        data: i32,
-        out: *mut std::ffi::c_void,
-    ) -> i32;
+    fn ghostty_render_state_get(state: *mut RenderStateOpaque, data: i32, out: *mut c_void) -> i32;
     fn ghostty_render_state_row_iterator_next(iterator: *mut RowIteratorOpaque) -> bool;
     fn ghostty_render_state_row_get(
         iterator: *mut RowIteratorOpaque,
         data: i32,
-        out: *mut std::ffi::c_void,
+        out: *mut c_void,
     ) -> i32;
     fn ghostty_render_state_row_cells_new(
-        allocator: *const std::ffi::c_void,
+        allocator: *const c_void,
         out: *mut *mut RowCellsOpaque,
     ) -> i32;
     fn ghostty_render_state_row_cells_free(cells: *mut RowCellsOpaque);
@@ -143,9 +206,99 @@ unsafe extern "C" {
     fn ghostty_render_state_row_cells_get(
         cells: *mut RowCellsOpaque,
         data: i32,
-        out: *mut std::ffi::c_void,
+        out: *mut c_void,
     ) -> i32;
     fn ghostty_cell_get(cell: u64, data: i32, out: *mut std::ffi::c_void) -> i32;
+    fn ghostty_key_encoder_new(allocator: *const c_void, out: *mut *mut KeyEncoderOpaque) -> i32;
+    fn ghostty_key_encoder_free(encoder: *mut KeyEncoderOpaque);
+    fn ghostty_key_encoder_set(
+        encoder: *mut KeyEncoderOpaque,
+        option: i32,
+        value: *const c_void,
+    ) -> i32;
+    fn ghostty_key_encoder_set_from_terminal(
+        encoder: *mut KeyEncoderOpaque,
+        terminal: *mut TerminalOpaque,
+    ) -> i32;
+    fn ghostty_key_encoder_encode(
+        encoder: *mut KeyEncoderOpaque,
+        event: *mut KeyEventOpaque,
+        buf: *mut u8,
+        cap: usize,
+        written: *mut usize,
+    ) -> i32;
+    fn ghostty_key_event_new(allocator: *const c_void, out: *mut *mut KeyEventOpaque) -> i32;
+    fn ghostty_key_event_free(event: *mut KeyEventOpaque);
+    fn ghostty_key_event_set_key(event: *mut KeyEventOpaque, key: i32) -> i32;
+    fn ghostty_key_event_set_mods(event: *mut KeyEventOpaque, mods: u16) -> i32;
+    fn ghostty_key_event_set_utf8(event: *mut KeyEventOpaque, text: GhosttyString) -> i32;
+    fn ghostty_key_event_set_action(event: *mut KeyEventOpaque, action: i32) -> i32;
+}
+
+fn queue(userdata: *mut c_void) -> &'static Mutex<Vec<TerminalAction>> {
+    // SAFETY: userdata points to the boxed queue owned by the live terminal.
+    unsafe { &*(userdata.cast::<Mutex<Vec<TerminalAction>>>()) }
+}
+
+unsafe extern "C" fn write_pty(
+    _terminal: *mut TerminalOpaque,
+    userdata: *mut c_void,
+    data: *const u8,
+    len: usize,
+) {
+    if len == 0 || !data.is_null() {
+        let bytes = if len == 0 {
+            &[]
+        } else {
+            // SAFETY: libghostty guarantees callback bytes are valid for this call.
+            unsafe { std::slice::from_raw_parts(data, len) }
+        };
+        queue(userdata)
+            .lock()
+            .push(TerminalAction::WriteBack(Bytes::copy_from_slice(bytes)));
+    }
+}
+
+unsafe extern "C" fn bell(_terminal: *mut TerminalOpaque, userdata: *mut c_void) {
+    queue(userdata).lock().push(TerminalAction::Bell);
+}
+
+unsafe extern "C" fn clipboard_write(
+    _terminal: *mut TerminalOpaque,
+    userdata: *mut c_void,
+    write: *const ClipboardWrite,
+) {
+    if let Some(write) = unsafe { write.as_ref() } {
+        if write.location == 0 && write.contents_len != 0 && !write.contents.is_null() {
+            // SAFETY: request contents are borrowed for the callback duration.
+            let content = unsafe { &*write.contents };
+            if content.mime.len == 10
+                && !content.mime.ptr.is_null()
+                && unsafe { std::slice::from_raw_parts(content.mime.ptr, content.mime.len) }
+                    == b"text/plain"
+                && (content.data.len == 0 || !content.data.ptr.is_null())
+            {
+                let bytes = if content.data.len == 0 {
+                    &[]
+                } else {
+                    // SAFETY: request content is borrowed for this callback.
+                    unsafe { std::slice::from_raw_parts(content.data.ptr, content.data.len) }
+                };
+                queue(userdata).lock().push(TerminalAction::Clipboard(
+                    String::from_utf8_lossy(bytes).into_owned(),
+                ));
+            }
+        }
+        if let Some(reply) = write.reply {
+            let response = ClipboardWriteReply {
+                size: std::mem::size_of::<ClipboardWriteReply>(),
+                result: 0,
+                remember: false,
+            };
+            // SAFETY: reply is explicitly valid only during this callback.
+            unsafe { reply(write, &response) };
+        }
+    }
 }
 
 /// Safe owner for the pinned libghostty-vt terminal lifecycle.
@@ -154,17 +307,58 @@ pub struct GhosttyTerminal {
     snapshot: GhosttySnapshotData,
     cell_width_px: u32,
     cell_height_px: u32,
+    pending: Box<Mutex<Vec<TerminalAction>>>,
+    encoder: NonNull<KeyEncoderOpaque>,
+    event: NonNull<KeyEventOpaque>,
 }
 
 impl GhosttyTerminal {
     pub fn new(cols: u16, rows: u16) -> Result<Self, &'static str> {
-        let mut terminal = std::ptr::null_mut();
+        let mut raw = std::ptr::null_mut();
         // SAFETY: output pointer is valid and C allocator defaults when NULL.
-        let result = unsafe { ghostty_terminal_new(std::ptr::null(), &mut terminal, cols, rows) };
+        let result = unsafe { ghostty_terminal_new(std::ptr::null(), &mut raw, cols, rows) };
         if result != 0 {
             return Err("libghostty-vt terminal creation failed");
         }
-        let terminal = NonNull::new(terminal).ok_or("libghostty-vt returned a null terminal")?;
+        let terminal = NonNull::new(raw).ok_or("libghostty-vt returned a null terminal")?;
+        let mut raw_encoder = std::ptr::null_mut();
+        if unsafe { ghostty_key_encoder_new(std::ptr::null(), &mut raw_encoder) } != 0 {
+            unsafe { ghostty_terminal_free(terminal.as_ptr()) };
+            return Err("libghostty-vt key encoder creation failed");
+        }
+        let encoder =
+            NonNull::new(raw_encoder).expect("successful encoder creation returns a handle");
+        let mut raw_event = std::ptr::null_mut();
+        if unsafe { ghostty_key_event_new(std::ptr::null(), &mut raw_event) } != 0 {
+            unsafe {
+                ghostty_key_encoder_free(encoder.as_ptr());
+                ghostty_terminal_free(terminal.as_ptr());
+            }
+            return Err("libghostty-vt key event creation failed");
+        }
+        let event =
+            NonNull::new(raw_event).expect("successful key event creation returns a handle");
+        let pending = Box::new(Mutex::new(Vec::new()));
+        let userdata = (&*pending as *const Mutex<Vec<TerminalAction>>).cast::<c_void>();
+        // SAFETY: userdata stays stable for the lifetime of the terminal; callbacks only enqueue.
+        unsafe {
+            ghostty_terminal_set(terminal.as_ptr(), OPT_USERDATA, userdata);
+            ghostty_terminal_set(
+                terminal.as_ptr(),
+                OPT_WRITE_PTY,
+                write_pty as *const () as *const c_void,
+            );
+            ghostty_terminal_set(
+                terminal.as_ptr(),
+                OPT_BELL,
+                bell as *const () as *const c_void,
+            );
+            ghostty_terminal_set(
+                terminal.as_ptr(),
+                OPT_CLIPBOARD_WRITE,
+                clipboard_write as *const () as *const c_void,
+            );
+        }
         Ok(Self {
             terminal,
             snapshot: GhosttySnapshotData {
@@ -184,6 +378,9 @@ impl GhosttyTerminal {
             },
             cell_width_px: 0,
             cell_height_px: 0,
+            pending,
+            encoder,
+            event,
         })
     }
 
@@ -461,6 +658,131 @@ impl GhosttyTerminal {
         Ok(TerminalSnapshot::ghostty(&self.snapshot))
     }
 
+    /// Process VT output and return queued effects only after the parser returns.
+    pub fn process_output(&mut self, bytes: &[u8]) -> SmallVec<[TerminalAction; 4]> {
+        self.write(bytes);
+        let mut actions = SmallVec::new();
+        actions.extend(std::mem::take(&mut *self.pending.lock()));
+        if !bytes.is_empty() && !actions.contains(&TerminalAction::Wakeup) {
+            actions.push(TerminalAction::Wakeup);
+        }
+        actions
+    }
+    pub fn encode_key(&mut self, input: KeyInput<'_>) -> SmallVec<[u8; 16]> {
+        let (key, text) = match input.key {
+            Key::Text(text) => (0, text.as_bytes()),
+            Key::Enter => (58, &[][..]),
+            Key::Backspace => (53, &[][..]),
+            Key::Tab => (64, &[][..]),
+            Key::Escape => (120, &[][..]),
+            Key::ArrowDown => (75, &[][..]),
+            Key::ArrowLeft => (76, &[][..]),
+            Key::ArrowRight => (77, &[][..]),
+            Key::ArrowUp => (78, &[][..]),
+            Key::Home => (71, &[][..]),
+            Key::End => (69, &[][..]),
+            Key::Insert => (72, &[][..]),
+            Key::Delete => (68, &[][..]),
+            Key::PageDown => (73, &[][..]),
+            Key::PageUp => (74, &[][..]),
+            Key::Function(n @ 1..=12) => (120 + n as i32, &[][..]),
+            Key::Function(_) => return SmallVec::new(),
+        };
+        let modifiers = u16::from(input.modifiers.shift)
+            | (u16::from(input.modifiers.control) << 1)
+            | (u16::from(input.modifiers.alt) << 2);
+        // The terminal is authoritative for application cursor/keypad modes. Kitty stays disabled.
+        let kitty_disabled = 0u8;
+        let event = self.event.as_ptr();
+        let encoder = self.encoder.as_ptr();
+        let mut written = 0;
+        let mut buffer = [0u8; 128];
+        let mut overflow = Vec::new();
+        let result = unsafe {
+            if ghostty_key_encoder_set_from_terminal(encoder, self.terminal.as_ptr()) != 0
+                || ghostty_key_encoder_set(
+                    encoder,
+                    OPT_KITTY_FLAGS,
+                    (&kitty_disabled as *const u8).cast(),
+                ) != 0
+                || ghostty_key_event_set_action(event, 1) != 0
+                || ghostty_key_event_set_key(event, key) != 0
+                || ghostty_key_event_set_mods(event, modifiers) != 0
+                || ghostty_key_event_set_utf8(
+                    event,
+                    GhosttyString {
+                        ptr: text.as_ptr(),
+                        len: text.len(),
+                    },
+                ) != 0
+            {
+                -1
+            } else {
+                let result = ghostty_key_encoder_encode(
+                    encoder,
+                    event,
+                    buffer.as_mut_ptr(),
+                    buffer.len(),
+                    &mut written,
+                );
+                if result == -3 {
+                    overflow.resize(written, 0);
+                    let status = ghostty_key_encoder_encode(
+                        encoder,
+                        event,
+                        overflow.as_mut_ptr(),
+                        overflow.len(),
+                        &mut written,
+                    );
+                    if status != 0 {
+                        overflow.clear();
+                    } else {
+                        overflow.truncate(written);
+                    }
+                }
+                result
+            }
+        };
+        // Clear borrowed key text before returning to avoid retaining the caller's buffer.
+        unsafe {
+            ghostty_key_event_set_utf8(
+                event,
+                GhosttyString {
+                    ptr: std::ptr::null(),
+                    len: 0,
+                },
+            )
+        };
+        let mut encoded = SmallVec::new();
+        if result == 0 {
+            encoded.extend_from_slice(&buffer[..written]);
+        } else if result == -3 {
+            encoded.extend_from_slice(&overflow);
+        }
+        encoded
+    }
+
+    pub fn encode_paste(&mut self, text: &str) -> Result<Bytes, PasteError> {
+        let mut mode = TerminalModeConfig {
+            mode: 2004,
+            value: false,
+        };
+        let bracketed = unsafe {
+            ghostty_terminal_get(
+                self.terminal.as_ptr(),
+                DATA_MODE,
+                (&mut mode as *mut TerminalModeConfig).cast(),
+            )
+        } == 0
+            && mode.value;
+        let mode = if bracketed {
+            TermMode::BRACKETED_PASTE
+        } else {
+            TermMode::empty()
+        };
+        crate::input::InputEncoder::paste(text, mode)
+    }
+
     pub fn cell(&mut self, x: u16, y: u16) -> Result<String, &'static str> {
         let (mut state, mut iterator, mut cells) = (
             std::ptr::null_mut(),
@@ -537,6 +859,10 @@ impl GhosttyTerminal {
 impl Drop for GhosttyTerminal {
     fn drop(&mut self) {
         // SAFETY: this owner uniquely owns the handle, and Drop runs once.
-        unsafe { ghostty_terminal_free(self.terminal.as_ptr()) };
+        unsafe {
+            ghostty_key_event_free(self.event.as_ptr());
+            ghostty_key_encoder_free(self.encoder.as_ptr());
+            ghostty_terminal_free(self.terminal.as_ptr());
+        }
     }
 }
