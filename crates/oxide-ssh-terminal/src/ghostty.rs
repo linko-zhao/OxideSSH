@@ -1,12 +1,11 @@
 use crate::model::{
-    CellRenderStyle, GhosttySnapshotData, RgbColor, SnapshotCellData, TerminalCursor,
-    TerminalCursorShape, TerminalPoint, TerminalSize, TerminalSnapshot,
+    CellRenderStyle, GhosttySnapshotData, RgbColor, SnapshotCellData, TerminalColors,
+    TerminalCursor, TerminalCursorShape, TerminalPoint, TerminalSize, TerminalSnapshot,
 };
-use alacritty_terminal::term::TermMode;
 use bytes::Bytes;
 use parking_lot::Mutex;
 use smallvec::SmallVec;
-use std::{ffi::c_void, ptr::NonNull};
+use std::{cell::RefCell, ffi::c_void, ptr::NonNull};
 
 use crate::{CellSide, Key, KeyInput, PasteError, TerminalAction};
 
@@ -14,6 +13,11 @@ const OPT_USERDATA: i32 = 1;
 const OPT_WRITE_PTY: i32 = 2;
 const OPT_BELL: i32 = 3;
 const OPT_CLIPBOARD_WRITE: i32 = 27;
+const OPT_COLOR_FOREGROUND: i32 = 12;
+const OPT_COLOR_BACKGROUND: i32 = 13;
+const OPT_COLOR_CURSOR: i32 = 14;
+const OPT_COLOR_PALETTE: i32 = 15;
+const OPT_SCROLLBACK_MAX_LINES: i32 = 29;
 
 const OPT_KITTY_FLAGS: i32 = 6;
 const DATA_MODE: i32 = 37;
@@ -82,12 +86,6 @@ struct RowIteratorOpaque {
 struct RowCellsOpaque {
     _private: [u8; 0],
 }
-#[repr(C)]
-struct GhosttyBuffer {
-    ptr: *mut u8,
-    cap: usize,
-    len: usize,
-}
 
 #[repr(C)]
 struct GhosttyCodepointBuffer {
@@ -97,7 +95,7 @@ struct GhosttyCodepointBuffer {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, PartialEq)]
 struct GhosttyRgb {
     r: u8,
     g: u8,
@@ -133,7 +131,6 @@ const CELL_RAW: i32 = 1;
 const CELL_STYLE: i32 = 2;
 const CELL_BG: i32 = 5;
 const CELL_FG: i32 = 6;
-const CELL_TEXT_UTF8: i32 = 9;
 const CELL_GRAPHEMES_LEN: i32 = 3;
 const CELL_GRAPHEMES_BUF: i32 = 4;
 const STYLE_BOLD: u16 = 1 << 0;
@@ -170,6 +167,43 @@ struct TerminalScrollbar {
 
 fn rgb(color: GhosttyRgb) -> RgbColor {
     RgbColor::new(color.r, color.g, color.b)
+}
+fn ghostty_color(color: RgbColor) -> GhosttyRgb {
+    GhosttyRgb {
+        r: color.red,
+        g: color.green,
+        b: color.blue,
+    }
+}
+fn xterm_component(index: usize) -> u8 {
+    if index == 0 {
+        0
+    } else {
+        (index as u8) * 40 + 55
+    }
+}
+fn color_palette(colors: TerminalColors) -> [GhosttyRgb; 256] {
+    let mut palette = [GhosttyRgb::default(); 256];
+    for (index, color) in colors.ansi.iter().copied().enumerate() {
+        palette[index] = ghostty_color(color);
+    }
+    for (index, color) in palette.iter_mut().enumerate().take(232).skip(16) {
+        let value = index - 16;
+        *color = GhosttyRgb {
+            r: xterm_component(value / 36),
+            g: xterm_component((value / 6) % 6),
+            b: xterm_component(value % 6),
+        };
+    }
+    for (index, color) in palette.iter_mut().enumerate().skip(232) {
+        let gray = (8 + (index - 232) * 10) as u8;
+        *color = GhosttyRgb {
+            r: gray,
+            g: gray,
+            b: gray,
+        };
+    }
+    palette
 }
 
 unsafe extern "C" {
@@ -330,21 +364,40 @@ unsafe extern "C" fn clipboard_write(
     }
 }
 
-/// Safe owner for the pinned libghostty-vt terminal lifecycle.
-pub struct GhosttyTerminal {
+fn control_byte(text: &str) -> Option<u8> {
+    match text.as_bytes() {
+        [byte @ b'a'..=b'z'] => Some(byte - b'a' + 1),
+        [byte @ b'A'..=b'Z'] => Some(byte - b'A' + 1),
+        [b'['] => Some(0x1b),
+        [b'\\'] => Some(0x1c),
+        [b']'] => Some(0x1d),
+        [b'^'] => Some(0x1e),
+        [b'_'] => Some(0x1f),
+        _ => None,
+    }
+}
+pub(crate) struct GhosttyTerminal {
     terminal: NonNull<TerminalOpaque>,
-    snapshot: GhosttySnapshotData,
+    snapshot: RefCell<GhosttySnapshotData>,
     cell_width_px: u32,
     cell_height_px: u32,
+    scrollback_lines: usize,
     pending: Box<Mutex<Vec<TerminalAction>>>,
     encoder: NonNull<KeyEncoderOpaque>,
     event: NonNull<KeyEventOpaque>,
     selection: Option<(TerminalPoint, TerminalPoint)>,
     selection_cells: std::collections::BTreeMap<(i32, usize), (char, Vec<char>)>,
+    remote_cursor_style: bool,
+    remote_cursor_blink: bool,
 }
 
 impl GhosttyTerminal {
-    pub fn new(cols: u16, rows: u16) -> Result<Self, &'static str> {
+    pub fn new(
+        cols: u16,
+        rows: u16,
+        scrollback_lines: usize,
+        default_colors: TerminalColors,
+    ) -> Result<Self, &'static str> {
         let mut raw = std::ptr::null_mut();
         // SAFETY: output pointer is valid and C allocator defaults when NULL.
         let result = unsafe { ghostty_terminal_new(std::ptr::null(), &mut raw, cols, rows) };
@@ -352,6 +405,17 @@ impl GhosttyTerminal {
             return Err("libghostty-vt terminal creation failed");
         }
         let terminal = NonNull::new(raw).ok_or("libghostty-vt returned a null terminal")?;
+        if unsafe {
+            ghostty_terminal_set(
+                terminal.as_ptr(),
+                OPT_SCROLLBACK_MAX_LINES,
+                (&scrollback_lines as *const usize).cast(),
+            )
+        } != 0
+        {
+            unsafe { ghostty_terminal_free(terminal.as_ptr()) };
+            return Err("libghostty-vt scrollback configuration failed");
+        }
         let mut raw_encoder = std::ptr::null_mut();
         if unsafe { ghostty_key_encoder_new(std::ptr::null(), &mut raw_encoder) } != 0 {
             unsafe { ghostty_terminal_free(terminal.as_ptr()) };
@@ -390,9 +454,9 @@ impl GhosttyTerminal {
                 clipboard_write as *const () as *const c_void,
             );
         }
-        Ok(Self {
+        let mut terminal = Self {
             terminal,
-            snapshot: GhosttySnapshotData {
+            snapshot: RefCell::new(GhosttySnapshotData {
                 size: TerminalSize {
                     columns: usize::from(cols),
                     rows: usize::from(rows),
@@ -400,21 +464,27 @@ impl GhosttyTerminal {
                     pixel_height: 0,
                 },
                 cells: Vec::new(),
+                history_size: 0,
                 display_offset: 0,
                 alternate_screen: false,
                 cursor: TerminalCursor {
                     point: TerminalPoint { line: 0, column: 0 },
                     shape: TerminalCursorShape::Block,
                 },
-            },
+            }),
             cell_width_px: 0,
             cell_height_px: 0,
+            scrollback_lines,
             pending,
             encoder,
             event,
             selection: None,
             selection_cells: std::collections::BTreeMap::new(),
-        })
+            remote_cursor_style: false,
+            remote_cursor_blink: false,
+        };
+        terminal.configure_colors(default_colors)?;
+        Ok(terminal)
     }
 
     pub fn write(&mut self, bytes: &[u8]) {
@@ -422,6 +492,33 @@ impl GhosttyTerminal {
         unsafe { ghostty_terminal_vt_write(self.terminal.as_ptr(), bytes.as_ptr(), bytes.len()) };
     }
 
+    pub fn set_default_colors(&mut self, colors: TerminalColors) {
+        self.configure_colors(colors)
+            .expect("valid Ghostty color options");
+    }
+    fn configure_colors(&mut self, colors: TerminalColors) -> Result<(), &'static str> {
+        let foreground = ghostty_color(colors.foreground);
+        let background = ghostty_color(colors.background);
+        let cursor = ghostty_color(colors.cursor);
+        let palette = color_palette(colors);
+        for (option, value) in [
+            (
+                OPT_COLOR_FOREGROUND,
+                (&foreground as *const GhosttyRgb).cast(),
+            ),
+            (
+                OPT_COLOR_BACKGROUND,
+                (&background as *const GhosttyRgb).cast(),
+            ),
+            (OPT_COLOR_CURSOR, (&cursor as *const GhosttyRgb).cast()),
+            (OPT_COLOR_PALETTE, palette.as_ptr().cast()),
+        ] {
+            if unsafe { ghostty_terminal_set(self.terminal.as_ptr(), option, value) } != 0 {
+                return Err("libghostty-vt color configuration failed");
+            }
+        }
+        Ok(())
+    }
     pub fn resize(
         &mut self,
         cols: u16,
@@ -515,6 +612,7 @@ impl GhosttyTerminal {
                     })
             })
             .collect();
+        drop(snapshot);
         for (point, character, zerowidth) in visible {
             self.selection_cells.insert(point, (character, zerowidth));
         }
@@ -549,45 +647,8 @@ impl GhosttyTerminal {
         }
         Some(text.trim_end().to_owned())
     }
-    pub fn select_word(&mut self, row: usize, column: usize) {
-        let Ok(snapshot) = self.snapshot() else {
-            return;
-        };
-        let offset = i32::try_from(snapshot.display_offset()).unwrap_or(i32::MAX);
-        let mut cells: Vec<_> = snapshot
-            .cells()
-            .filter(|cell| cell.point.line == row as i32)
-            .collect();
-        let Some(index) = cells.iter().position(|cell| cell.point.column == column) else {
-            return;
-        };
-        let is_word = |character: char| character.is_alphanumeric() || character == '_';
-        if !is_word(cells[index].character) {
-            return;
-        }
-        let mut first = index;
-        let mut last = index;
-        while first > 0 && is_word(cells[first - 1].character) {
-            first -= 1;
-        }
-        while last + 1 < cells.len() && is_word(cells[last + 1].character) {
-            last += 1;
-        }
-        let start = TerminalPoint {
-            line: row as i32 - offset,
-            column: cells[first].point.column,
-        };
-        let end = TerminalPoint {
-            line: row as i32 - offset,
-            column: cells[last].point.column,
-        };
-        drop(cells);
-        self.selection = Some((start, end));
-        self.selection_cells.clear();
-        self.cache_visible_selection();
-    }
 
-    pub fn snapshot(&mut self) -> Result<TerminalSnapshot<'_>, &'static str> {
+    pub fn snapshot(&self) -> Result<TerminalSnapshot<'_>, &'static str> {
         let (mut state, mut iterator, mut cells) = (
             std::ptr::null_mut(),
             std::ptr::null_mut(),
@@ -640,6 +701,7 @@ impl GhosttyTerminal {
                         pixel_width: u32::from(columns) * self.cell_width_px,
                         pixel_height: u32::from(rows) * self.cell_height_px,
                     },
+                    history_size: 0,
                     cells: Vec::with_capacity(usize::from(columns) * usize::from(rows)),
                     display_offset: 0,
                     alternate_screen: false,
@@ -663,6 +725,11 @@ impl GhosttyTerminal {
                         .saturating_sub(scrollbar.offset.saturating_add(scrollbar.len)),
                 )
                 .unwrap_or(usize::MAX);
+                // shortcut: Ghostty retains page-granularity extra lines; remove this cap if exact-line pruning is added.
+                data.display_offset = data.display_offset.min(self.scrollback_lines);
+                data.history_size = usize::try_from(scrollbar.total.saturating_sub(scrollbar.len))
+                    .unwrap_or(usize::MAX)
+                    .min(self.scrollback_lines);
                 let mut cursor_x = 0u16;
                 let mut cursor_y = 0u16;
                 let mut active_screen = 0i32;
@@ -845,7 +912,7 @@ impl GhosttyTerminal {
                         });
                     }
                 }
-                self.snapshot = data;
+                *self.snapshot.borrow_mut() = data;
                 Ok(())
             })();
             if !cells.is_null() {
@@ -857,11 +924,20 @@ impl GhosttyTerminal {
             ghostty_render_state_free(state);
             result?;
         }
-        Ok(TerminalSnapshot::ghostty(&self.snapshot))
+        Ok(TerminalSnapshot::ghostty(self.snapshot.borrow()))
     }
 
     /// Process VT output and return queued effects only after the parser returns.
     pub fn process_output(&mut self, bytes: &[u8]) -> SmallVec<[TerminalAction; 4]> {
+        if bytes
+            .windows(5)
+            .any(|window| window == b"\x1b[5 q" || window == b"\x1b[1 q" || window == b"\x1b[3 q")
+        {
+            self.remote_cursor_style = true;
+            self.remote_cursor_blink = bytes
+                .windows(5)
+                .any(|window| window == b"\x1b[1 q" || window == b"\x1b[3 q");
+        }
         self.write(bytes);
         let mut actions = SmallVec::new();
         actions.extend(std::mem::take(&mut *self.pending.lock()));
@@ -870,7 +946,25 @@ impl GhosttyTerminal {
         }
         actions
     }
-    pub fn encode_key(&mut self, input: KeyInput<'_>) -> SmallVec<[u8; 16]> {
+    pub fn encode_key(&self, input: KeyInput<'_>) -> SmallVec<[u8; 16]> {
+        if let Key::Text(text) = input.key
+            && (input.modifiers.control || input.modifiers.alt)
+        {
+            let mut encoded = SmallVec::new();
+            if input.modifiers.alt {
+                encoded.push(0x1b);
+            }
+            if input.modifiers.control {
+                if let Some(byte) = control_byte(text) {
+                    encoded.push(byte);
+                } else {
+                    encoded.clear();
+                }
+            } else {
+                encoded.extend_from_slice(text.as_bytes());
+            }
+            return encoded;
+        }
         let (key, text) = match input.key {
             Key::Text(text) => (0, text.as_bytes()),
             Key::Enter => (58, &[][..]),
@@ -964,97 +1058,40 @@ impl GhosttyTerminal {
         encoded
     }
 
-    pub fn encode_paste(&mut self, text: &str) -> Result<Bytes, PasteError> {
+    pub fn encode_paste(&self, text: &str) -> Result<Bytes, PasteError> {
         let mut mode = TerminalModeConfig {
             mode: 2004,
             value: false,
         };
-        let bracketed = unsafe {
+        let bracketed = (unsafe {
             ghostty_terminal_get(
                 self.terminal.as_ptr(),
                 DATA_MODE,
                 (&mut mode as *mut TerminalModeConfig).cast(),
             )
-        } == 0
+        }) == 0
             && mode.value;
-        let mode = if bracketed {
-            TermMode::BRACKETED_PASTE
-        } else {
-            TermMode::empty()
-        };
-        crate::input::InputEncoder::paste(text, mode)
+        crate::input::InputEncoder::paste(text, bracketed)
     }
-
-    pub fn cell(&mut self, x: u16, y: u16) -> Result<String, &'static str> {
-        let (mut state, mut iterator, mut cells) = (
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-        );
-        // SAFETY: out-pointers are valid, and each successful handle is released below.
-        unsafe {
-            if ghostty_render_state_new(std::ptr::null(), &mut state) != 0 {
-                return Err("render state allocation failed");
-            }
-            let result = (|| {
-                if ghostty_render_state_update(state, self.terminal.as_ptr()) != 0 {
-                    return Err("render state update failed");
-                }
-                if ghostty_render_state_row_iterator_new(std::ptr::null(), &mut iterator) != 0 {
-                    return Err("row iterator allocation failed");
-                }
-                if ghostty_render_state_get(
-                    state,
-                    4,
-                    (&mut iterator as *mut *mut RowIteratorOpaque).cast(),
-                ) != 0
-                {
-                    return Err("row iterator lookup failed");
-                }
-                if ghostty_render_state_row_cells_new(std::ptr::null(), &mut cells) != 0 {
-                    return Err("row cells allocation failed");
-                }
-                for _ in 0..=y {
-                    if !ghostty_render_state_row_iterator_next(iterator) {
-                        return Err("cell row outside terminal");
-                    }
-                }
-                if ghostty_render_state_row_get(
-                    iterator,
-                    3,
-                    (&mut cells as *mut *mut RowCellsOpaque).cast(),
-                ) != 0
-                {
-                    return Err("cell row lookup failed");
-                }
-                if ghostty_render_state_row_cells_select(cells, x) != 0 {
-                    return Err("cell column outside terminal");
-                }
-                let mut bytes = [0u8; 32];
-                let mut buffer = GhosttyBuffer {
-                    ptr: bytes.as_mut_ptr(),
-                    cap: bytes.len(),
-                    len: 0,
-                };
-                if ghostty_render_state_row_cells_get(
-                    cells,
-                    CELL_TEXT_UTF8,
-                    (&mut buffer as *mut GhosttyBuffer).cast(),
-                ) != 0
-                {
-                    return Err("cell text lookup failed");
-                }
-                Ok(String::from_utf8_lossy(&bytes[..buffer.len]).into_owned())
-            })();
-            if !cells.is_null() {
-                ghostty_render_state_row_cells_free(cells);
-            }
-            if !iterator.is_null() {
-                ghostty_render_state_row_iterator_free(iterator);
-            }
-            ghostty_render_state_free(state);
-            result
-        }
+    pub fn cursor_blinking(&self) -> bool {
+        let mut mode = TerminalModeConfig {
+            mode: 12,
+            value: false,
+        };
+        (unsafe {
+            ghostty_terminal_get(
+                self.terminal.as_ptr(),
+                DATA_MODE,
+                (&mut mode as *mut TerminalModeConfig).cast(),
+            )
+        }) == 0
+            && mode.value
+    }
+    pub fn has_remote_cursor_style(&self) -> bool {
+        self.remote_cursor_style
+    }
+    pub fn has_remote_cursor_blink(&self) -> bool {
+        self.remote_cursor_blink
     }
 }
 

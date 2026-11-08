@@ -58,16 +58,28 @@ OxideSSH is a desktop SSH client written in Rust with a native GPU-rendered UI (
 
 ### Prerequisites
 - Rust 1.97.1 (installed automatically via `rust-toolchain.toml`)
+- Zig 0.17.1 (required for pinned libghostty-vt 1.0.0; use a POSIX shell, such as Git Bash on Windows)
 - Windows: MSVC build tools
 - macOS: Xcode command line tools
 - Linux: X11/xkb development libraries and a Secret Service provider (e.g. `gnome-keyring`) for “Remember” credentials
 
 ### Build and run
 
-```bash
+Build the matching native library first. The script downloads the versioned source and dependency archives and verifies their SHA-256 checksums before building:
+
+```sh
+# Choose the target matching the Rust build host:
+# x86_64-pc-windows-msvc | aarch64-pc-windows-msvc
+# x86_64-apple-darwin | aarch64-apple-darwin
+# x86_64-unknown-linux-gnu | aarch64-unknown-linux-gnu
+target=x86_64-pc-windows-msvc
+./scripts/build-libghostty-vt.sh "$target"
+export LIBGHOSTTY_VT_LIB_DIR="$PWD/target/libghostty-vt/$target/stage/usr/lib"
 cargo build -p oxide-ssh-desktop --locked
 cargo run -p oxide-ssh-desktop --locked
 ```
+
+To use an existing installation, set `LIBGHOSTTY_VT_LIB_DIR` to its `lib` directory instead. The script pins libghostty-vt 1.0.0 and Zig 0.17.1; see `scripts/build-libghostty-vt.sh` for archive checksums and exact target build options.
 
 On WSL2/WSLg, use the launcher which stages the missing GUI libraries and starts a keyring daemon:
 
@@ -129,7 +141,7 @@ Configuration can be exported, backed up, or restored from Settings → Security
 | Crate | Responsibility |
 | --- | --- |
 | `oxide-ssh-core` | Profiles, tags, settings, storage, credentials, host-key trust, and the SSH transport (`russh`) |
-| `oxide-ssh-terminal` | Terminal Engine facade, internal Alacritty adapter, input encoding, selection, and borrowed render snapshots |
+| `oxide-ssh-terminal` | Ghostty-backed Terminal Engine facade, input encoding, selection, and backend-neutral borrowed render snapshots |
 | `oxide-ssh-app` | Toolkit-independent tab and session orchestration |
 | `oxide-ssh-desktop` | GPUI desktop application: workspace, editor, terminal view, settings, i18n |
 
