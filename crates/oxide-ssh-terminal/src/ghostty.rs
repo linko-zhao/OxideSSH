@@ -8,7 +8,7 @@ use parking_lot::Mutex;
 use smallvec::SmallVec;
 use std::{ffi::c_void, ptr::NonNull};
 
-use crate::{Key, KeyInput, PasteError, TerminalAction};
+use crate::{CellSide, Key, KeyInput, PasteError, TerminalAction};
 
 const OPT_USERDATA: i32 = 1;
 const OPT_WRITE_PTY: i32 = 2;
@@ -145,9 +145,38 @@ const CELL_WIDE: i32 = 3;
 const TERMINAL_CURSOR_X: i32 = 3;
 const TERMINAL_CURSOR_Y: i32 = 4;
 const TERMINAL_ACTIVE_SCREEN: i32 = 6;
+const TERMINAL_DATA_SCROLLBAR: i32 = 9;
+const SCROLL_VIEWPORT_DELTA: i32 = 2;
+
+#[repr(C)]
+union ScrollViewportValue {
+    delta: isize,
+    _padding: [u64; 2],
+}
+
+#[repr(C)]
+struct ScrollViewport {
+    tag: i32,
+    value: ScrollViewportValue,
+}
+
+#[repr(C)]
+#[derive(Default)]
+struct TerminalScrollbar {
+    total: u64,
+    offset: u64,
+    len: u64,
+}
 
 fn rgb(color: GhosttyRgb) -> RgbColor {
     RgbColor::new(color.r, color.g, color.b)
+}
+
+unsafe extern "C" {
+    fn ghostty_terminal_scroll_viewport(
+        terminal: *mut TerminalOpaque,
+        behavior: ScrollViewport,
+    ) -> i32;
 }
 
 unsafe extern "C" {
@@ -310,6 +339,7 @@ pub struct GhosttyTerminal {
     pending: Box<Mutex<Vec<TerminalAction>>>,
     encoder: NonNull<KeyEncoderOpaque>,
     event: NonNull<KeyEventOpaque>,
+    selection: Option<(TerminalPoint, TerminalPoint)>,
 }
 
 impl GhosttyTerminal {
@@ -381,6 +411,7 @@ impl GhosttyTerminal {
             pending,
             encoder,
             event,
+            selection: None,
         })
     }
 
@@ -414,6 +445,94 @@ impl GhosttyTerminal {
             Err("libghostty-vt terminal resize failed")
         }
     }
+    pub fn scroll_display(&mut self, lines: i32) {
+        let behavior = ScrollViewport {
+            tag: SCROLL_VIEWPORT_DELTA,
+            value: ScrollViewportValue {
+                delta: lines.saturating_neg() as isize,
+            },
+        };
+        // SAFETY: the terminal is live and the tagged value matches its C ABI.
+        unsafe {
+            ghostty_terminal_scroll_viewport(self.terminal.as_ptr(), behavior);
+        }
+    }
+    pub fn start_selection(&mut self, row: usize, column: usize, _side: CellSide) {
+        let point = TerminalPoint {
+            line: row as i32,
+            column,
+        };
+        self.selection = Some((point, point));
+    }
+
+    pub fn update_selection(&mut self, row: usize, column: usize, _side: CellSide) {
+        if let Some((_, end)) = &mut self.selection {
+            *end = TerminalPoint {
+                line: row as i32,
+                column,
+            };
+        }
+    }
+
+    pub fn clear_selection(&mut self) {
+        self.selection = None;
+    }
+
+    pub fn selected_text(&mut self) -> Option<String> {
+        self.snapshot().ok()?;
+        let (start, end) = self.selection?;
+        let (first, last) = if (start.line, start.column) <= (end.line, end.column) {
+            (start, end)
+        } else {
+            (end, start)
+        };
+        let mut text = String::new();
+        for cell in &self.snapshot.cells {
+            let point = cell.point;
+            if (point.line, point.column) >= (first.line, first.column)
+                && (point.line, point.column) <= (last.line, last.column)
+            {
+                text.push(cell.character);
+                text.extend(cell.zerowidth.iter());
+            }
+        }
+        Some(text.trim_end().to_owned())
+    }
+    pub fn select_word(&mut self, row: usize, column: usize) {
+        let Ok(snapshot) = self.snapshot() else {
+            return;
+        };
+        let mut cells: Vec<_> = snapshot
+            .cells()
+            .filter(|cell| cell.point.line == row as i32)
+            .collect();
+        let Some(index) = cells.iter().position(|cell| cell.point.column == column) else {
+            return;
+        };
+        let is_word = |character: char| character.is_alphanumeric() || character == '_';
+        if !is_word(cells[index].character) {
+            return;
+        }
+        let mut first = index;
+        let mut last = index;
+        while first > 0 && is_word(cells[first - 1].character) {
+            first -= 1;
+        }
+        while last + 1 < cells.len() && is_word(cells[last + 1].character) {
+            last += 1;
+        }
+        let start = TerminalPoint {
+            line: row as i32,
+            column: cells[first].point.column,
+        };
+        let end = TerminalPoint {
+            line: row as i32,
+            column: cells[last].point.column,
+        };
+        drop(cells);
+        self.selection = Some((start, end));
+    }
+
 
     pub fn snapshot(&mut self) -> Result<TerminalSnapshot<'_>, &'static str> {
         let (mut state, mut iterator, mut cells) = (
@@ -476,6 +595,19 @@ impl GhosttyTerminal {
                         shape: TerminalCursorShape::Block,
                     },
                 };
+                let mut scrollbar = TerminalScrollbar::default();
+                if ghostty_terminal_get(
+                    self.terminal.as_ptr(),
+                    TERMINAL_DATA_SCROLLBAR,
+                    (&mut scrollbar as *mut TerminalScrollbar).cast(),
+                ) != 0
+                {
+                    return Err("terminal scrollbar lookup failed");
+                }
+                data.display_offset = usize::try_from(
+                    scrollbar.total.saturating_sub(scrollbar.offset.saturating_add(scrollbar.len)),
+                )
+                .unwrap_or(usize::MAX);
                 let mut cursor_x = 0u16;
                 let mut cursor_y = 0u16;
                 let mut active_screen = 0i32;
@@ -639,9 +771,23 @@ impl GhosttyTerminal {
                                 wide: wide == 1,
                                 wide_spacer: wide == 2 || wide == 3,
                             },
+                            selected: self.selection.is_some_and(|(start, end)| {
+                                let point = TerminalPoint {
+                                    line: i32::from(y),
+                                    column: usize::from(x),
+                                };
+                                let (first, last) =
+                                    if (start.line, start.column) <= (end.line, end.column) {
+                                        (start, end)
+                                    } else {
+                                        (end, start)
+                                    };
+                                (point.line, point.column) >= (first.line, first.column)
+                                    && (point.line, point.column) <= (last.line, last.column)
+                            }),
                             zerowidth,
                         });
-                    }
+                }
                 }
                 self.snapshot = data;
                 Ok(())

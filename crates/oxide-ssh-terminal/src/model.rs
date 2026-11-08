@@ -161,6 +161,7 @@ pub(crate) struct SnapshotCellData {
     pub point: TerminalPoint,
     pub character: char,
     pub style: CellRenderStyle,
+    pub selected: bool,
     pub zerowidth: Vec<char>,
 }
 
@@ -231,7 +232,7 @@ impl<'a> Iterator for SnapshotCells<'a> {
                     point: cell.point,
                     character: cell.character,
                     style: cell.style,
-                    selected: false,
+                    selected: cell.selected,
                     zerowidth: (!cell.zerowidth.is_empty()).then_some(cell.zerowidth.as_slice()),
                 })
             }
