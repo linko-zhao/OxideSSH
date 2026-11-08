@@ -15,7 +15,8 @@ fn snapshot_exposes_text_styles_and_wide_cells() {
     let mut engine = engine(10, 2);
     engine.process_output("A\x1b[38;5;196m你".as_bytes());
 
-    let cells: Vec<_> = engine.snapshot().cells().collect();
+    let snapshot = engine.snapshot();
+    let cells: Vec<_> = snapshot.cells().collect();
     let a = cells.iter().find(|cell| cell.character == 'A').unwrap();
     assert_eq!(a.point.line, 0);
     assert_eq!(a.point.column, 0);
@@ -55,7 +56,7 @@ fn snapshot_exposes_alternate_screen_cursor_shape_and_scroll_offset() {
         oxide_ssh_terminal::TerminalCursorShape::Beam
     );
     assert!(snapshot.cells().any(|cell| cell.character == 'a'));
-
+    drop(snapshot);
     engine.process_output(b"\x1b[?1049l");
     engine.scroll_display(1);
     assert_eq!(engine.snapshot().display_offset(), 1);

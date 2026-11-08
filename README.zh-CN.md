@@ -57,16 +57,28 @@ OxideSSH 是用 Rust 编写的桌面 SSH 客户端，采用原生 GPU 渲染界�
 
 ### 前置条件
 - Rust 1.97.1（通过 `rust-toolchain.toml` 自动安装）
+- Zig 0.17.1（构建固定版本 libghostty-vt 1.0.0；Windows 使用 Git Bash 等 POSIX shell）
 - Windows：MSVC 构建工具
 - macOS：Xcode 命令行工具
 - Linux：X11/xkb 开发库，以及用于“记住”凭据的 Secret Service 提供方（如 `gnome-keyring`）
 
 ### 构建与运行
 
-```bash
+先构建与当前 Rust 主机匹配的原生库。脚本会下载固定版本的源码及依赖归档，并在构建前验证两者的 SHA-256：
+
+```sh
+# 从以下目标中选择一个：
+# x86_64-pc-windows-msvc | aarch64-pc-windows-msvc
+# x86_64-apple-darwin | aarch64-apple-darwin
+# x86_64-unknown-linux-gnu | aarch64-unknown-linux-gnu
+target=x86_64-pc-windows-msvc
+./scripts/build-libghostty-vt.sh "$target"
+export LIBGHOSTTY_VT_LIB_DIR="$PWD/target/libghostty-vt/$target/stage/usr/lib"
 cargo build -p oxide-ssh-desktop --locked
 cargo run -p oxide-ssh-desktop --locked
 ```
+
+脚本固定 libghostty-vt 1.0.0、Zig 0.17.1 与归档校验和，具体构建参数见 `scripts/build-libghostty-vt.sh`。
 
 在 WSL2/WSLg 上使用启动脚本，它会补齐缺失的 GUI 库并启动钥匙串守护进程：
 
@@ -128,7 +140,7 @@ OxideSSH 使用操作系统标准的应用配置目录。典型位置如下（�
 | Crate | 职责 |
 | --- | --- |
 | `oxide-ssh-core` | 连接配置、标签、设置、存储、凭据、主机密钥信任，以及 SSH 传输（`russh`） |
-| `oxide-ssh-terminal` | Terminal Engine facade、内部 Alacritty adapter、输入编码、选择与借用渲染快照 |
+| `oxide-ssh-terminal` | 基于 Ghostty 的 Terminal Engine facade、输入编码、选择与后端无关的借用渲染快照 |
 | `oxide-ssh-app` | 与 UI 工具包无关的标签页与会话编排 |
 | `oxide-ssh-desktop` | GPUI 桌面应用：工作区、编辑器、终端视图、设置、国际化 |
 

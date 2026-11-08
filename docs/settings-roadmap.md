@@ -24,7 +24,7 @@
 | 4 | `ssh.connectTimeoutSeconds` | 15s 硬编码（`session.rs:36`），弱网/高延迟主机频繁超时 | 低 | `session.rs` |
 | 5 | `ssh.keepaliveIntervalSeconds` / `ssh.keepaliveMaxCount` | 30s×3 硬编码（`session.rs:647-652`），NAT/防火墙掉线痛点；profile 可覆盖 | 低 | `session.rs` + profile `Option` |
 | 6 | `local.shellPath` / `local.shellArgs` | Windows 只能吃 `pwsh→powershell→cmd` 回退链（`local.rs`），无法指定 git-bash/wsl | 低 | `local.rs::default_shell` |
-| 7 | `terminal.scrollbackLines` | 固定 10,000 行（`oxide-ssh-terminal/src/model.rs:20`），长日志回滚不够 | 低 | alacritty `Scrolling` 配置 |
+| 7 | `terminal.scrollbackLines` | 固定 10,000 行（`oxide-ssh-terminal/src/model.rs:6`），长日志回滚不够 | 低 | TerminalEngine 配置 |
 
 ### P1 — 常见需求
 

@@ -1,5 +1,6 @@
 //! Portable terminal state, input encoding, selection, and render snapshots.
 
+mod ghostty;
 mod input;
 mod model;
 
