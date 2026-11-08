@@ -125,7 +125,10 @@ fn scrolled_snapshots_keep_terminal_relative_rows_beyond_viewport_height() {
     let snapshot = terminal.snapshot();
     let offset = snapshot.display_offset();
     assert!(offset >= snapshot.size().rows);
-    let first = snapshot.cells().find(|cell| cell.point.column == 0).unwrap();
+    let first = snapshot
+        .cells()
+        .find(|cell| cell.point.column == 0)
+        .unwrap();
     assert_eq!(first.point.line, -(offset as i32));
 }
 

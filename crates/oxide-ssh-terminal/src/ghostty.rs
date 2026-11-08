@@ -568,7 +568,10 @@ impl GhosttyTerminal {
         }
     }
     pub fn start_selection(&mut self, row: usize, column: usize, side: CellSide) {
-        let offset = self.snapshot().map(|snapshot| snapshot.display_offset()).unwrap_or(0);
+        let offset = self
+            .snapshot()
+            .map(|snapshot| snapshot.display_offset())
+            .unwrap_or(0);
         let point = TerminalPoint {
             line: row as i32 - i32::try_from(offset).unwrap_or(i32::MAX),
             column,
@@ -579,7 +582,10 @@ impl GhosttyTerminal {
     }
 
     pub fn update_selection(&mut self, row: usize, column: usize, side: CellSide) {
-        let offset = self.snapshot().map(|snapshot| snapshot.display_offset()).unwrap_or(0);
+        let offset = self
+            .snapshot()
+            .map(|snapshot| snapshot.display_offset())
+            .unwrap_or(0);
         if let Some((_, _, end, end_side)) = &mut self.selection {
             *end = TerminalPoint {
                 line: row as i32 - i32::try_from(offset).unwrap_or(i32::MAX),
@@ -657,13 +663,9 @@ impl GhosttyTerminal {
                 })
                 .collect();
             drop(snapshot);
-            self.selection_cells.extend(
-                visible
-                    .into_iter()
-                    .map(|(point, character, zerowidth, wrapped)| {
-                        (point, (character, zerowidth, wrapped))
-                    }),
-            );
+            self.selection_cells.extend(visible.into_iter().map(
+                |(point, character, zerowidth, wrapped)| (point, (character, zerowidth, wrapped)),
+            ));
         }
         let delta = i32::try_from(saved_offset)
             .unwrap_or(i32::MAX)
@@ -861,8 +863,8 @@ impl GhosttyTerminal {
                     if ghostty_row_get(raw_row, ROW_WRAP, (&mut wrapped as *mut bool).cast()) != 0 {
                         return Err("render state row wrap lookup failed");
                     }
-                    let line = i32::from(y)
-                        - i32::try_from(data.display_offset).unwrap_or(i32::MAX);
+                    let line =
+                        i32::from(y) - i32::try_from(data.display_offset).unwrap_or(i32::MAX);
                     if wrapped {
                         data.soft_wrapped_lines.push(line);
                     }
@@ -1055,7 +1057,13 @@ impl GhosttyTerminal {
             if input[end] == b'q' {
                 let style = std::str::from_utf8(&input[i + 2..end - 1])
                     .ok()
-                    .and_then(|value| if value.is_empty() { Some(0) } else { value.parse().ok() });
+                    .and_then(|value| {
+                        if value.is_empty() {
+                            Some(0)
+                        } else {
+                            value.parse().ok()
+                        }
+                    });
                 if let Some(style @ 0..=6) = style {
                     self.remote_cursor_style = true;
                     self.remote_cursor_blink = matches!(style, 0 | 1 | 3 | 5);
