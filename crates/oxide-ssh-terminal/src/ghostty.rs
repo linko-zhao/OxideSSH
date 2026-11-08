@@ -20,6 +20,7 @@ const OPT_COLOR_PALETTE: i32 = 15;
 const OPT_SCROLLBACK_MAX_LINES: i32 = 29;
 
 const OPT_KITTY_FLAGS: i32 = 6;
+const OPT_MODIFY_OTHER_KEYS: i32 = 5;
 const DATA_MODE: i32 = 37;
 
 #[repr(C)]
@@ -86,6 +87,10 @@ struct RowIteratorOpaque {
 struct RowCellsOpaque {
     _private: [u8; 0],
 }
+#[repr(C)]
+struct RowOpaque {
+    _private: [u8; 0],
+}
 
 #[repr(C)]
 struct GhosttyCodepointBuffer {
@@ -127,6 +132,8 @@ const RENDER_FG: i32 = 6;
 const RENDER_CURSOR_SHAPE: i32 = 10;
 const RENDER_CURSOR_VISIBLE: i32 = 11;
 const ROW_CELLS: i32 = 3;
+const ROW_WRAP: i32 = 1;
+const ROW_RAW: i32 = 2;
 const CELL_RAW: i32 = 1;
 const CELL_STYLE: i32 = 2;
 const CELL_BG: i32 = 5;
@@ -260,6 +267,7 @@ unsafe extern "C" {
         data: i32,
         out: *mut c_void,
     ) -> i32;
+    fn ghostty_row_get(row: *mut RowOpaque, data: i32, out: *mut c_void) -> i32;
     fn ghostty_render_state_row_cells_new(
         allocator: *const c_void,
         out: *mut *mut RowCellsOpaque,
@@ -385,10 +393,11 @@ pub(crate) struct GhosttyTerminal {
     pending: Box<Mutex<Vec<TerminalAction>>>,
     encoder: NonNull<KeyEncoderOpaque>,
     event: NonNull<KeyEventOpaque>,
-    selection: Option<(TerminalPoint, TerminalPoint)>,
-    selection_cells: std::collections::BTreeMap<(i32, usize), (char, Vec<char>)>,
+    selection: Option<(TerminalPoint, CellSide, TerminalPoint, CellSide)>,
+    selection_cells: std::collections::BTreeMap<(i32, usize), (char, Vec<char>, bool)>,
     remote_cursor_style: bool,
     remote_cursor_blink: bool,
+    pending_cursor_sequence: Vec<u8>,
 }
 
 impl GhosttyTerminal {
@@ -466,6 +475,7 @@ impl GhosttyTerminal {
                 cells: Vec::new(),
                 history_size: 0,
                 display_offset: 0,
+                soft_wrapped_lines: Vec::new(),
                 alternate_screen: false,
                 cursor: TerminalCursor {
                     point: TerminalPoint { line: 0, column: 0 },
@@ -482,6 +492,7 @@ impl GhosttyTerminal {
             selection_cells: std::collections::BTreeMap::new(),
             remote_cursor_style: false,
             remote_cursor_blink: false,
+            pending_cursor_sequence: Vec::new(),
         };
         terminal.configure_colors(default_colors)?;
         Ok(terminal)
@@ -556,65 +567,109 @@ impl GhosttyTerminal {
             ghostty_terminal_scroll_viewport(self.terminal.as_ptr(), behavior);
         }
     }
-    pub fn start_selection(&mut self, row: usize, column: usize, _side: CellSide) {
-        let offset = self
-            .snapshot()
-            .map(|snapshot| snapshot.display_offset())
-            .unwrap_or(0);
+    pub fn start_selection(&mut self, row: usize, column: usize, side: CellSide) {
+        let offset = self.snapshot().map(|snapshot| snapshot.display_offset()).unwrap_or(0);
         let point = TerminalPoint {
             line: row as i32 - i32::try_from(offset).unwrap_or(i32::MAX),
             column,
         };
-        self.selection = Some((point, point));
+        self.selection = Some((point, side, point, side));
         self.selection_cells.clear();
-        self.update_selection(row, column, _side);
+        self.cache_visible_selection();
     }
 
-    pub fn update_selection(&mut self, row: usize, column: usize, _side: CellSide) {
-        let offset = self
-            .snapshot()
-            .map(|snapshot| snapshot.display_offset())
-            .unwrap_or(0);
-        if let Some((_, end)) = &mut self.selection {
+    pub fn update_selection(&mut self, row: usize, column: usize, side: CellSide) {
+        let offset = self.snapshot().map(|snapshot| snapshot.display_offset()).unwrap_or(0);
+        if let Some((_, _, end, end_side)) = &mut self.selection {
             *end = TerminalPoint {
                 line: row as i32 - i32::try_from(offset).unwrap_or(i32::MAX),
                 column,
             };
+            *end_side = side;
         }
         self.cache_visible_selection();
     }
 
+    fn selection_bounds(&self) -> Option<(TerminalPoint, TerminalPoint)> {
+        let (mut start, start_side, mut end, end_side) = self.selection?;
+        if start == end && start_side == end_side {
+            end.column = end.column.saturating_add(1);
+            return Some((start, end));
+        }
+        if start_side == CellSide::Right {
+            start.column = start.column.saturating_add(1);
+        }
+        if end_side == CellSide::Right {
+            end.column = end.column.saturating_add(1);
+        }
+        if (start.line, start.column) > (end.line, end.column) {
+            std::mem::swap(&mut start, &mut end);
+        }
+        Some((start, end))
+    }
+
     fn cache_visible_selection(&mut self) {
-        let Some((start, end)) = self.selection else {
+        let Some((first, last)) = self.selection_bounds() else {
             return;
-        };
-        let (first, last) = if (start.line, start.column) <= (end.line, end.column) {
-            (start, end)
-        } else {
-            (end, start)
         };
         let Ok(snapshot) = self.snapshot() else {
             return;
         };
-        let offset = i32::try_from(snapshot.display_offset()).unwrap_or(i32::MAX);
-        let visible: Vec<_> = snapshot
-            .cells()
-            .filter_map(|cell| {
-                let point = (cell.point.line - offset, cell.point.column);
-                ((point.0, point.1) >= (first.line, first.column)
-                    && (point.0, point.1) <= (last.line, last.column))
-                    .then(|| {
-                        (
-                            point,
-                            cell.character,
-                            cell.zerowidth().unwrap_or(&[]).to_vec(),
-                        )
-                    })
-            })
-            .collect();
+        let saved_offset = snapshot.display_offset();
+        let rows = snapshot.size().rows;
+        let history_size = snapshot.history_size();
         drop(snapshot);
-        for (point, character, zerowidth) in visible {
-            self.selection_cells.insert(point, (character, zerowidth));
+        let first_offset = usize::try_from((rows as i64 - 1 - i64::from(first.line)).max(0))
+            .unwrap_or(usize::MAX)
+            .min(history_size);
+        let last_offset = usize::try_from((-i64::from(last.line)).max(0))
+            .unwrap_or(usize::MAX)
+            .min(history_size);
+        let start_offset = first_offset.max(last_offset);
+        let end_offset = first_offset.min(last_offset);
+        let mut current_offset = saved_offset;
+        for target_offset in (end_offset..=start_offset).rev() {
+            let delta = i32::try_from(target_offset)
+                .unwrap_or(i32::MAX)
+                .saturating_sub(i32::try_from(current_offset).unwrap_or(i32::MAX));
+            if delta != 0 {
+                self.scroll_display(delta);
+            }
+            current_offset = target_offset;
+            let Ok(snapshot) = self.snapshot() else {
+                continue;
+            };
+            let visible: Vec<_> = snapshot
+                .cells()
+                .filter_map(|cell| {
+                    let point = (cell.point.line, cell.point.column);
+                    (point >= (first.line, first.column)
+                        && point < (last.line, last.column)
+                        && !cell.style.wide_spacer)
+                        .then(|| {
+                            (
+                                point,
+                                cell.character,
+                                cell.zerowidth().unwrap_or(&[]).to_vec(),
+                                snapshot.is_soft_wrapped(cell.point.line),
+                            )
+                        })
+                })
+                .collect();
+            drop(snapshot);
+            self.selection_cells.extend(
+                visible
+                    .into_iter()
+                    .map(|(point, character, zerowidth, wrapped)| {
+                        (point, (character, zerowidth, wrapped))
+                    }),
+            );
+        }
+        let delta = i32::try_from(saved_offset)
+            .unwrap_or(i32::MAX)
+            .saturating_sub(i32::try_from(current_offset).unwrap_or(i32::MAX));
+        if delta != 0 {
+            self.scroll_display(delta);
         }
     }
 
@@ -624,26 +679,26 @@ impl GhosttyTerminal {
     }
 
     pub fn selected_text(&self) -> Option<String> {
-        let (start, end) = self.selection?;
-        let (first, last) = if (start.line, start.column) <= (end.line, end.column) {
-            (start, end)
-        } else {
-            (end, start)
-        };
+        let (first, last) = self.selection_bounds()?;
         let mut text = String::new();
         let mut previous_line = None;
-        for (&(line, column), (character, zerowidth)) in &self.selection_cells {
+        let mut previous_wrapped = false;
+        for (&(line, column), (character, zerowidth, soft_wrapped)) in &self.selection_cells {
             if (line, column) < (first.line, first.column)
-                || (line, column) > (last.line, last.column)
+                || (line, column) >= (last.line, last.column)
             {
                 continue;
             }
-            if previous_line.is_some_and(|previous| previous != line) {
+            if previous_line.is_some_and(|previous| previous != line) && !previous_wrapped {
+                while text.ends_with(' ') {
+                    text.pop();
+                }
                 text.push('\n');
             }
             text.push(*character);
             text.extend(zerowidth);
             previous_line = Some(line);
+            previous_wrapped = *soft_wrapped;
         }
         Some(text.trim_end().to_owned())
     }
@@ -704,6 +759,7 @@ impl GhosttyTerminal {
                     history_size: 0,
                     cells: Vec::with_capacity(usize::from(columns) * usize::from(rows)),
                     display_offset: 0,
+                    soft_wrapped_lines: Vec::new(),
                     alternate_screen: false,
                     cursor: TerminalCursor {
                         point: TerminalPoint { line: 0, column: 0 },
@@ -730,6 +786,7 @@ impl GhosttyTerminal {
                 data.history_size = usize::try_from(scrollbar.total.saturating_sub(scrollbar.len))
                     .unwrap_or(usize::MAX)
                     .min(self.scrollback_lines);
+                data.soft_wrapped_lines.clear();
                 let mut cursor_x = 0u16;
                 let mut cursor_y = 0u16;
                 let mut active_screen = 0i32;
@@ -790,6 +847,24 @@ impl GhosttyTerminal {
                         ) != 0
                     {
                         return Err("render state row lookup failed");
+                    }
+                    let mut raw_row = std::ptr::null_mut();
+                    if ghostty_render_state_row_get(
+                        iterator,
+                        ROW_RAW,
+                        (&mut raw_row as *mut *mut RowOpaque).cast(),
+                    ) != 0
+                    {
+                        return Err("render state row lookup failed");
+                    }
+                    let mut wrapped = false;
+                    if ghostty_row_get(raw_row, ROW_WRAP, (&mut wrapped as *mut bool).cast()) != 0 {
+                        return Err("render state row wrap lookup failed");
+                    }
+                    let line = i32::from(y)
+                        - i32::try_from(data.display_offset).unwrap_or(i32::MAX);
+                    if wrapped {
+                        data.soft_wrapped_lines.push(line);
                     }
                     for x in 0..columns {
                         if ghostty_render_state_row_cells_select(cells, x) != 0 {
@@ -878,7 +953,7 @@ impl GhosttyTerminal {
                         }
                         data.cells.push(SnapshotCellData {
                             point: TerminalPoint {
-                                line: i32::from(y),
+                                line,
                                 column: usize::from(x),
                             },
                             character,
@@ -893,20 +968,10 @@ impl GhosttyTerminal {
                                 wide: wide == 1,
                                 wide_spacer: wide == 2 || wide == 3,
                             },
-                            selected: self.selection.is_some_and(|(start, end)| {
-                                let point = TerminalPoint {
-                                    line: i32::from(y)
-                                        - i32::try_from(data.display_offset).unwrap_or(i32::MAX),
-                                    column: usize::from(x),
-                                };
-                                let (first, last) =
-                                    if (start.line, start.column) <= (end.line, end.column) {
-                                        (start, end)
-                                    } else {
-                                        (end, start)
-                                    };
-                                (point.line, point.column) >= (first.line, first.column)
-                                    && (point.line, point.column) <= (last.line, last.column)
+                            selected: self.selection_bounds().is_some_and(|(first, last)| {
+                                let point = (line, usize::from(x));
+                                point >= (first.line, first.column)
+                                    && point < (last.line, last.column)
                             }),
                             zerowidth,
                         });
@@ -927,17 +992,84 @@ impl GhosttyTerminal {
         Ok(TerminalSnapshot::ghostty(self.snapshot.borrow()))
     }
 
+    fn update_cursor_ownership(&mut self, bytes: &[u8]) {
+        let mut input = std::mem::take(&mut self.pending_cursor_sequence);
+        input.extend_from_slice(bytes);
+        let mut i = 0;
+        while i < input.len() {
+            if input[i] != 0x1b {
+                i += 1;
+                continue;
+            }
+            if i + 1 == input.len() {
+                self.pending_cursor_sequence.extend_from_slice(&input[i..]);
+                break;
+            }
+            if input[i + 1] == b'c' {
+                self.remote_cursor_style = false;
+                self.remote_cursor_blink = false;
+                i += 2;
+                continue;
+            }
+            if input[i + 1] != b'[' {
+                i += 2;
+                continue;
+            }
+            if i + 2 == input.len() {
+                self.pending_cursor_sequence.extend_from_slice(&input[i..]);
+                break;
+            }
+            if input[i + 2] == b'!' {
+                if i + 3 == input.len() {
+                    self.pending_cursor_sequence.extend_from_slice(&input[i..]);
+                    break;
+                }
+                if input[i + 3] == b'p' {
+                    self.remote_cursor_style = false;
+                    self.remote_cursor_blink = false;
+                    i += 4;
+                    continue;
+                }
+                i += 2;
+                continue;
+            }
+            let mut end = i + 2;
+            while end < input.len() && input[end].is_ascii_digit() {
+                end += 1;
+            }
+            if end == input.len() {
+                if end - i <= 10 {
+                    self.pending_cursor_sequence.extend_from_slice(&input[i..]);
+                }
+                break;
+            }
+            if input[end] != b' ' {
+                i += 2;
+                continue;
+            }
+            end += 1;
+            if end == input.len() {
+                self.pending_cursor_sequence.extend_from_slice(&input[i..]);
+                break;
+            }
+            if input[end] == b'q' {
+                let style = std::str::from_utf8(&input[i + 2..end - 1])
+                    .ok()
+                    .and_then(|value| if value.is_empty() { Some(0) } else { value.parse().ok() });
+                if let Some(style @ 0..=6) = style {
+                    self.remote_cursor_style = true;
+                    self.remote_cursor_blink = matches!(style, 0 | 1 | 3 | 5);
+                    i = end + 1;
+                    continue;
+                }
+            }
+            i += 2;
+        }
+    }
+
     /// Process VT output and return queued effects only after the parser returns.
     pub fn process_output(&mut self, bytes: &[u8]) -> SmallVec<[TerminalAction; 4]> {
-        if bytes
-            .windows(5)
-            .any(|window| window == b"\x1b[5 q" || window == b"\x1b[1 q" || window == b"\x1b[3 q")
-        {
-            self.remote_cursor_style = true;
-            self.remote_cursor_blink = bytes
-                .windows(5)
-                .any(|window| window == b"\x1b[1 q" || window == b"\x1b[3 q");
-        }
+        self.update_cursor_ownership(bytes);
         self.write(bytes);
         let mut actions = SmallVec::new();
         actions.extend(std::mem::take(&mut *self.pending.lock()));
@@ -987,8 +1119,9 @@ impl GhosttyTerminal {
         let modifiers = u16::from(input.modifiers.shift)
             | (u16::from(input.modifiers.control) << 1)
             | (u16::from(input.modifiers.alt) << 2);
-        // The terminal is authoritative for application cursor/keypad modes. Kitty stays disabled.
+        // Application cursor modes come from the terminal; Kitty and modifyOtherKeys stay disabled.
         let kitty_disabled = 0u8;
+        let modify_other_keys_disabled = false;
         let event = self.event.as_ptr();
         let encoder = self.encoder.as_ptr();
         let mut written = 0;
@@ -1000,6 +1133,11 @@ impl GhosttyTerminal {
                     encoder,
                     OPT_KITTY_FLAGS,
                     (&kitty_disabled as *const u8).cast(),
+                ) != 0
+                || ghostty_key_encoder_set(
+                    encoder,
+                    OPT_MODIFY_OTHER_KEYS,
+                    (&modify_other_keys_disabled as *const bool).cast(),
                 ) != 0
                 || ghostty_key_event_set_action(event, 1) != 0
                 || ghostty_key_event_set_key(event, key) != 0

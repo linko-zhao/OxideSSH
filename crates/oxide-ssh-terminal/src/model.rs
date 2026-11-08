@@ -132,6 +132,7 @@ pub(crate) struct GhosttySnapshotData {
     pub cells: Vec<SnapshotCellData>,
     pub history_size: usize,
     pub display_offset: usize,
+    pub soft_wrapped_lines: Vec<i32>,
     pub alternate_screen: bool,
     pub cursor: TerminalCursor,
 }
@@ -156,6 +157,12 @@ impl<'a> TerminalSnapshot<'a> {
     }
     pub fn display_offset(&self) -> usize {
         self.0.display_offset
+    }
+    pub(crate) fn history_size(&self) -> usize {
+        self.0.history_size
+    }
+    pub(crate) fn is_soft_wrapped(&self, line: i32) -> bool {
+        self.0.soft_wrapped_lines.contains(&line)
     }
     pub fn is_alternate_screen(&self) -> bool {
         self.0.alternate_screen

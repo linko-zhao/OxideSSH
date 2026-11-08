@@ -115,3 +115,93 @@ fn resize_keeps_existing_output_and_osc52_is_a_clipboard_action() {
     let actions = terminal.process_output(b"\x1b]52;c;SGVsbG8=\x07");
     assert!(actions.contains(&TerminalAction::Clipboard("Hello".into())));
 }
+#[test]
+fn scrolled_snapshots_keep_terminal_relative_rows_beyond_viewport_height() {
+    let mut terminal = engine(12, 2);
+    for line in 0..40 {
+        terminal.process_output(format!("line{line:02}\r\n").as_bytes());
+    }
+    terminal.scroll_display(27);
+    let snapshot = terminal.snapshot();
+    let offset = snapshot.display_offset();
+    assert!(offset >= snapshot.size().rows);
+    let first = snapshot.cells().find(|cell| cell.point.column == 0).unwrap();
+    assert_eq!(first.point.line, -(offset as i32));
+}
+
+#[test]
+fn selection_endpoints_preserve_cell_sides_for_copy() {
+    let mut terminal = engine(8, 2);
+    terminal.process_output(b"abcde");
+    terminal.start_selection(0, 1, CellSide::Right);
+    terminal.update_selection(0, 3, CellSide::Left);
+    assert_eq!(terminal.selected_text().as_deref(), Some("c"));
+    let selected: String = terminal
+        .snapshot()
+        .cells()
+        .filter(|cell| cell.selected)
+        .map(|cell| cell.character)
+        .collect();
+    assert_eq!(selected, "c");
+    terminal.clear_selection();
+    terminal.start_selection(0, 1, CellSide::Left);
+    terminal.update_selection(0, 1, CellSide::Left);
+    assert_eq!(terminal.selected_text().as_deref(), Some("b"));
+}
+
+#[test]
+fn copied_selection_includes_unvisited_history_rows_and_soft_wraps() {
+    let mut terminal = engine(4, 2);
+    terminal.process_output(b"one\r\ntwo\r\nthree\r\nfour\r\nfive");
+    terminal.scroll_display(3);
+    terminal.start_selection(0, 0, CellSide::Left);
+    terminal.scroll_display(-3);
+    terminal.update_selection(1, 3, CellSide::Right);
+    assert_eq!(
+        terminal.selected_text().as_deref(),
+        Some("two\nthree\nfour\nfive")
+    );
+    assert_eq!(terminal.snapshot().display_offset(), 0);
+
+    let mut wrapped = engine(4, 2);
+    wrapped.process_output("ab你z".as_bytes());
+    wrapped.start_selection(0, 0, CellSide::Left);
+    wrapped.update_selection(1, 0, CellSide::Right);
+    assert_eq!(wrapped.selected_text().as_deref(), Some("ab你z"));
+}
+
+#[test]
+fn cursor_style_commands_survive_chunking_and_reset_remote_ownership() {
+    let mut terminal = engine(8, 2);
+    for (command, blinks) in [
+        (b"\x1b[0 q".as_slice(), true),
+        (b"\x1b[1 q", true),
+        (b"\x1b[2 q", false),
+        (b"\x1b[3 q", true),
+        (b"\x1b[4 q", false),
+        (b"\x1b[5 q", true),
+        (b"\x1b[6 q", false),
+    ] {
+        for byte in command {
+            terminal.process_output(std::slice::from_ref(byte));
+        }
+        assert!(terminal.has_remote_cursor_style());
+        assert_eq!(terminal.has_remote_cursor_blink(), blinks);
+    }
+    for reset in [b"\x1b[!p".as_slice(), b"\x1bc"] {
+        for byte in reset {
+            terminal.process_output(std::slice::from_ref(byte));
+        }
+        assert!(!terminal.has_remote_cursor_style());
+        assert!(!terminal.has_remote_cursor_blink());
+    }
+}
+
+#[test]
+fn modify_other_keys_does_not_change_public_key_encoding() {
+    let input = KeyInput::new(Key::ArrowUp).control();
+    let expected = engine(8, 2).encode_key(input);
+    let mut terminal = engine(8, 2);
+    terminal.process_output(b"\x1b[>4;2m");
+    assert_eq!(terminal.encode_key(input), expected);
+}
