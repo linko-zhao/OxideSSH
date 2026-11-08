@@ -205,19 +205,24 @@ fn ghostty_paste_encoding_tracks_bracketed_mode_and_limits() {
         Err(PasteError::TooLarge)
     );
 }
-
 #[test]
 fn ghostty_snapshot_tracks_scrollback_and_display_offset() {
     let mut terminal = GhosttyTerminal::new(10, 2).unwrap();
     terminal.write(b"one\r\ntwo\r\nthree\r\nfour");
 
-    assert_eq!(terminal.snapshot().unwrap().display_offset(), 0);
+    let snapshot = terminal.snapshot().unwrap();
+    assert_eq!(snapshot.display_offset(), 0);
+    drop(snapshot);
+
     terminal.scroll_display(1);
     let snapshot = terminal.snapshot().unwrap();
     assert_eq!(snapshot.display_offset(), 1);
-    assert!(snapshot.cells().any(|cell| cell.character == 't' && cell.point.line == 0));
+    assert!(
+        snapshot
+            .cells()
+            .any(|cell| cell.character == 'o' && cell.point.line == 0)
+    );
 }
-
 
 #[test]
 fn ghostty_selection_displays_and_copies_dragged_text() {
@@ -229,10 +234,7 @@ fn ghostty_selection_displays_and_copies_dragged_text() {
     terminal.update_selection(0, 4, CellSide::Right);
 
     let snapshot = terminal.snapshot().unwrap();
-    assert_eq!(
-        snapshot.cells().filter(|cell| cell.selected).count(),
-        5
-    );
+    assert_eq!(snapshot.cells().filter(|cell| cell.selected).count(), 5);
     assert_eq!(terminal.selected_text().as_deref(), Some("hello"));
     terminal.clear_selection();
     assert_eq!(terminal.selected_text(), None);

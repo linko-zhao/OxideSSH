@@ -484,8 +484,8 @@ impl GhosttyTerminal {
                 column,
             };
         }
-            self.cache_visible_selection();
-        }
+        self.cache_visible_selection();
+    }
 
     fn cache_visible_selection(&mut self) {
         let Some((start, end)) = self.selection else {
@@ -506,18 +506,17 @@ impl GhosttyTerminal {
                 let point = (cell.point.line - offset, cell.point.column);
                 ((point.0, point.1) >= (first.line, first.column)
                     && (point.0, point.1) <= (last.line, last.column))
-                .then(|| {
-                    (
-                        point,
-                        cell.character,
-                        cell.zerowidth().unwrap_or(&[]).to_vec(),
-                    )
-                })
+                    .then(|| {
+                        (
+                            point,
+                            cell.character,
+                            cell.zerowidth().unwrap_or(&[]).to_vec(),
+                        )
+                    })
             })
             .collect();
         for (point, character, zerowidth) in visible {
-            self.selection_cells
-                .insert(point, (character, zerowidth));
+            self.selection_cells.insert(point, (character, zerowidth));
         }
     }
 
@@ -587,7 +586,6 @@ impl GhosttyTerminal {
         self.selection_cells.clear();
         self.cache_visible_selection();
     }
-
 
     pub fn snapshot(&mut self) -> Result<TerminalSnapshot<'_>, &'static str> {
         let (mut state, mut iterator, mut cells) = (
@@ -660,7 +658,9 @@ impl GhosttyTerminal {
                     return Err("terminal scrollbar lookup failed");
                 }
                 data.display_offset = usize::try_from(
-                    scrollbar.total.saturating_sub(scrollbar.offset.saturating_add(scrollbar.len)),
+                    scrollbar
+                        .total
+                        .saturating_sub(scrollbar.offset.saturating_add(scrollbar.len)),
                 )
                 .unwrap_or(usize::MAX);
                 let mut cursor_x = 0u16;
@@ -843,7 +843,7 @@ impl GhosttyTerminal {
                             }),
                             zerowidth,
                         });
-                }
+                    }
                 }
                 self.snapshot = data;
                 Ok(())
