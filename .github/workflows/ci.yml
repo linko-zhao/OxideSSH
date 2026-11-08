@@ -74,6 +74,8 @@ jobs:
 
       - name: Run tests
         run: cargo test --workspace --all-targets --locked
+        env:
+          DYLD_LIBRARY_PATH: ${{ runner.os == 'macOS' && env.LIBGHOSTTY_VT_LIB_DIR || '' }}
 
       - name: Build desktop release
         run: cargo build -p oxide-ssh-desktop --release --target ${{ matrix.target }} --locked
