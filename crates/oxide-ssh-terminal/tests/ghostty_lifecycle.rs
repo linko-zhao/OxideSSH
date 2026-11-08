@@ -207,6 +207,100 @@ fn ghostty_paste_encoding_tracks_bracketed_mode_and_limits() {
 }
 
 #[test]
+fn ghostty_snapshot_tracks_scrollback_and_display_offset() {
+    let mut terminal = GhosttyTerminal::new(10, 2).unwrap();
+    terminal.write(b"one\r\ntwo\r\nthree\r\nfour");
+
+    assert_eq!(terminal.snapshot().unwrap().display_offset(), 0);
+    terminal.scroll_display(1);
+    let snapshot = terminal.snapshot().unwrap();
+    assert_eq!(snapshot.display_offset(), 1);
+    assert!(snapshot.cells().any(|cell| cell.character == 't' && cell.point.line == 0));
+}
+
+
+#[test]
+fn ghostty_selection_displays_and_copies_dragged_text() {
+    use oxide_ssh_terminal::CellSide;
+
+    let mut terminal = GhosttyTerminal::new(10, 2).unwrap();
+    terminal.write(b"hello");
+    terminal.start_selection(0, 0, CellSide::Left);
+    terminal.update_selection(0, 4, CellSide::Right);
+
+    let snapshot = terminal.snapshot().unwrap();
+    assert_eq!(
+        snapshot.cells().filter(|cell| cell.selected).count(),
+        5
+    );
+    assert_eq!(terminal.selected_text().as_deref(), Some("hello"));
+    terminal.clear_selection();
+    assert_eq!(terminal.selected_text(), None);
+}
+
+#[test]
+fn ghostty_word_selection_selects_and_copies_a_word() {
+    let mut terminal = GhosttyTerminal::new(12, 2).unwrap();
+    terminal.write(b"hello world");
+    terminal.select_word(0, 7);
+    assert_eq!(terminal.selected_text().as_deref(), Some("world"));
+}
+
+#[test]
+fn ghostty_resize_keeps_viewport_offset_within_remaining_scrollback() {
+    let mut terminal = GhosttyTerminal::new(10, 2).unwrap();
+    terminal.write(b"one\r\ntwo\r\nthree\r\nfour\r\nfive");
+    terminal.scroll_display(2);
+    assert_eq!(terminal.snapshot().unwrap().display_offset(), 2);
+
+    terminal.resize(8, 3, 8, 16).unwrap();
+    assert_eq!(terminal.snapshot().unwrap().display_offset(), 2);
+}
+
+#[test]
+fn ghostty_scrollback_selection_follows_its_line_when_viewport_moves() {
+    use oxide_ssh_terminal::CellSide;
+
+    let mut terminal = GhosttyTerminal::new(10, 2).unwrap();
+    terminal.write(b"one\r\ntwo\r\nthree\r\nfour");
+    terminal.scroll_display(1);
+    terminal.start_selection(0, 0, CellSide::Left);
+    terminal.update_selection(0, 2, CellSide::Right);
+    assert_eq!(
+        terminal
+            .snapshot()
+            .unwrap()
+            .cells()
+            .filter(|cell| cell.selected)
+            .count(),
+        3
+    );
+
+    terminal.scroll_display(-1);
+    assert_eq!(
+        terminal
+            .snapshot()
+            .unwrap()
+            .cells()
+            .filter(|cell| cell.selected)
+            .count(),
+        0
+    );
+    assert_eq!(terminal.selected_text().as_deref(), Some("two"));
+    terminal.scroll_display(1);
+    assert_eq!(
+        terminal
+            .snapshot()
+            .unwrap()
+            .cells()
+            .filter(|cell| cell.selected)
+            .count(),
+        3
+    );
+    terminal.resize(8, 3, 8, 16).unwrap();
+    assert_eq!(terminal.selected_text().as_deref(), Some("two"));
+}
+#[test]
 fn ghostty_key_encoder_preserves_existing_key_bytes_and_ignores_kitty_mode() {
     use oxide_ssh_terminal::{Key, KeyInput};
 
