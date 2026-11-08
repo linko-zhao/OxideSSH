@@ -25,7 +25,7 @@ _Avoid_: Connection、Server、Host 配置（UI 文案里的 "Hosts" 指 Profile
 一条活跃的 SSH 通道及其运行时状态机（连接中、等待主机密钥、已连接、已断开）。对应 `SessionHandle` / `SessionState`。
 
 **Tab**:
-一个 Session 与其 TerminalModel 的编排单元，是 UI 标签页背后的领域对象。Tab 不依赖任何 UI 工具包。
+一个 Session 与其 TerminalEngine 的编排单元，是 UI 标签页背后的领域对象。Tab 不依赖任何 UI 工具包。
 _Avoid_: Session 标签、Terminal tab
 
 **ModalRequest**:

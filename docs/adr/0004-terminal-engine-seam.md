@@ -2,20 +2,20 @@
 
 **Status**: accepted
 
-`oxide-ssh-terminal` 以具体的 `TerminalEngine` facade 和后端无关的借用快照作为公开 interface，封闭 Alacritty 的模式、网格、damage 与游标类型；app 和 desktop 只消费终端语义。后端在编译时选择，当前仅迁移现有 Alacritty 实现并保持行为契约，未来以内部 adapter 接入 libghostty-vt，不引入运行时动态分发或 Ghostty UI runtime。
+`oxide-ssh-terminal` exposes a concrete `TerminalEngine` facade and backend-neutral borrowed snapshots; app and desktop consume terminal semantics only. The accepted design excludes runtime backend dispatch and the Ghostty UI runtime. TerminalEngine is backed exclusively by pinned libghostty-vt, whose C ABI and opaque handles remain internal.
 
 ## Considered Options
 
 - **公共 trait + 命令/事件入口**：被拒绝。当前没有运行时多后端需求，统一命令 enum 和可选能力错误会降低调用点可读性，并增加未使用的 interface。
-- **直接封装并公开 Alacritty 类型**：被拒绝。app、desktop 与测试仍依赖后端网格和模式，无法通过替换内部 adapter 完成迁移。
+- **直接封装并公开 Ghostty C 类型**：被拒绝。app、desktop 与测试只依赖终端语义，FFI 所有权及 ABI 留在引擎内部。
 
 ## Consequences
 
-- `TerminalModel` 干净迁移为 `TerminalEngine`，不保留旧公开路径。
-- 输入编码在引擎内部读取终端模式；renderer 通过后端无关快照读取单元、样式、选区和游标。
-- 契约测试只通过公开 interface 观察行为，不读取 Alacritty 内部网格。
-- 本期不实现 libghostty-vt FFI；未来接入时需固定 C API 版本并维护 Rust 绑定。
+- `TerminalEngine` is the single application-facing backend contract; backend-specific modes, grids, damage and cursor types stay private.
+- Input encoding reads terminal mode inside the engine; renderers consume backend-neutral cells, styles, selection and cursor state.
+- Contract tests observe behavior through the public interface and do not inspect backend internals.
+- The libghostty-vt C ABI must remain inside an internal adapter, with opaque handles and lifecycle managed there.
 
-## 后续实现状态（Ghostty ticket #5）
+## Implementation status
 
-`ghostty-vt` feature 已加入私有的 libghostty-vt render-state adapter，可生成现有的后端无关 `TerminalSnapshot`。`TerminalEngine` 仍由 Alacritty 实现；此快照接入不改变应用运行时，也不公开 Ghostty FFI 类型。
+TerminalEngine now uses libghostty-vt only. The Rust facade retains backend-neutral sizing, input, effect, selection, color and snapshot APIs. Build the pinned 1.0.0 source and matching dependency archive with Zig 0.17.1 using `scripts/build-libghostty-vt.sh`; the script validates both archive SHA-256 checksums before compilation.

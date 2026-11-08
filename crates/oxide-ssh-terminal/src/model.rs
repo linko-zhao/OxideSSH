@@ -1,23 +1,7 @@
-use std::{mem, sync::Arc};
-
-use alacritty_terminal::{
-    event::{Event, EventListener, WindowSize},
-    grid::{Dimensions, Scroll},
-    index::{Column, Point, Side},
-    selection::{Selection, SelectionRange, SelectionType},
-    term::{
-        ClipboardType, Config, MIN_COLUMNS, MIN_SCREEN_LINES, Osc52, RenderableContent, Term,
-        TermMode,
-        cell::{Cell, Flags},
-        color,
-    },
-    vte::ansi::{Color, CursorShape, Processor, Rgb},
-};
+use crate::{KeyInput, PasteError, ghostty::GhosttyTerminal};
 use bytes::Bytes;
-use parking_lot::Mutex;
 use smallvec::SmallVec;
-
-use crate::input::{InputEncoder, KeyInput, PasteError};
+use std::cell::Ref;
 
 pub const SCROLLBACK_HISTORY_LINES: usize = 10_000;
 
@@ -31,21 +15,10 @@ pub struct TerminalSize {
 
 impl TerminalSize {
     pub fn is_valid(self) -> bool {
-        self.columns >= MIN_COLUMNS && self.rows >= MIN_SCREEN_LINES
-    }
-}
-
-impl Dimensions for TerminalSize {
-    fn total_lines(&self) -> usize {
-        self.rows
-    }
-
-    fn screen_lines(&self) -> usize {
-        self.rows
-    }
-
-    fn columns(&self) -> usize {
-        self.columns
+        self.columns >= 2
+            && self.rows >= 1
+            && self.columns <= u16::MAX as usize
+            && self.rows <= u16::MAX as usize
     }
 }
 
@@ -59,16 +32,6 @@ pub struct RgbColor {
 impl RgbColor {
     pub const fn new(red: u8, green: u8, blue: u8) -> Self {
         Self { red, green, blue }
-    }
-}
-
-impl From<RgbColor> for Rgb {
-    fn from(color: RgbColor) -> Self {
-        Self {
-            r: color.red,
-            g: color.green,
-            b: color.blue,
-        }
     }
 }
 
@@ -147,7 +110,7 @@ pub struct TerminalCell<'a> {
     pub character: char,
     pub style: CellRenderStyle,
     pub selected: bool,
-    pub(crate) zerowidth: Option<&'a [char]>,
+    zerowidth: Option<&'a [char]>,
 }
 
 impl TerminalCell<'_> {
@@ -156,7 +119,6 @@ impl TerminalCell<'_> {
     }
 }
 
-#[cfg(feature = "ghostty-vt")]
 pub(crate) struct SnapshotCellData {
     pub point: TerminalPoint,
     pub character: char,
@@ -165,147 +127,41 @@ pub(crate) struct SnapshotCellData {
     pub zerowidth: Vec<char>,
 }
 
-#[cfg(feature = "ghostty-vt")]
 pub(crate) struct GhosttySnapshotData {
     pub size: TerminalSize,
     pub cells: Vec<SnapshotCellData>,
+    pub history_size: usize,
     pub display_offset: usize,
     pub alternate_screen: bool,
     pub cursor: TerminalCursor,
 }
 
-enum SnapshotContent<'a> {
-    Alacritty {
-        engine: &'a TerminalEngine,
-        content: RenderableContent<'a>,
-    },
-    #[cfg(feature = "ghostty-vt")]
-    Ghostty(&'a GhosttySnapshotData),
-}
-
-pub struct TerminalSnapshot<'a> {
-    content: SnapshotContent<'a>,
-}
-
-struct AlacrittyCells<'a> {
-    engine: &'a TerminalEngine,
-    iter: alacritty_terminal::grid::GridIterator<'a, Cell>,
-    selection: Option<SelectionRange>,
-}
-
-impl<'a> Iterator for AlacrittyCells<'a> {
-    type Item = TerminalCell<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let indexed = self.iter.next()?;
-        Some(TerminalCell {
-            point: TerminalPoint {
-                line: indexed.point.line.0,
-                column: indexed.point.column.0,
-            },
-            character: indexed.cell.c,
-            style: self.engine.cell_render_style(indexed.cell),
-            selected: self
-                .selection
-                .is_some_and(|range| range.contains(indexed.point)),
-            zerowidth: indexed.cell.zerowidth(),
-        })
-    }
-}
-
-enum SnapshotCells<'a> {
-    Alacritty(AlacrittyCells<'a>),
-    #[cfg(feature = "ghostty-vt")]
-    Ghostty(std::slice::Iter<'a, SnapshotCellData>),
-}
-
-impl<'a> Iterator for SnapshotCells<'a> {
-    type Item = TerminalCell<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            Self::Alacritty(iter) => iter.next(),
-            #[cfg(feature = "ghostty-vt")]
-            Self::Ghostty(iter) => {
-                let cell = iter.next()?;
-                Some(TerminalCell {
-                    point: cell.point,
-                    character: cell.character,
-                    style: cell.style,
-                    selected: cell.selected,
-                    zerowidth: (!cell.zerowidth.is_empty()).then_some(cell.zerowidth.as_slice()),
-                })
-            }
-        }
-    }
-}
+pub struct TerminalSnapshot<'a>(Ref<'a, GhosttySnapshotData>);
 
 impl<'a> TerminalSnapshot<'a> {
-    #[cfg(feature = "ghostty-vt")]
-    pub(crate) fn ghostty(data: &'a GhosttySnapshotData) -> Self {
-        Self {
-            content: SnapshotContent::Ghostty(data),
-        }
+    pub(crate) fn ghostty(data: Ref<'a, GhosttySnapshotData>) -> Self {
+        Self(data)
     }
-
-    pub fn cells(self) -> impl Iterator<Item = TerminalCell<'a>> + 'a {
-        match self.content {
-            SnapshotContent::Alacritty { engine, content } => {
-                SnapshotCells::Alacritty(AlacrittyCells {
-                    engine,
-                    iter: content.display_iter,
-                    selection: content.selection,
-                })
-            }
-            #[cfg(feature = "ghostty-vt")]
-            SnapshotContent::Ghostty(data) => SnapshotCells::Ghostty(data.cells.iter()),
-        }
+    pub fn cells(&self) -> impl Iterator<Item = TerminalCell<'_>> + use<'_> {
+        self.0.cells.iter().map(|cell| TerminalCell {
+            point: cell.point,
+            character: cell.character,
+            style: cell.style,
+            selected: cell.selected,
+            zerowidth: (!cell.zerowidth.is_empty()).then_some(cell.zerowidth.as_slice()),
+        })
     }
-
     pub fn size(&self) -> TerminalSize {
-        match &self.content {
-            SnapshotContent::Alacritty { engine, .. } => engine.size,
-            #[cfg(feature = "ghostty-vt")]
-            SnapshotContent::Ghostty(data) => data.size,
-        }
+        self.0.size
     }
-
     pub fn display_offset(&self) -> usize {
-        match &self.content {
-            SnapshotContent::Alacritty { content, .. } => content.display_offset,
-            #[cfg(feature = "ghostty-vt")]
-            SnapshotContent::Ghostty(data) => data.display_offset,
-        }
+        self.0.display_offset
     }
-
     pub fn is_alternate_screen(&self) -> bool {
-        match &self.content {
-            SnapshotContent::Alacritty { content, .. } => {
-                content.mode.contains(TermMode::ALT_SCREEN)
-            }
-            #[cfg(feature = "ghostty-vt")]
-            SnapshotContent::Ghostty(data) => data.alternate_screen,
-        }
+        self.0.alternate_screen
     }
-
     pub fn cursor(&self) -> TerminalCursor {
-        match &self.content {
-            SnapshotContent::Alacritty { content, .. } => TerminalCursor {
-                point: TerminalPoint {
-                    line: content.cursor.point.line.0,
-                    column: content.cursor.point.column.0,
-                },
-                shape: match content.cursor.shape {
-                    CursorShape::Hidden => TerminalCursorShape::Hidden,
-                    CursorShape::Beam => TerminalCursorShape::Beam,
-                    CursorShape::HollowBlock => TerminalCursorShape::HollowBlock,
-                    CursorShape::Block => TerminalCursorShape::Block,
-                    CursorShape::Underline => TerminalCursorShape::Underline,
-                },
-            },
-            #[cfg(feature = "ghostty-vt")]
-            SnapshotContent::Ghostty(data) => data.cursor,
-        }
+        self.0.cursor
     }
 }
 
@@ -323,11 +179,10 @@ pub enum TerminalError {
 }
 
 impl std::fmt::Display for TerminalError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("invalid terminal size")
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("invalid terminal size")
     }
 }
-
 impl std::error::Error for TerminalError {}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -336,727 +191,109 @@ pub enum CellSide {
     Right,
 }
 
-impl From<CellSide> for Side {
-    fn from(side: CellSide) -> Self {
-        match side {
-            CellSide::Left => Side::Left,
-            CellSide::Right => Side::Right,
-        }
-    }
-}
-
-#[derive(Clone)]
-struct TerminalEventProxy {
-    pending: Arc<Mutex<Vec<Event>>>,
-}
-
-impl EventListener for TerminalEventProxy {
-    fn send_event(&self, event: Event) {
-        self.pending.lock().push(event);
-    }
-}
-
 pub struct TerminalEngine {
-    term: Term<TerminalEventProxy>,
-    processor: Processor,
-    pending_events: Arc<Mutex<Vec<Event>>>,
+    terminal: GhosttyTerminal,
     size: TerminalSize,
-    default_colors: TerminalColors,
-    remote_cursor_style: bool,
-    remote_cursor_blink: bool,
-    last_output_ended_escape: bool,
-    cursor_style_command_in_progress: bool,
 }
 
 impl TerminalEngine {
     pub fn new(size: TerminalSize) -> Result<Self, TerminalError> {
-        Self::with_scrollback(size, TerminalColors::default(), SCROLLBACK_HISTORY_LINES)
+        Self::with_colors(size, TerminalColors::default())
     }
-
     pub fn with_colors(
         size: TerminalSize,
         default_colors: TerminalColors,
     ) -> Result<Self, TerminalError> {
         Self::with_scrollback(size, default_colors, SCROLLBACK_HISTORY_LINES)
     }
-
     pub fn with_scrollback(
         size: TerminalSize,
         default_colors: TerminalColors,
-        scrollback_lines: usize,
+        _scrollback_lines: usize,
     ) -> Result<Self, TerminalError> {
         if !size.is_valid() {
             return Err(TerminalError::InvalidSize);
         }
-
-        let pending_events = Arc::new(Mutex::new(Vec::new()));
-        let event_proxy = TerminalEventProxy {
-            pending: pending_events.clone(),
-        };
-        let config = Config {
-            scrolling_history: scrollback_lines,
-            kitty_keyboard: false,
-            // Requests become actions; the desktop applies policy before writing.
-            osc52: Osc52::OnlyCopy,
-            ..Default::default()
-        };
-
-        Ok(Self {
-            term: Term::new(config, &size, event_proxy),
-            processor: Processor::new(),
-            pending_events,
-            size,
+        let mut terminal = GhosttyTerminal::new(
+            size.columns as u16,
+            size.rows as u16,
+            _scrollback_lines,
             default_colors,
-            remote_cursor_style: false,
-            remote_cursor_blink: false,
-            last_output_ended_escape: false,
-            cursor_style_command_in_progress: false,
-        })
+        )
+        .map_err(|_| TerminalError::InvalidSize)?;
+        terminal
+            .resize(
+                size.columns as u16,
+                size.rows as u16,
+                size.pixel_width / size.columns as u32,
+                size.pixel_height / size.rows as u32,
+            )
+            .map_err(|_| TerminalError::InvalidSize)?;
+        Ok(Self { terminal, size })
     }
-
     pub fn process_output(&mut self, bytes: &[u8]) -> SmallVec<[TerminalAction; 4]> {
-        let mut reset = false;
-        let mut cursor_style_command = false;
-        let mut cursor_style_after_reset = false;
-        for &byte in bytes {
-            if self.last_output_ended_escape && byte == b'c' {
-                reset = true;
-                cursor_style_after_reset = false;
-            }
-            if byte == b'q' && self.cursor_style_command_in_progress {
-                cursor_style_command = true;
-                cursor_style_after_reset = reset;
-                self.cursor_style_command_in_progress = false;
-            } else if byte == 0x1b {
-                self.cursor_style_command_in_progress = false;
-            } else if byte == b'[' && self.last_output_ended_escape {
-                self.cursor_style_command_in_progress = true;
-            } else if self.cursor_style_command_in_progress
-                && !byte.is_ascii_digit()
-                && byte != b';'
-                && byte != b' '
-            {
-                self.cursor_style_command_in_progress = false;
-            }
-            self.last_output_ended_escape = byte == 0x1b;
-        }
-        self.processor.advance(&mut self.term, bytes);
-        self.processor.stop_sync(&mut self.term);
-        self.remote_cursor_style |= cursor_style_command;
-
-        let mut pending = {
-            let mut shared = self.pending_events.lock();
-            mem::take(&mut *shared)
-        };
-        let mut actions = SmallVec::new();
-        for event in pending.drain(..) {
-            match event {
-                Event::PtyWrite(text) => {
-                    actions.push(TerminalAction::WriteBack(Bytes::from(text)));
-                }
-                Event::ColorRequest(index, formatter) => {
-                    let response = formatter(self.color(index));
-                    actions.push(TerminalAction::WriteBack(Bytes::from(response)));
-                }
-                Event::TextAreaSizeRequest(formatter) => {
-                    let response = formatter(self.window_size());
-                    actions.push(TerminalAction::WriteBack(Bytes::from(response)));
-                }
-                Event::Bell => actions.push(TerminalAction::Bell),
-                Event::Wakeup => actions.push(TerminalAction::Wakeup),
-                Event::CursorBlinkingChange => {
-                    self.remote_cursor_blink = true;
-                    actions.push(TerminalAction::Wakeup);
-                }
-                Event::ClipboardStore(ClipboardType::Clipboard, content) => {
-                    actions.push(TerminalAction::Clipboard(content));
-                }
-                Event::ClipboardStore(_, _)
-                | Event::MouseCursorDirty
-                | Event::Title(_)
-                | Event::ResetTitle
-                | Event::ClipboardLoad(_, _)
-                | Event::Exit
-                | Event::ChildExit(_) => {}
-            }
-        }
-        if reset && !cursor_style_after_reset {
-            self.remote_cursor_style = false;
-            self.remote_cursor_blink = false;
-        }
-        *self.pending_events.lock() = pending;
-
-        if !bytes.is_empty()
-            && !actions
-                .iter()
-                .any(|action| matches!(action, TerminalAction::Wakeup))
-        {
-            actions.push(TerminalAction::Wakeup);
-        }
-        actions
+        self.terminal.process_output(bytes)
     }
-
     pub fn resize(&mut self, size: TerminalSize) -> Result<(), TerminalError> {
         if !size.is_valid() {
             return Err(TerminalError::InvalidSize);
         }
-
-        self.term.resize(size);
+        self.terminal
+            .resize(
+                size.columns as u16,
+                size.rows as u16,
+                size.pixel_width / size.columns as u32,
+                size.pixel_height / size.rows as u32,
+            )
+            .map_err(|_| TerminalError::InvalidSize)?;
         self.size = size;
         Ok(())
     }
-
     pub fn size(&self) -> TerminalSize {
         self.size
     }
-
     pub fn set_default_colors(&mut self, colors: TerminalColors) {
-        self.default_colors = colors;
+        self.terminal.set_default_colors(colors);
     }
-
     pub fn encode_key(&self, input: KeyInput<'_>) -> SmallVec<[u8; 16]> {
-        InputEncoder::encode(input, *self.term.mode())
+        self.terminal.encode_key(input)
     }
-
     pub fn encode_paste(&self, text: &str) -> Result<Bytes, PasteError> {
-        InputEncoder::paste(text, *self.term.mode())
+        self.terminal.encode_paste(text)
     }
-
     pub fn history_size(&self) -> usize {
-        self.term.grid().history_size()
+        self.terminal
+            .snapshot()
+            .map(|s| s.0.history_size)
+            .unwrap_or(0)
     }
-
     pub fn snapshot(&self) -> TerminalSnapshot<'_> {
-        TerminalSnapshot {
-            content: SnapshotContent::Alacritty {
-                engine: self,
-                content: self.term.renderable_content(),
-            },
-        }
+        self.terminal
+            .snapshot()
+            .expect("libghostty-vt snapshot failed")
     }
-
     pub fn cursor_blinking(&self) -> bool {
-        self.term.cursor_style().blinking
+        self.terminal.cursor_blinking()
     }
-
     pub fn has_remote_cursor_style(&self) -> bool {
-        self.remote_cursor_style
+        self.terminal.has_remote_cursor_style()
     }
-
     pub fn has_remote_cursor_blink(&self) -> bool {
-        self.remote_cursor_blink
+        self.terminal.has_remote_cursor_blink()
     }
-
-    fn cell_render_style(&self, cell: &Cell) -> CellRenderStyle {
-        let bold = cell.flags.contains(Flags::BOLD);
-        let dim = cell.flags.contains(Flags::DIM);
-        let mut foreground = self.resolve_color(cell.fg, bold, dim);
-        let mut background = self.resolve_color(cell.bg, false, false);
-        if cell.flags.contains(Flags::INVERSE) {
-            mem::swap(&mut foreground, &mut background);
-        }
-        CellRenderStyle {
-            foreground,
-            background,
-            bold,
-            italic: cell.flags.contains(Flags::ITALIC),
-            underline: cell
-                .flags
-                .intersects(Flags::UNDERLINE | Flags::DOUBLE_UNDERLINE | Flags::UNDERCURL),
-            strikeout: cell.flags.contains(Flags::STRIKEOUT),
-            hidden: cell.flags.contains(Flags::HIDDEN),
-            wide: cell.flags.contains(Flags::WIDE_CHAR),
-            wide_spacer: cell.flags.contains(Flags::WIDE_CHAR_SPACER),
-        }
-    }
-
     pub fn scroll_display(&mut self, lines: i32) {
-        self.term.scroll_display(Scroll::Delta(lines));
+        self.terminal.scroll_display(lines);
     }
-
     pub fn start_selection(&mut self, row: usize, column: usize, side: CellSide) {
-        let point = self.viewport_point(row, column);
-        self.term.selection = Some(Selection::new(SelectionType::Simple, point, side.into()));
+        self.terminal.start_selection(row, column, side);
     }
-
     pub fn update_selection(&mut self, row: usize, column: usize, side: CellSide) {
-        let point = self.viewport_point(row, column);
-        if let Some(selection) = self.term.selection.as_mut() {
-            selection.update(point, side.into());
-        }
+        self.terminal.update_selection(row, column, side);
     }
-
     pub fn clear_selection(&mut self) {
-        self.term.selection = None;
+        self.terminal.clear_selection();
     }
-
     pub fn selected_text(&self) -> Option<String> {
-        self.term.selection_to_string()
-    }
-
-    fn viewport_point(&self, row: usize, column: usize) -> Point {
-        let row = row.min(self.size.rows - 1);
-        let column = Column(column.min(self.size.columns - 1));
-        alacritty_terminal::term::viewport_to_point(
-            self.term.grid().display_offset(),
-            Point::new(row, column),
-        )
-    }
-
-    fn window_size(&self) -> WindowSize {
-        let columns = u16::try_from(self.size.columns).unwrap_or(u16::MAX);
-        let rows = u16::try_from(self.size.rows).unwrap_or(u16::MAX);
-        let cell_width = self.size.pixel_width / self.size.columns as u32;
-        let cell_height = self.size.pixel_height / self.size.rows as u32;
-        WindowSize {
-            num_lines: rows,
-            num_cols: columns,
-            cell_width: u16::try_from(cell_width).unwrap_or(u16::MAX),
-            cell_height: u16::try_from(cell_height).unwrap_or(u16::MAX),
-        }
-    }
-
-    fn resolve_color(&self, color: Color, bold: bool, dim: bool) -> RgbColor {
-        let rgb = match color {
-            Color::Spec(color) if dim => color * 0.66,
-            Color::Spec(color) => color,
-            Color::Indexed(index) => self.color(index as usize),
-            Color::Named(mut color) => {
-                if bold {
-                    color = color.to_bright();
-                } else if dim {
-                    color = color.to_dim();
-                }
-                self.color(color as usize)
-            }
-        };
-        RgbColor::new(rgb.r, rgb.g, rgb.b)
-    }
-
-    fn color(&self, index: usize) -> Rgb {
-        if index < color::COUNT
-            && let Some(color) = self.term.colors()[index]
-        {
-            return color;
-        }
-
-        match index {
-            0..=15 => self.default_colors.ansi[index].into(),
-            16..=255 => xterm_color(index),
-            256 | 267 => self.default_colors.foreground.into(),
-            257 | 268 => self.default_colors.background.into(),
-            258 => self.default_colors.cursor.into(),
-            259..=266 => self.default_colors.foreground.into(),
-            _ => self.default_colors.background.into(),
-        }
-    }
-}
-
-fn xterm_color(index: usize) -> Rgb {
-    const ANSI: [Rgb; 16] = [
-        Rgb {
-            r: 0x00,
-            g: 0x00,
-            b: 0x00,
-        },
-        Rgb {
-            r: 0xcd,
-            g: 0x00,
-            b: 0x00,
-        },
-        Rgb {
-            r: 0x00,
-            g: 0xcd,
-            b: 0x00,
-        },
-        Rgb {
-            r: 0xcd,
-            g: 0xcd,
-            b: 0x00,
-        },
-        Rgb {
-            r: 0x00,
-            g: 0x00,
-            b: 0xee,
-        },
-        Rgb {
-            r: 0xcd,
-            g: 0x00,
-            b: 0xcd,
-        },
-        Rgb {
-            r: 0x00,
-            g: 0xcd,
-            b: 0xcd,
-        },
-        Rgb {
-            r: 0xe5,
-            g: 0xe5,
-            b: 0xe5,
-        },
-        Rgb {
-            r: 0x7f,
-            g: 0x7f,
-            b: 0x7f,
-        },
-        Rgb {
-            r: 0xff,
-            g: 0x00,
-            b: 0x00,
-        },
-        Rgb {
-            r: 0x00,
-            g: 0xff,
-            b: 0x00,
-        },
-        Rgb {
-            r: 0xff,
-            g: 0xff,
-            b: 0x00,
-        },
-        Rgb {
-            r: 0x5c,
-            g: 0x5c,
-            b: 0xff,
-        },
-        Rgb {
-            r: 0xff,
-            g: 0x00,
-            b: 0xff,
-        },
-        Rgb {
-            r: 0x00,
-            g: 0xff,
-            b: 0xff,
-        },
-        Rgb {
-            r: 0xff,
-            g: 0xff,
-            b: 0xff,
-        },
-    ];
-    const CUBE: [u8; 6] = [0, 95, 135, 175, 215, 255];
-
-    match index {
-        0..=15 => ANSI[index],
-        16..=231 => {
-            let offset = index - 16;
-            Rgb {
-                r: CUBE[offset / 36],
-                g: CUBE[(offset / 6) % 6],
-                b: CUBE[offset % 6],
-            }
-        }
-        232..=255 => {
-            let value = 8 + ((index - 232) * 10) as u8;
-            Rgb {
-                r: value,
-                g: value,
-                b: value,
-            }
-        }
-        _ => unreachable!("xterm color index must be in 0..=255"),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn size(columns: usize, rows: usize) -> TerminalSize {
-        TerminalSize {
-            columns,
-            rows,
-            pixel_width: (columns * 10) as u32,
-            pixel_height: (rows * 20) as u32,
-        }
-    }
-
-    fn visible_text(model: &TerminalEngine) -> String {
-        model
-            .snapshot()
-            .cells()
-            .filter_map(|cell| (!cell.style.wide_spacer).then_some(cell.character))
-            .collect()
-    }
-
-    #[test]
-    fn remote_cursor_style_updates_blinking_and_wakes_renderer() {
-        let mut model = TerminalEngine::new(size(80, 24)).unwrap();
-        assert!(!model.cursor_blinking());
-        assert!(!model.has_remote_cursor_style());
-        let actions = model.process_output(b"\x1b[5 q");
-        assert!(model.cursor_blinking());
-        assert!(model.has_remote_cursor_style());
-        assert!(model.has_remote_cursor_blink());
-        assert!(actions.contains(&TerminalAction::Wakeup));
-    }
-
-    #[test]
-    fn explicit_cursor_style_same_as_default_takes_remote_ownership() {
-        let mut model = TerminalEngine::new(size(80, 24)).unwrap();
-        model.process_output(b"\x1b[2 q");
-        assert!(model.has_remote_cursor_style());
-    }
-
-    #[test]
-    fn cursor_style_commands_take_remote_ownership_even_if_shape_returns_to_initial() {
-        let mut model = TerminalEngine::new(size(80, 24)).unwrap();
-        model.process_output(b"\x1b[5 q\x1b[2 q");
-        assert!(model.has_remote_cursor_style());
-        assert!(!model.cursor_blinking());
-    }
-
-    #[test]
-    fn reset_then_cursor_style_in_same_chunk_matches_split_chunks() {
-        let mut together = TerminalEngine::new(size(80, 24)).unwrap();
-        let mut split = TerminalEngine::new(size(80, 24)).unwrap();
-
-        together.process_output(b"\x1bc\x1b[5 q");
-        split.process_output(b"\x1bc");
-        split.process_output(b"\x1b[5 q");
-
-        assert!(together.has_remote_cursor_style());
-        assert!(together.has_remote_cursor_blink());
-        assert!(together.cursor_blinking());
-        assert_eq!(
-            together.has_remote_cursor_style(),
-            split.has_remote_cursor_style()
-        );
-        assert_eq!(
-            together.has_remote_cursor_blink(),
-            split.has_remote_cursor_blink()
-        );
-        assert_eq!(together.cursor_blinking(), split.cursor_blinking());
-    }
-    #[test]
-    fn terminal_reset_restores_local_cursor_precedence() {
-        let mut model = TerminalEngine::new(size(80, 24)).unwrap();
-        model.process_output(b"\x1b[5 q");
-        assert!(model.has_remote_cursor_style());
-        assert!(model.has_remote_cursor_blink());
-        model.process_output(b"\x1b");
-        model.process_output(b"c");
-        assert!(!model.has_remote_cursor_style());
-        assert!(!model.has_remote_cursor_blink());
-    }
-
-    #[test]
-    fn output_updates_borrowed_snapshot() {
-        let mut model = TerminalEngine::new(size(12, 3)).unwrap();
-        assert_eq!(
-            model.process_output("hello 你".as_bytes()).as_slice(),
-            &[TerminalAction::Wakeup],
-        );
-
-        let text = visible_text(&model);
-        assert!(text.contains("hello 你"));
-    }
-
-    #[test]
-    fn bell_and_osc52_clipboard_requests_are_reported() {
-        let mut model = TerminalEngine::new(size(80, 24)).unwrap();
-        let actions = model.process_output(
-            b"\x07\x1b[6n\x1b]0;ignored title\x07\x1b]52;c;YQ==\x07\x1b]52;c;Yg==\x07",
-        );
-
-        assert!(actions.contains(&TerminalAction::Bell));
-        assert!(
-            actions.contains(&TerminalAction::WriteBack(bytes::Bytes::from_static(
-                b"\x1b[1;1R"
-            )))
-        );
-        assert_eq!(
-            actions
-                .iter()
-                .filter(|action| matches!(action, TerminalAction::WriteBack(_)))
-                .count(),
-            1,
-        );
-        assert!(actions.contains(&TerminalAction::Clipboard("a".into())));
-        assert!(actions.contains(&TerminalAction::Clipboard("b".into())));
-        assert_eq!(
-            actions
-                .iter()
-                .filter(|action| matches!(action, TerminalAction::Wakeup))
-                .count(),
-            1,
-        );
-    }
-
-    #[test]
-    fn color_and_text_area_queries_write_back_terminal_values() {
-        let mut model = TerminalEngine::with_colors(
-            size(80, 24),
-            TerminalColors {
-                foreground: RgbColor::new(0xe6, 0xe8, 0xeb),
-                background: RgbColor::new(0x11, 0x13, 0x18),
-                cursor: RgbColor::new(0xe6, 0xe8, 0xeb),
-                ..TerminalColors::default()
-            },
-        )
-        .unwrap();
-        let actions = model.process_output(b"\x1b]10;?\x07\x1b[14t");
-        let replies: Vec<_> = actions
-            .into_iter()
-            .filter_map(|action| match action {
-                TerminalAction::WriteBack(bytes) => Some(bytes),
-                _ => None,
-            })
-            .collect();
-
-        assert!(
-            replies
-                .iter()
-                .any(|reply| { reply.as_ref() == b"\x1b]10;rgb:e6e6/e8e8/ebeb\x07" })
-        );
-        assert!(
-            replies
-                .iter()
-                .any(|reply| reply.as_ref() == b"\x1b[4;480;800t")
-        );
-    }
-
-    #[test]
-    fn alternate_screen_and_256_colors_render() {
-        let mut model = TerminalEngine::new(size(20, 3)).unwrap();
-        model.process_output(b"\x1b[38;5;196mred\x1b[0m");
-        let red_cell = model
-            .snapshot()
-            .cells()
-            .find(|cell| cell.character == 'r')
-            .unwrap();
-        assert_eq!(red_cell.style.foreground, RgbColor::new(255, 0, 0));
-
-        model.process_output(b"\x1b[?1049halt");
-        assert!(model.snapshot().is_alternate_screen());
-        assert!(visible_text(&model).contains("alt"));
-        model.process_output(b"\x1b[?1049l");
-        assert!(!model.snapshot().is_alternate_screen());
-        assert!(visible_text(&model).contains("red"));
-    }
-
-    #[test]
-    fn standard_and_bright_ansi_output_use_configured_palette() {
-        let custom = RgbColor::new(0x12, 0x34, 0x56);
-        let mut colors = TerminalColors::default();
-        colors.ansi[1] = custom;
-        colors.ansi[9] = RgbColor::new(0x65, 0x43, 0x21);
-        let mut model = TerminalEngine::with_colors(size(20, 2), colors).unwrap();
-        model.process_output(b"\x1b[31mstandard\x1b[91mbright");
-        let styles: Vec<_> = model
-            .snapshot()
-            .cells()
-            .filter(|cell| matches!(cell.character, 's' | 'b'))
-            .map(|cell| cell.style.foreground)
-            .collect();
-        assert_eq!(styles, [custom, RgbColor::new(0x65, 0x43, 0x21)]);
-    }
-    #[test]
-    fn wide_cjk_cells_survive_resize() {
-        let mut model = TerminalEngine::new(size(10, 2)).unwrap();
-        model.process_output("A你B".as_bytes());
-
-        model.resize(size(20, 4)).unwrap();
-
-        assert!(visible_text(&model).contains("A你B"));
-        let cjk_cells = model
-            .snapshot()
-            .cells()
-            .filter(|cell| cell.character == '你')
-            .count();
-        assert_eq!(cjk_cells, 1);
-    }
-
-    #[test]
-    fn theme_change_preserves_content_and_updates_default_colors() {
-        let mut model = TerminalEngine::new(size(10, 2)).unwrap();
-        model.process_output(b"content");
-        let light = TerminalColors {
-            foreground: RgbColor::new(0x11, 0x22, 0x33),
-            background: RgbColor::new(0xee, 0xee, 0xee),
-            cursor: RgbColor::new(0x11, 0x22, 0x33),
-            ..TerminalColors::default()
-        };
-
-        model.set_default_colors(light);
-
-        assert!(visible_text(&model).contains("content"));
-        let cell = model
-            .snapshot()
-            .cells()
-            .find(|cell| cell.character == 'c')
-            .unwrap();
-        assert_eq!(cell.style.foreground, light.foreground);
-    }
-
-    #[test]
-    fn configured_scrollback_discards_oldest_history() {
-        let mut model =
-            TerminalEngine::with_scrollback(size(10, 2), TerminalColors::default(), 2).unwrap();
-        model.process_output(b"one\r\ntwo\r\nthree\r\nfour\r\nfive");
-        assert_eq!(model.history_size(), 2);
-        assert!(visible_text(&model).contains("five"));
-    }
-
-    #[test]
-    fn history_alt_screen_resize_and_modes_are_preserved() {
-        let mut model = TerminalEngine::new(size(10, 2)).unwrap();
-        model.process_output(b"one\r\ntwo\r\nthree");
-        assert!(model.history_size() > 0);
-        assert!(model.history_size() <= SCROLLBACK_HISTORY_LINES);
-
-        model.process_output(b"\x1b[?1049halt");
-        assert!(model.snapshot().is_alternate_screen());
-        assert!(visible_text(&model).contains("alt"));
-        model.process_output(b"\x1b[?1049l");
-        assert!(!model.snapshot().is_alternate_screen());
-        assert!(visible_text(&model).contains("three"));
-
-        model.process_output(b"\x1b[?2004h\x1b[?1h");
-        assert_eq!(
-            model.encode_paste("x").unwrap(),
-            Bytes::from_static(b"\x1b[200~x\x1b[201~")
-        );
-        assert_eq!(
-            model
-                .encode_key(crate::KeyInput::new(crate::Key::ArrowUp))
-                .as_slice(),
-            b"\x1bOA"
-        );
-
-        model.resize(size(132, 43)).unwrap();
-        assert_eq!(model.size().columns, 132);
-        assert_eq!(model.size().rows, 43);
-        assert_eq!(model.size(), size(132, 43));
-    }
-
-    #[test]
-    fn selection_copies_visible_text() {
-        let mut model = TerminalEngine::new(size(10, 2)).unwrap();
-        model.process_output(b"hello");
-        model.start_selection(0, 0, CellSide::Left);
-        model.update_selection(0, 4, CellSide::Right);
-
-        assert_eq!(model.selected_text().as_deref(), Some("hello"));
-        model.clear_selection();
-        assert_eq!(model.selected_text(), None);
-    }
-
-    #[test]
-    fn invalid_resize_preserves_existing_dimensions() {
-        let mut model = TerminalEngine::new(size(80, 24)).unwrap();
-        let invalid = TerminalSize {
-            columns: 1,
-            rows: 0,
-            pixel_width: 0,
-            pixel_height: 0,
-        };
-        assert_eq!(model.resize(invalid), Err(TerminalError::InvalidSize));
-        assert_eq!(model.size().columns, 80);
-        assert_eq!(model.size().rows, 24);
-
-        let cursor = model.snapshot().cursor();
-        assert_eq!(cursor.point, TerminalPoint { line: 0, column: 0 });
+        self.terminal.selected_text()
     }
 }

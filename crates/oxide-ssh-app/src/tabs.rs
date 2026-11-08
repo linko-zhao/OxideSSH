@@ -1227,12 +1227,8 @@ mod tests {
         }
         let foreground = |id| {
             let tab = tabs.tab(id).unwrap();
-            let cell = tab
-                .terminal()
-                .snapshot()
-                .cells()
-                .find(|cell| cell.character == 'X')
-                .unwrap();
+            let snapshot = tab.terminal().snapshot();
+            let cell = snapshot.cells().find(|cell| cell.character == 'X').unwrap();
             cell.style.foreground
         };
         assert_eq!(
@@ -1263,12 +1259,8 @@ mod tests {
         let tab = tabs.tab(tab_id).unwrap();
         assert_eq!(tab.state(), &TabState::Connected);
         assert!(visible_text(tab).contains("content"));
-        let content_cell = tab
-            .terminal()
-            .snapshot()
-            .cells()
-            .find(|cell| cell.character == 'c')
-            .unwrap();
+        let snapshot = tab.terminal().snapshot();
+        let content_cell = snapshot.cells().find(|cell| cell.character == 'c').unwrap();
         assert_eq!(content_cell.style.foreground, light.foreground);
     }
 
