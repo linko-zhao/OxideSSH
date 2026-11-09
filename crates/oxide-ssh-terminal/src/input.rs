@@ -64,6 +64,33 @@ impl<'a> KeyInput<'a> {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MouseAction {
+    Press,
+    Release,
+    Motion,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MouseButton {
+    Left,
+    Right,
+    Middle,
+    WheelUp,
+    WheelDown,
+    WheelLeft,
+    WheelRight,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct MouseInput {
+    pub action: MouseAction,
+    pub button: Option<MouseButton>,
+    pub modifiers: Modifiers,
+    pub x: f32,
+    pub y: f32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PasteError {
     TooLarge,
 }

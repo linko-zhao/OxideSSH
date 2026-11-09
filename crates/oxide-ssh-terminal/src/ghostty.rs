@@ -7,7 +7,9 @@ use parking_lot::Mutex;
 use smallvec::SmallVec;
 use std::{cell::RefCell, ffi::c_void, ptr::NonNull};
 
-use crate::{CellSide, Key, KeyInput, PasteError, TerminalAction};
+use crate::{
+    CellSide, Key, KeyInput, MouseAction, MouseButton, MouseInput, PasteError, TerminalAction,
+};
 
 const OPT_USERDATA: i32 = 1;
 const OPT_WRITE_PTY: i32 = 2;
@@ -30,6 +32,31 @@ struct KeyEncoderOpaque {
 #[repr(C)]
 struct KeyEventOpaque {
     _private: [u8; 0],
+}
+#[repr(C)]
+struct MouseEncoderOpaque {
+    _private: [u8; 0],
+}
+#[repr(C)]
+struct MouseEventOpaque {
+    _private: [u8; 0],
+}
+#[repr(C)]
+struct MousePosition {
+    x: f32,
+    y: f32,
+}
+#[repr(C)]
+struct MouseEncoderSize {
+    size: usize,
+    screen_width: u32,
+    screen_height: u32,
+    cell_width: u32,
+    cell_height: u32,
+    padding_top: u32,
+    padding_bottom: u32,
+    padding_right: u32,
+    padding_left: u32,
 }
 #[repr(C)]
 struct TerminalModeConfig {
@@ -304,6 +331,37 @@ unsafe extern "C" {
     fn ghostty_key_event_set_mods(event: *mut KeyEventOpaque, mods: u16) -> i32;
     fn ghostty_key_event_set_utf8(event: *mut KeyEventOpaque, text: GhosttyString) -> i32;
     fn ghostty_key_event_set_action(event: *mut KeyEventOpaque, action: i32) -> i32;
+    fn ghostty_mouse_encoder_new(
+        allocator: *const c_void,
+        out: *mut *mut MouseEncoderOpaque,
+    ) -> i32;
+    fn ghostty_mouse_encoder_free(encoder: *mut MouseEncoderOpaque);
+    fn ghostty_mouse_encoder_set(
+        encoder: *mut MouseEncoderOpaque,
+        option: i32,
+        value: *const c_void,
+    ) -> i32;
+    fn ghostty_mouse_encoder_set_from_terminal(
+        encoder: *mut MouseEncoderOpaque,
+        terminal: *mut TerminalOpaque,
+    ) -> i32;
+    fn ghostty_mouse_encoder_encode(
+        encoder: *mut MouseEncoderOpaque,
+        event: *mut MouseEventOpaque,
+        buf: *mut u8,
+        cap: usize,
+        written: *mut usize,
+    ) -> i32;
+    fn ghostty_mouse_event_new(allocator: *const c_void, out: *mut *mut MouseEventOpaque) -> i32;
+    fn ghostty_mouse_event_free(event: *mut MouseEventOpaque);
+    fn ghostty_mouse_event_set_action(event: *mut MouseEventOpaque, action: i32) -> i32;
+    fn ghostty_mouse_event_set_button(event: *mut MouseEventOpaque, button: i32) -> i32;
+    fn ghostty_mouse_event_clear_button(event: *mut MouseEventOpaque) -> i32;
+    fn ghostty_mouse_event_set_mods(event: *mut MouseEventOpaque, mods: u16) -> i32;
+    fn ghostty_mouse_event_set_position(
+        event: *mut MouseEventOpaque,
+        position: MousePosition,
+    ) -> i32;
 }
 
 fn queue(userdata: *mut c_void) -> &'static Mutex<Vec<TerminalAction>> {
@@ -389,10 +447,14 @@ pub(crate) struct GhosttyTerminal {
     snapshot: RefCell<GhosttySnapshotData>,
     cell_width_px: u32,
     cell_height_px: u32,
+    screen_width_px: u32,
+    screen_height_px: u32,
     scrollback_lines: usize,
     pending: Box<Mutex<Vec<TerminalAction>>>,
     encoder: NonNull<KeyEncoderOpaque>,
     event: NonNull<KeyEventOpaque>,
+    mouse_encoder: NonNull<MouseEncoderOpaque>,
+    mouse_event: NonNull<MouseEventOpaque>,
     selection: Option<(TerminalPoint, CellSide, TerminalPoint, CellSide)>,
     selection_cells: std::collections::BTreeMap<(i32, usize), (char, Vec<char>, bool)>,
     remote_cursor_style: bool,
@@ -442,6 +504,29 @@ impl GhosttyTerminal {
         }
         let event =
             NonNull::new(raw_event).expect("successful key event creation returns a handle");
+        let mut raw_mouse_encoder = std::ptr::null_mut();
+        if unsafe { ghostty_mouse_encoder_new(std::ptr::null(), &mut raw_mouse_encoder) } != 0 {
+            unsafe {
+                ghostty_key_event_free(event.as_ptr());
+                ghostty_key_encoder_free(encoder.as_ptr());
+                ghostty_terminal_free(terminal.as_ptr());
+            }
+            return Err("libghostty-vt mouse encoder creation failed");
+        }
+        let mouse_encoder = NonNull::new(raw_mouse_encoder)
+            .expect("successful mouse encoder creation returns a handle");
+        let mut raw_mouse_event = std::ptr::null_mut();
+        if unsafe { ghostty_mouse_event_new(std::ptr::null(), &mut raw_mouse_event) } != 0 {
+            unsafe {
+                ghostty_mouse_encoder_free(mouse_encoder.as_ptr());
+                ghostty_key_event_free(event.as_ptr());
+                ghostty_key_encoder_free(encoder.as_ptr());
+                ghostty_terminal_free(terminal.as_ptr());
+            }
+            return Err("libghostty-vt mouse event creation failed");
+        }
+        let mouse_event = NonNull::new(raw_mouse_event)
+            .expect("successful mouse event creation returns a handle");
         let pending = Box::new(Mutex::new(Vec::new()));
         let userdata = (&*pending as *const Mutex<Vec<TerminalAction>>).cast::<c_void>();
         // SAFETY: userdata stays stable for the lifetime of the terminal; callbacks only enqueue.
@@ -484,10 +569,14 @@ impl GhosttyTerminal {
             }),
             cell_width_px: 0,
             cell_height_px: 0,
+            screen_width_px: 0,
+            screen_height_px: 0,
             scrollback_lines,
             pending,
             encoder,
             event,
+            mouse_encoder,
+            mouse_event,
             selection: None,
             selection_cells: std::collections::BTreeMap::new(),
             remote_cursor_style: false,
@@ -536,6 +625,8 @@ impl GhosttyTerminal {
         rows: u16,
         cell_width_px: u32,
         cell_height_px: u32,
+        screen_width_px: u32,
+        screen_height_px: u32,
     ) -> Result<(), &'static str> {
         // SAFETY: the terminal is live and the dimensions are plain values.
         let result = unsafe {
@@ -550,6 +641,8 @@ impl GhosttyTerminal {
         if result == 0 {
             self.cell_width_px = cell_width_px;
             self.cell_height_px = cell_height_px;
+            self.screen_width_px = screen_width_px;
+            self.screen_height_px = screen_height_px;
             Ok(())
         } else {
             Err("libghostty-vt terminal resize failed")
@@ -1204,6 +1297,107 @@ impl GhosttyTerminal {
         encoded
     }
 
+    pub fn mouse_reporting_enabled(&self) -> bool {
+        [9, 1000, 1002, 1003].into_iter().any(|mode| {
+            let mut config = TerminalModeConfig { mode, value: false };
+            // SAFETY: the terminal is live and config matches GHOSTTY_TERMINAL_DATA_MODE.
+            unsafe {
+                ghostty_terminal_get(
+                    self.terminal.as_ptr(),
+                    DATA_MODE,
+                    (&mut config as *mut TerminalModeConfig).cast(),
+                ) == 0
+                    && config.value
+            }
+        })
+    }
+
+    pub fn encode_mouse(&self, input: MouseInput) -> SmallVec<[u8; 16]> {
+        let action = match input.action {
+            MouseAction::Press => 0,
+            MouseAction::Release => 1,
+            MouseAction::Motion => 2,
+        };
+        let modifiers = u16::from(input.modifiers.shift)
+            | (u16::from(input.modifiers.control) << 1)
+            | (u16::from(input.modifiers.alt) << 2);
+        let any_button_pressed = input.button.is_some() && input.action != MouseAction::Release;
+        let size = MouseEncoderSize {
+            size: std::mem::size_of::<MouseEncoderSize>(),
+            screen_width: self.screen_width_px,
+            screen_height: self.screen_height_px,
+            cell_width: self.cell_width_px,
+            cell_height: self.cell_height_px,
+            padding_top: 0,
+            padding_bottom: 0,
+            padding_right: 0,
+            padding_left: 0,
+        };
+        let event = self.mouse_event.as_ptr();
+        let encoder = self.mouse_encoder.as_ptr();
+        let mut buffer = [0u8; 128];
+        let mut written = 0;
+        // SAFETY: handles are uniquely owned and all option values match the pinned C ABI.
+        let result = unsafe {
+            if ghostty_mouse_encoder_set_from_terminal(encoder, self.terminal.as_ptr()) != 0
+                || ghostty_mouse_encoder_set(encoder, 3, (&size as *const MouseEncoderSize).cast())
+                    != 0
+                || ghostty_mouse_encoder_set(
+                    encoder,
+                    4,
+                    (&any_button_pressed as *const bool).cast(),
+                ) != 0
+                || ghostty_mouse_event_set_action(event, action) != 0
+                || ghostty_mouse_event_set_mods(event, modifiers) != 0
+                || ghostty_mouse_event_set_position(
+                    event,
+                    MousePosition {
+                        x: input.x,
+                        y: input.y,
+                    },
+                ) != 0
+            {
+                -1
+            } else if let Some(button) = input.button {
+                let button = match button {
+                    MouseButton::Left => 1,
+                    MouseButton::Right => 2,
+                    MouseButton::Middle => 3,
+                    MouseButton::WheelUp => 4,
+                    MouseButton::WheelDown => 5,
+                    MouseButton::WheelLeft => 6,
+                    MouseButton::WheelRight => 7,
+                };
+                if ghostty_mouse_event_set_button(event, button) == 0 {
+                    ghostty_mouse_encoder_encode(
+                        encoder,
+                        event,
+                        buffer.as_mut_ptr(),
+                        buffer.len(),
+                        &mut written,
+                    )
+                } else {
+                    -1
+                }
+            } else if ghostty_mouse_event_clear_button(event) == 0 {
+                ghostty_mouse_encoder_encode(
+                    encoder,
+                    event,
+                    buffer.as_mut_ptr(),
+                    buffer.len(),
+                    &mut written,
+                )
+            } else {
+                -1
+            }
+        };
+        let mut encoded = SmallVec::new();
+        if result == 0 {
+            encoded.extend_from_slice(&buffer[..written]);
+        }
+        encoded
+    }
+
     pub fn encode_paste(&self, text: &str) -> Result<Bytes, PasteError> {
         let mut mode = TerminalModeConfig {
             mode: 2004,
@@ -1245,6 +1439,8 @@ impl Drop for GhosttyTerminal {
     fn drop(&mut self) {
         // SAFETY: this owner uniquely owns the handle, and Drop runs once.
         unsafe {
+            ghostty_mouse_event_free(self.mouse_event.as_ptr());
+            ghostty_mouse_encoder_free(self.mouse_encoder.as_ptr());
             ghostty_key_event_free(self.event.as_ptr());
             ghostty_key_encoder_free(self.encoder.as_ptr());
             ghostty_terminal_free(self.terminal.as_ptr());

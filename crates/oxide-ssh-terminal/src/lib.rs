@@ -4,7 +4,9 @@ mod ghostty;
 mod input;
 mod model;
 
-pub use input::{Key, KeyInput, MAX_PASTE_BYTES, Modifiers, PasteError};
+pub use input::{
+    Key, KeyInput, MAX_PASTE_BYTES, Modifiers, MouseAction, MouseButton, MouseInput, PasteError,
+};
 pub use model::{
     CellRenderStyle, CellSide, RgbColor, SCROLLBACK_HISTORY_LINES, TerminalAction, TerminalCell,
     TerminalColors, TerminalCursor, TerminalCursorShape, TerminalEngine, TerminalError,

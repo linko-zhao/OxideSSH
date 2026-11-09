@@ -234,6 +234,8 @@ impl TerminalEngine {
                 size.rows as u16,
                 size.pixel_width / size.columns as u32,
                 size.pixel_height / size.rows as u32,
+                size.pixel_width,
+                size.pixel_height,
             )
             .map_err(|_| TerminalError::InvalidSize)?;
         Ok(Self { terminal, size })
@@ -251,6 +253,8 @@ impl TerminalEngine {
                 size.rows as u16,
                 size.pixel_width / size.columns as u32,
                 size.pixel_height / size.rows as u32,
+                size.pixel_width,
+                size.pixel_height,
             )
             .map_err(|_| TerminalError::InvalidSize)?;
         self.size = size;
@@ -264,6 +268,12 @@ impl TerminalEngine {
     }
     pub fn encode_key(&self, input: KeyInput<'_>) -> SmallVec<[u8; 16]> {
         self.terminal.encode_key(input)
+    }
+    pub fn mouse_reporting_enabled(&self) -> bool {
+        self.terminal.mouse_reporting_enabled()
+    }
+    pub fn encode_mouse(&self, input: crate::MouseInput) -> SmallVec<[u8; 16]> {
+        self.terminal.encode_mouse(input)
     }
     pub fn encode_paste(&self, text: &str) -> Result<Bytes, PasteError> {
         self.terminal.encode_paste(text)

@@ -41,7 +41,8 @@ use oxide_ssh_core::{
     storage::StorageError,
 };
 use oxide_ssh_terminal::{
-    CellRenderStyle, CellSide, Key, KeyInput, TerminalCursorShape, TerminalSize,
+    CellRenderStyle, CellSide, Key, KeyInput, Modifiers as TerminalModifiers, MouseAction,
+    MouseButton as TerminalMouseButton, MouseInput, TerminalCursorShape, TerminalSize,
 };
 use secrecy::SecretString;
 use uuid::Uuid;
@@ -271,6 +272,7 @@ pub struct AppView {
     composing: bool,
     compose_tab: Option<TabId>,
     scroll_accumulator: f32,
+    horizontal_scroll_accumulator: f32,
     bell: bool,
     last_bell_sound: Option<std::time::Instant>,
     bell_generation: u64,
@@ -283,6 +285,7 @@ pub struct AppView {
     pending_local_sessions: Vec<TabId>,
     terminal_selecting: bool,
     terminal_selection_dragged: bool,
+    terminal_mouse_reporting: bool,
     cursor_blink_phase: bool,
     terminal_cursor_focused: bool,
     quitting: bool,
@@ -905,6 +908,7 @@ impl AppView {
             composing: false,
             compose_tab: None,
             scroll_accumulator: 0.0,
+            horizontal_scroll_accumulator: 0.0,
             bell: false,
             last_bell_sound: None,
             bell_generation: 0,
@@ -918,6 +922,7 @@ impl AppView {
             pending_local_sessions: Vec::new(),
             terminal_selecting: false,
             terminal_selection_dragged: false,
+            terminal_mouse_reporting: false,
             cursor_blink_phase: true,
             terminal_cursor_focused: false,
             quitting: false,

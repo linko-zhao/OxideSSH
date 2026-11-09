@@ -34,7 +34,7 @@ OxideSSH is a desktop SSH client written in Rust with a native GPU-rendered UI (
 
 ### Terminal
 - Terminal Engine emulation with 10,000 lines of scrollback and a backend-neutral rendering interface.
-- Mouse selection and copy/paste, including bracketed paste, configurable confirmation for large pastes, a 1 MiB paste limit, and Ctrl/Alt/Shift modified keys.
+- Mouse reporting for terminal applications (click, drag, and wheel), with Shift+drag reserved for local text selection; mouse selection and copy/paste, including bracketed paste, configurable confirmation for large pastes, a 1 MiB paste limit, and Ctrl/Alt/Shift modified keys.
 - IME text input, wide characters, and terminal resize propagated to the remote session.
 - Color themes (light / dark / follow system) and English / 简体中文 UI.
 

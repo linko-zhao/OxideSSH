@@ -111,9 +111,15 @@ impl AppView {
                         element.on_key_down(cx.listener(Self::handle_key_down))
                     })
                     .on_mouse_down(MouseButton::Left, cx.listener(Self::terminal_mouse_down))
+                    .on_mouse_down(MouseButton::Right, cx.listener(Self::terminal_mouse_down))
+                    .on_mouse_down(MouseButton::Middle, cx.listener(Self::terminal_mouse_down))
                     .on_mouse_move(cx.listener(Self::terminal_mouse_move))
                     .on_mouse_up(MouseButton::Left, cx.listener(Self::terminal_mouse_up))
+                    .on_mouse_up(MouseButton::Right, cx.listener(Self::terminal_mouse_up))
+                    .on_mouse_up(MouseButton::Middle, cx.listener(Self::terminal_mouse_up))
                     .on_mouse_up_out(MouseButton::Left, cx.listener(Self::terminal_mouse_up))
+                    .on_mouse_up_out(MouseButton::Right, cx.listener(Self::terminal_mouse_up))
+                    .on_mouse_up_out(MouseButton::Middle, cx.listener(Self::terminal_mouse_up))
                     .on_scroll_wheel(cx.listener(Self::terminal_scroll))
                     .child(TerminalElement {
                         view: cx.entity(),

@@ -10,8 +10,8 @@ use oxide_ssh_core::{
     },
 };
 use oxide_ssh_terminal::{
-    KeyInput, PasteError, TerminalAction, TerminalColors, TerminalEngine, TerminalError,
-    TerminalSize,
+    KeyInput, MouseInput, PasteError, TerminalAction, TerminalColors, TerminalEngine,
+    TerminalError, TerminalSize,
 };
 use uuid::Uuid;
 
@@ -291,6 +291,14 @@ impl Tab {
 
     pub fn send_key(&mut self, input: KeyInput<'_>) -> Result<(), TabLocalError> {
         let bytes = self.terminal.encode_key(input);
+        if bytes.is_empty() {
+            return Ok(());
+        }
+        self.send_bytes(Bytes::copy_from_slice(&bytes))
+    }
+
+    pub fn send_mouse(&mut self, input: MouseInput) -> Result<(), TabLocalError> {
+        let bytes = self.terminal.encode_mouse(input);
         if bytes.is_empty() {
             return Ok(());
         }

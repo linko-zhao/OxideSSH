@@ -714,6 +714,65 @@ impl AppView {
         ))
     }
 
+    fn terminal_mouse_button(button: MouseButton) -> Option<TerminalMouseButton> {
+        match button {
+            MouseButton::Left => Some(TerminalMouseButton::Left),
+            MouseButton::Right => Some(TerminalMouseButton::Right),
+            MouseButton::Middle => Some(TerminalMouseButton::Middle),
+            MouseButton::Navigate(_) => None,
+        }
+    }
+
+    fn terminal_modifiers(modifiers: gpui::Modifiers) -> TerminalModifiers {
+        TerminalModifiers {
+            control: modifiers.control,
+            alt: modifiers.alt,
+            shift: modifiers.shift,
+        }
+    }
+
+    fn send_terminal_mouse(
+        &mut self,
+        action: MouseAction,
+        button: Option<TerminalMouseButton>,
+        modifiers: gpui::Modifiers,
+        position: Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(tab_id) = self.tabs.active() else {
+            return false;
+        };
+        if self.terminal_geometry_tab != Some(tab_id) {
+            return false;
+        }
+        let Some(geometry) = self.terminal_geometry else {
+            return false;
+        };
+        let input = MouseInput {
+            action,
+            button,
+            modifiers: Self::terminal_modifiers(modifiers),
+            x: f32::from(position.x - geometry.bounds.left()),
+            y: f32::from(position.y - geometry.bounds.top()),
+        };
+        let result = self.tabs.tab_mut(tab_id).map(|tab| tab.send_mouse(input));
+        match result {
+            Some(Ok(())) => {
+                if self.status_message == Some(MessageId::InputQueueFull) {
+                    self.status_message = None;
+                }
+                cx.stop_propagation();
+                true
+            }
+            Some(Err(error)) => {
+                self.status_message = Some(local_error_message_id(error));
+                cx.notify();
+                true
+            }
+            None => false,
+        }
+    }
+
     pub(super) fn terminal_mouse_down(
         &mut self,
         event: &MouseDownEvent,
@@ -721,6 +780,25 @@ impl AppView {
         cx: &mut Context<Self>,
     ) {
         self.terminal_focus.focus(window);
+        let reporting = !event.modifiers.shift
+            && self.tabs.active().is_some_and(|id| {
+                self.tabs
+                    .tab(id)
+                    .is_some_and(|tab| tab.terminal().mouse_reporting_enabled())
+            });
+        if reporting && let Some(button) = Self::terminal_mouse_button(event.button) {
+            self.terminal_mouse_reporting = self.send_terminal_mouse(
+                MouseAction::Press,
+                Some(button),
+                event.modifiers,
+                event.position,
+                cx,
+            );
+            return;
+        }
+        if event.button != MouseButton::Left {
+            return;
+        }
         let Some((row, column, side)) = self.terminal_cell_at(event.position) else {
             return;
         };
@@ -738,6 +816,24 @@ impl AppView {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let reporting = self.terminal_mouse_reporting
+            || (!event.modifiers.shift
+                && self.tabs.active().is_some_and(|id| {
+                    self.tabs
+                        .tab(id)
+                        .is_some_and(|tab| tab.terminal().mouse_reporting_enabled())
+                }));
+        if reporting {
+            let button = event.pressed_button.and_then(Self::terminal_mouse_button);
+            self.send_terminal_mouse(
+                MouseAction::Motion,
+                button,
+                event.modifiers,
+                event.position,
+                cx,
+            );
+            return;
+        }
         if !self.terminal_selecting || !event.dragging() {
             return;
         }
@@ -753,10 +849,21 @@ impl AppView {
 
     pub(super) fn terminal_mouse_up(
         &mut self,
-        _: &MouseUpEvent,
+        event: &MouseUpEvent,
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.terminal_mouse_reporting {
+            self.send_terminal_mouse(
+                MouseAction::Release,
+                Self::terminal_mouse_button(event.button),
+                event.modifiers,
+                event.position,
+                cx,
+            );
+            self.terminal_mouse_reporting = false;
+            return;
+        }
         if self.terminal_selecting
             && self.terminal_selection_dragged
             && self
@@ -793,12 +900,52 @@ impl AppView {
         };
         let delta = event.delta.pixel_delta(geometry.cell_height);
         self.scroll_accumulator += f32::from(delta.y) / f32::from(geometry.cell_height);
+        self.horizontal_scroll_accumulator += f32::from(delta.x) / f32::from(geometry.cell_width);
         let lines = self.scroll_accumulator.trunc() as i32;
-        if lines == 0 {
+        let horizontal_lines = self.horizontal_scroll_accumulator.trunc() as i32;
+        if lines == 0 && horizontal_lines == 0 {
             return;
         }
         self.scroll_accumulator -= lines as f32;
-        if let Some(tab) = self.tabs.active().and_then(|id| self.tabs.tab_mut(id)) {
+        self.horizontal_scroll_accumulator -= horizontal_lines as f32;
+        let reporting = !event.modifiers.shift
+            && self
+                .tabs
+                .tab(tab_id)
+                .is_some_and(|tab| tab.terminal().mouse_reporting_enabled());
+        if reporting {
+            for _ in 0..lines.unsigned_abs() {
+                self.send_terminal_mouse(
+                    MouseAction::Press,
+                    Some(if lines > 0 {
+                        TerminalMouseButton::WheelUp
+                    } else {
+                        TerminalMouseButton::WheelDown
+                    }),
+                    event.modifiers,
+                    event.position,
+                    cx,
+                );
+            }
+            for _ in 0..horizontal_lines.unsigned_abs() {
+                self.send_terminal_mouse(
+                    MouseAction::Press,
+                    Some(if horizontal_lines > 0 {
+                        TerminalMouseButton::WheelRight
+                    } else {
+                        TerminalMouseButton::WheelLeft
+                    }),
+                    event.modifiers,
+                    event.position,
+                    cx,
+                );
+            }
+            return;
+        }
+        if lines == 0 {
+            return;
+        }
+        if let Some(tab) = self.tabs.tab_mut(tab_id) {
             tab.terminal_mut().scroll_display(lines);
             cx.notify();
         }

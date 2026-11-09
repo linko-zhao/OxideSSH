@@ -1,5 +1,6 @@
 use oxide_ssh_terminal::{
-    Key, KeyInput, MAX_PASTE_BYTES, PasteError, TerminalEngine, TerminalSize,
+    Key, KeyInput, MAX_PASTE_BYTES, Modifiers, MouseAction, MouseButton, MouseInput, PasteError,
+    TerminalEngine, TerminalSize,
 };
 
 fn engine() -> TerminalEngine {
@@ -10,6 +11,82 @@ fn engine() -> TerminalEngine {
         pixel_height: 480,
     })
     .unwrap()
+}
+
+#[test]
+fn mouse_click_follows_reporting_mode_and_sgr_coordinates() {
+    let mut engine = engine();
+    let click = MouseInput {
+        action: MouseAction::Press,
+        button: Some(MouseButton::Left),
+        modifiers: Modifiers::default(),
+        x: 101.0,
+        y: 21.0,
+    };
+    assert!(!engine.mouse_reporting_enabled());
+    assert!(engine.encode_mouse(click).is_empty());
+
+    engine.process_output(b"\x1b[?1000;1006h");
+
+    assert!(engine.mouse_reporting_enabled());
+    assert_eq!(engine.encode_mouse(click).as_slice(), b"\x1b[<0;11;2M");
+}
+
+#[test]
+fn mouse_release_drag_wheel_and_modifiers_use_standard_sgr_sequences() {
+    let mut engine = engine();
+    engine.process_output(b"\x1b[?1002;1006h");
+    let input = |action, button, modifiers| MouseInput {
+        action,
+        button: Some(button),
+        modifiers,
+        x: 101.0,
+        y: 21.0,
+    };
+
+    assert_eq!(
+        engine
+            .encode_mouse(input(
+                MouseAction::Release,
+                MouseButton::Left,
+                Modifiers::default(),
+            ))
+            .as_slice(),
+        b"\x1b[<0;11;2m"
+    );
+    assert_eq!(
+        engine
+            .encode_mouse(input(
+                MouseAction::Motion,
+                MouseButton::Left,
+                Modifiers::default(),
+            ))
+            .as_slice(),
+        b"\x1b[<32;11;2M"
+    );
+    assert_eq!(
+        engine
+            .encode_mouse(input(
+                MouseAction::Press,
+                MouseButton::WheelUp,
+                Modifiers::default(),
+            ))
+            .as_slice(),
+        b"\x1b[<64;11;2M"
+    );
+    assert_eq!(
+        engine
+            .encode_mouse(input(
+                MouseAction::Press,
+                MouseButton::Right,
+                Modifiers {
+                    control: true,
+                    ..Modifiers::default()
+                },
+            ))
+            .as_slice(),
+        b"\x1b[<18;11;2M"
+    );
 }
 
 #[test]
