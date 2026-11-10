@@ -4618,6 +4618,7 @@ dependencies = [
  "secrecy",
  "secret-service",
  "security-framework",
+ "serde",
  "serde_json",
  "sys-locale",
  "tempfile",
