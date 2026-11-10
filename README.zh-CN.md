@@ -82,21 +82,24 @@ OxideSSH 是用 Rust 编写的桌面 SSH 客户端，采用原生 GPU 渲染界�
 
 ### 前置条件
 - Rust 1.97.1（通过 `rust-toolchain.toml` 自动安装）
-- Zig 0.17.1（构建固定版本 libghostty-vt 1.0.0；Windows 使用 Git Bash 等 POSIX shell）
-- Windows：MSVC 构建工具
+- Zig 0.17.1、Git Bash 和 MSVC 构建工具（Windows 本机构建）
 - macOS：Xcode 命令行工具
 - Linux：X11/xkb 开发库，以及用于“记住”凭据的 Secret Service 提供方（如 `gnome-keyring`）
 
 ### 构建与运行
 
-先构建与当前 Rust 主机匹配的原生库。脚本会下载固定版本的源码及依赖归档，并在构建前验证两者的 SHA-256：
+Windows 在 Visual Studio Developer PowerShell 中执行以下命令；脚本会校验前置工具、构建匹配的 libghostty-vt（源码和依赖归档均校验 SHA-256），再构建桌面应用：
+
+```powershell
+.\scripts\build-local.ps1
+```
+
+传入 `-Run` 可在构建后启动应用。首次构建需要下载固定版本的 libghostty-vt 源码和依赖。
+
+macOS/Linux 先构建与当前 Rust 主机匹配的原生库，再设置 `LIBGHOSTTY_VT_LIB_DIR`：
 
 ```sh
-# 从以下目标中选择一个：
-# x86_64-pc-windows-msvc | aarch64-pc-windows-msvc
-# x86_64-apple-darwin | aarch64-apple-darwin
-# x86_64-unknown-linux-gnu | aarch64-unknown-linux-gnu
-target=x86_64-pc-windows-msvc
+target=aarch64-apple-darwin # 按当前平台选择目标
 ./scripts/build-libghostty-vt.sh "$target"
 export LIBGHOSTTY_VT_LIB_DIR="$PWD/target/libghostty-vt/$target/stage/usr/lib"
 cargo build -p oxide-ssh-desktop --locked
@@ -111,10 +114,11 @@ cargo run -p oxide-ssh-desktop --locked
 ./scripts/run-linux.sh
 ```
 
-`Makefile` 封装了常用任务：
+`make run` 会按宿主平台构建并启动预览；WSL2/WSLg 会沿用 Linux GUI 与钥匙串启动器。
 
 ```bash
 make build        # 调试构建
+make run          # 按当前宿主环境构建并启动预览
 make release      # 发布构建
 make test         # 工作区测试
 make lint         # rustfmt --check + clippy -D warnings

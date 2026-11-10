@@ -28,4 +28,3 @@ pageant.workspace = true
 [dev-dependencies]
 futures.workspace = true
 rand.workspace = true
-tempfile.workspace = true

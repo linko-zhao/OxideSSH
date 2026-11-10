@@ -3,8 +3,7 @@
 #
 # Targets:
 #   build        Build desktop binary (debug)
-#   run          Run desktop app (debug, Linux dev only)
-#   release      Build desktop binary (release)
+#   run          Build and run desktop preview on the current host
 #   package-win  Package Windows installer (.msi) — requires Windows host or CI
 #   package-mac  Package macOS disk image (.app + .dmg) — requires macOS host or CI
 #   test         Run all tests
@@ -28,7 +27,7 @@ help:
 	@echo "OxideSSH Build Targets"
 	@echo ""
 	@echo "  build        Build desktop binary (debug)"
-	@echo "  run          Run desktop app (debug, Linux dev)"
+	@echo "  run          Build and run desktop preview on the current host"
 	@echo "  release      Build desktop binary (release)"
 	@echo "  package-win  Package Windows installer (.msi) [requires Windows host]"
 	@echo "  package-mac  Package macOS disk image (.app + .dmg) [requires macOS host]"
@@ -44,8 +43,13 @@ help:
 build:
 	$(CARGO) build -p oxide-ssh-desktop --locked
 
+ifeq ($(OS),Windows_NT)
 run:
-	./scripts/run-linux.sh
+	powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-local.ps1 -Run
+else
+run:
+	bash scripts/run-local.sh
+endif
 
 release:
 	$(CARGO) build -p oxide-ssh-desktop --release --locked

@@ -83,28 +83,31 @@ Invalid or missing selected files fall back to the built-in palette without chan
 
 ### Prerequisites
 - Rust 1.97.1 (installed automatically via `rust-toolchain.toml`)
-- Zig 0.17.1 (required for pinned libghostty-vt 1.0.0; use a POSIX shell, such as Git Bash on Windows)
-- Windows: MSVC build tools
+- Zig 0.17.1, Git Bash, and MSVC build tools (Windows local builds)
 - macOS: Xcode command line tools
 - Linux: X11/xkb development libraries and a Secret Service provider (e.g. `gnome-keyring`) for “Remember” credentials
 
 ### Build and run
 
-Build the matching native library first. The script downloads the versioned source and dependency archives and verifies their SHA-256 checksums before building:
+On Windows, run this from a Visual Studio Developer PowerShell. The script checks prerequisites, builds matching libghostty-vt (verifying SHA-256 for both source and dependency archives), then builds the desktop app:
+
+```powershell
+.\scripts\build-local.ps1
+```
+
+Pass `-Run` to launch the app after building. The first build downloads the pinned libghostty-vt source and dependencies.
+
+On macOS/Linux, build the native library matching the Rust host and set `LIBGHOSTTY_VT_LIB_DIR`:
 
 ```sh
-# Choose the target matching the Rust build host:
-# x86_64-pc-windows-msvc | aarch64-pc-windows-msvc
-# x86_64-apple-darwin | aarch64-apple-darwin
-# x86_64-unknown-linux-gnu | aarch64-unknown-linux-gnu
-target=x86_64-pc-windows-msvc
+target=aarch64-apple-darwin # choose the target for this host
 ./scripts/build-libghostty-vt.sh "$target"
 export LIBGHOSTTY_VT_LIB_DIR="$PWD/target/libghostty-vt/$target/stage/usr/lib"
 cargo build -p oxide-ssh-desktop --locked
 cargo run -p oxide-ssh-desktop --locked
 ```
 
-To use an existing installation, set `LIBGHOSTTY_VT_LIB_DIR` to its `lib` directory instead. The script pins libghostty-vt 1.0.0 and Zig 0.17.1; see `scripts/build-libghostty-vt.sh` for archive checksums and exact target build options.
+The script pins libghostty-vt 1.0.0, Zig 0.17.1, and archive checksums; see `scripts/build-libghostty-vt.sh` for exact options.
 
 On WSL2/WSLg, use the launcher which stages the missing GUI libraries and starts a keyring daemon:
 
@@ -112,10 +115,11 @@ On WSL2/WSLg, use the launcher which stages the missing GUI libraries and starts
 ./scripts/run-linux.sh
 ```
 
-The `Makefile` wraps the common tasks:
+`make run` builds and launches a preview for the current host; WSL2/WSLg uses the Linux GUI/keyring launcher.
 
 ```bash
 make build        # debug build
+make run          # build and launch a preview for the current host
 make release      # release build
 make test         # workspace tests
 make lint         # rustfmt --check + clippy -D warnings

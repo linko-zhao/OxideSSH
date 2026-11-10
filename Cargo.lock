@@ -4600,7 +4600,6 @@ name = "oxide-ssh-desktop"
 version = "0.1.0"
 dependencies = [
  "async-channel 2.5.0",
- "bytes",
  "directories",
  "embed-resource",
  "gpui",
