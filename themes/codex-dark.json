@@ -1,0 +1,14 @@
+{
+  "background": "#0D0D0D",
+  "raised": "#171717",
+  "hover": "#242424",
+  "border": "#2F2F2F",
+  "foreground": "#ECECEC",
+  "mutedForeground": "#A3A3A3",
+  "primary": "#ECECEC",
+  "primaryHover": "#FFFFFF",
+  "primaryActive": "#C8C8C8",
+  "primaryForeground": "#0D0D0D",
+  "strip": "#0A0A0A",
+  "danger": "#E5484D"
+}

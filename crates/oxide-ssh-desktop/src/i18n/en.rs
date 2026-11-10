@@ -42,7 +42,13 @@ pub(super) fn text(id: MessageId) -> &'static str {
             "Maximum number of lines retained for new terminals (1–1,000,000)"
         }
         MessageId::InvalidScrollbackLines => "Enter a whole number from 1 to 1,000,000.",
-        MessageId::Theme => "Theme",
+        MessageId::Theme => "Theme mode",
+        MessageId::LightTheme => "Light theme",
+        MessageId::LightThemeDescription => "Theme file used in light mode",
+        MessageId::DarkTheme => "Dark theme",
+        MessageId::DarkThemeDescription => "Theme file used in dark mode",
+        MessageId::BuiltInTheme => "Built-in",
+        MessageId::ThemeFileError => "Theme file error; using the built-in palette:",
         MessageId::CursorStyle => "Cursor style",
         MessageId::CursorStyleDescription => "Default cursor shape",
         MessageId::CursorBlock => "Block",

@@ -74,8 +74,7 @@ package-win:
 	$(PACKAGER) --release --target $(TARGET_WIN) --formats wix
 
 package-mac:
-	$(CARGO) build -p oxide-ssh-desktop --release --target $(TARGET_MAC) --locked
-	$(PACKAGER) --release --target $(TARGET_MAC) --formats app,dmg
+	sh packaging/package-macos.sh
 
 
 # ---------------------------------------------------------------------------

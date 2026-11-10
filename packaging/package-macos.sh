@@ -9,4 +9,8 @@ unset APPLE_SIGNING_IDENTITY APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_
 
 target=aarch64-apple-darwin
 cargo build -p oxide-ssh-desktop --release --target "$target" --locked
-cargo packager --release --target "$target" --formats app,dmg
+cargo packager --release --target "$target" --formats app
+rm -rf target/package/OxideSSH.app/Contents/Resources/themes
+mkdir -p target/package/OxideSSH.app/Contents/MacOS/themes
+cp themes/*.json target/package/OxideSSH.app/Contents/MacOS/themes/
+cargo packager --release --target "$target" --formats dmg

@@ -44,6 +44,31 @@ OxideSSH is a desktop SSH client written in Rust with a native GPU-rendered UI (
 - macOS: Cmd+Q quit, Dock icon, and “New Window” menu item.
 - Conventional `.msi` installer on Windows and `.app` / `.dmg` on macOS.
 
+#### Custom UI themes
+
+Codex-style `codex-light` and `codex-dark` themes are included and appear in both selectors.
+
+Put JSON files in the `themes` directory beside the executable (`target/debug/themes` during development; `OxideSSH.app/Contents/MacOS/themes` in a packaged macOS app). Select the files independently for light and dark mode under **Settings → Appearance**. Omitted fields inherit the built-in palette. Colors use `#RRGGBB` or `#RRGGBBAA`.
+
+```json
+{
+  "background": "#1C1917",
+  "raised": "#292524",
+  "hover": "#3A3735",
+  "border": "#44403C",
+  "foreground": "#FAFAF9",
+  "mutedForeground": "#A8A29E",
+  "primary": "#D97757",
+  "primaryHover": "#E88C70",
+  "primaryActive": "#C76648",
+  "primaryForeground": "#1C1917",
+  "strip": "#211E1C",
+  "danger": "#D64545"
+}
+```
+
+Invalid or missing selected files fall back to the built-in palette without changing the saved selection. Reopen Settings or restart the app after editing a file. Terminal ANSI palettes remain separate settings.
+
 > Sidebar entries for Keychain, Port forwarding, Snippets, Known Hosts, and Logs are placeholders. Port forwarding and snippets are not implemented yet.
 
 ## Platform support

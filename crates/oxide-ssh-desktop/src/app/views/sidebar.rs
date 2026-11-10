@@ -98,8 +98,10 @@ impl AppView {
                     cx,
                 )
                 .cursor_pointer()
-                .on_click(cx.listener(|this, _, _, cx| {
+                .on_click(cx.listener(|this, _, window, cx| {
                     this.main_view = MainView::Settings;
+                    this.refresh_theme_selects(window, cx);
+                    this.reload_theme_file(window, cx);
                     cx.notify();
                 })),
             )

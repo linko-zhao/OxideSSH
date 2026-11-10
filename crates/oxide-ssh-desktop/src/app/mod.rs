@@ -32,7 +32,7 @@ use oxide_ssh_core::{
     model::{
         AuthConfig, ConnectionProfile, CursorStyleSetting, Endpoint, LocaleSetting, NewTabAction,
         Osc52Clipboard, ProfileId, SessionId, Tag, TagColor, TagId, TerminalBell,
-        TerminalSize as CoreTerminalSize, ThemeSetting,
+        TerminalSize as CoreTerminalSize, ThemeMode,
     },
     session::{
         ConnectRequest, HostKeyDecision, SessionError, SessionEvent, SshService,
@@ -56,7 +56,10 @@ use crate::{
     state::{
         AppLoadOutcome, AppState,
         connection_form::{AuthMethod, ConnectionForm, FormError},
-        theme::{CARD_GAP, CARD_PADDING, ResolvedTheme, apply_theme},
+        theme::{
+            BUILT_IN_THEME, CARD_GAP, CARD_PADDING, ResolvedTheme, apply_theme, available_themes,
+            load_theme,
+        },
     },
 };
 use oxide_ssh_app::tabs::{
@@ -211,6 +214,35 @@ fn new_setting_select(
     cx.new(|cx| SelectState::new(items, Some(IndexPath::new(selected_index)), window, cx))
 }
 
+fn theme_select_items(
+    locale: ResolvedLocale,
+    selected: &str,
+) -> (SearchableVec<SharedString>, usize) {
+    let built_in = SharedString::from(Catalog::text(locale, MessageId::BuiltInTheme));
+    let mut names = vec![built_in.clone()];
+    names.extend(available_themes().into_iter().map(SharedString::from));
+    if selected != BUILT_IN_THEME && !names.iter().any(|name| name.as_str() == selected) {
+        names.push(SharedString::from(selected.to_owned()));
+    }
+    let selected = if selected == BUILT_IN_THEME {
+        built_in
+    } else {
+        SharedString::from(selected.to_owned())
+    };
+    let index = names.iter().position(|name| *name == selected).unwrap_or(0);
+    (SearchableVec::new(names), index)
+}
+
+fn new_theme_select(
+    window: &mut Window,
+    cx: &mut Context<AppView>,
+    locale: ResolvedLocale,
+    selected: &str,
+) -> SettingSelect {
+    let (items, selected_index) = theme_select_items(locale, selected);
+    cx.new(|cx| SelectState::new(items, Some(IndexPath::new(selected_index)), window, cx))
+}
+
 /// Muted, theme-agnostic hues for tag colors; mirrors the host-card avatar
 /// palette so tags sit comfortably on light and dark surfaces.
 fn tag_color_rgb(color: TagColor) -> u32 {
@@ -248,6 +280,8 @@ pub struct AppView {
     settings_category: SettingsCategory,
     locale_select: SettingSelect,
     theme_select: SettingSelect,
+    light_theme_select: SettingSelect,
+    dark_theme_select: SettingSelect,
     ssh_connect_timeout_select: SettingSelect,
     new_tab_action_select: SettingSelect,
     cursor_style_select: SettingSelect,
@@ -266,6 +300,9 @@ pub struct AppView {
     scrollback_input: Entity<InputState>,
     system_locale: Option<String>,
     theme: ResolvedTheme,
+    theme_name: String,
+    light_theme_error: Option<String>,
+    dark_theme_error: Option<String>,
     focus_handle: FocusHandle,
     terminal_focus: FocusHandle,
     pending_terminal_focus: bool,
@@ -353,7 +390,11 @@ impl AppView {
             .as_ref()
             .map(|state| state.resolved_theme(system_is_dark))
             .unwrap_or(ResolvedTheme::Dark);
-        apply_theme(theme, window, cx);
+        let theme_name = state
+            .as_ref()
+            .map(|state| state.theme_name(theme).to_owned())
+            .unwrap_or_else(|| BUILT_IN_THEME.to_owned());
+        let initial_theme_error = apply_theme(theme, &theme_name, window, cx).err();
         gpui_component::set_locale(match locale {
             ResolvedLocale::EnUs => "en",
             ResolvedLocale::ZhCn => "zh-CN",
@@ -462,12 +503,14 @@ impl AppView {
             cx,
             locale,
             &[MessageId::System, MessageId::Light, MessageId::Dark],
-            match preferences.theme {
-                ThemeSetting::System => 0,
-                ThemeSetting::Light => 1,
-                ThemeSetting::Dark => 2,
+            match preferences.theme.mode {
+                ThemeMode::System => 0,
+                ThemeMode::Light => 1,
+                ThemeMode::Dark => 2,
             },
         );
+        let light_theme_select = new_theme_select(window, cx, locale, &preferences.theme.light);
+        let dark_theme_select = new_theme_select(window, cx, locale, &preferences.theme.dark);
         let ssh_connect_timeout_select = new_setting_select(
             window,
             cx,
@@ -606,13 +649,43 @@ impl AppView {
                             return;
                         };
                         let setting = if value.as_str() == this.text(MessageId::Light) {
-                            ThemeSetting::Light
+                            ThemeMode::Light
                         } else if value.as_str() == this.text(MessageId::Dark) {
-                            ThemeSetting::Dark
+                            ThemeMode::Dark
                         } else {
-                            ThemeSetting::System
+                            ThemeMode::System
                         };
                         this.set_theme(setting, window, cx);
+                    },
+                ),
+                cx.subscribe_in(
+                    &light_theme_select,
+                    window,
+                    |this, _, event: &SelectEvent<SearchableVec<SharedString>>, window, cx| {
+                        let SelectEvent::Confirm(Some(value)) = event else {
+                            return;
+                        };
+                        let name = if value.as_str() == this.text(MessageId::BuiltInTheme) {
+                            BUILT_IN_THEME.to_owned()
+                        } else {
+                            value.to_string()
+                        };
+                        this.set_theme_file(ResolvedTheme::Light, name, window, cx);
+                    },
+                ),
+                cx.subscribe_in(
+                    &dark_theme_select,
+                    window,
+                    |this, _, event: &SelectEvent<SearchableVec<SharedString>>, window, cx| {
+                        let SelectEvent::Confirm(Some(value)) = event else {
+                            return;
+                        };
+                        let name = if value.as_str() == this.text(MessageId::BuiltInTheme) {
+                            BUILT_IN_THEME.to_owned()
+                        } else {
+                            value.to_string()
+                        };
+                        this.set_theme_file(ResolvedTheme::Dark, name, window, cx);
                     },
                 ),
                 cx.subscribe_in(
@@ -886,6 +959,8 @@ impl AppView {
             locale_select,
             paste_threshold_select,
             theme_select,
+            light_theme_select,
+            dark_theme_select,
             ssh_connect_timeout_select,
             scrollback_input,
             new_tab_action_select,
@@ -902,6 +977,17 @@ impl AppView {
             locale,
             system_locale,
             theme,
+            theme_name,
+            light_theme_error: if theme == ResolvedTheme::Light {
+                initial_theme_error.clone()
+            } else {
+                None
+            },
+            dark_theme_error: if theme == ResolvedTheme::Dark {
+                initial_theme_error
+            } else {
+                None
+            },
             focus_handle: cx.focus_handle(),
             terminal_focus: cx.focus_handle(),
             pending_terminal_focus: false,
@@ -962,14 +1048,46 @@ impl AppView {
         Catalog::text(self.locale, id)
     }
 
+    fn refresh_theme_selects(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(state) = self.state.as_ref() else {
+            return;
+        };
+        let light = state.settings().theme.light.clone();
+        let dark = state.settings().theme.dark.clone();
+        self.light_theme_error = load_theme(&light).err();
+        self.dark_theme_error = load_theme(&dark).err();
+        let (items, selected) = theme_select_items(self.locale, &light);
+        self.light_theme_select.update(cx, |select, cx| {
+            select.set_items(items, window, cx);
+            select.set_selected_index(Some(IndexPath::new(selected)), window, cx);
+        });
+        let (items, selected) = theme_select_items(self.locale, &dark);
+        self.dark_theme_select.update(cx, |select, cx| {
+            select.set_items(items, window, cx);
+            select.set_selected_index(Some(IndexPath::new(selected)), window, cx);
+        });
+    }
+
+    fn reload_theme_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let result = apply_theme(self.theme, &self.theme_name, window, cx);
+        match self.theme {
+            ResolvedTheme::Light => self.light_theme_error = result.err(),
+            ResolvedTheme::Dark => self.dark_theme_error = result.err(),
+        }
+    }
+
     fn refresh_preferences(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some((locale, theme, has_custom_ansi_palette)) = self.state.as_ref().map(|state| {
-            (
-                state.resolved_locale(self.system_locale.as_deref()),
-                state.resolved_theme(is_dark(window.appearance())),
-                state.settings().ansi_palette.is_some(),
-            )
-        }) else {
+        let Some((locale, theme, theme_name, has_custom_ansi_palette)) =
+            self.state.as_ref().map(|state| {
+                let theme = state.resolved_theme(is_dark(window.appearance()));
+                (
+                    state.resolved_locale(self.system_locale.as_deref()),
+                    theme,
+                    state.theme_name(theme).to_owned(),
+                    state.settings().ansi_palette.is_some(),
+                )
+            })
+        else {
             return;
         };
         if self.locale != locale {
@@ -980,10 +1098,16 @@ impl AppView {
             });
             self.update_input_placeholders(window, cx);
             self.update_setting_selects(window, cx);
+            self.refresh_theme_selects(window, cx);
         }
-        if self.theme != theme {
+        if self.theme != theme || self.theme_name != theme_name {
+            let result = apply_theme(theme, &theme_name, window, cx);
             self.theme = theme;
-            apply_theme(theme, window, cx);
+            self.theme_name = theme_name;
+            match theme {
+                ResolvedTheme::Light => self.light_theme_error = result.err(),
+                ResolvedTheme::Dark => self.dark_theme_error = result.err(),
+            }
             self.tabs.set_terminal_colors(self.terminal_colors());
             if !has_custom_ansi_palette {
                 let value = self
@@ -1039,10 +1163,10 @@ impl AppView {
                 cx,
             );
             select.set_selected_index(
-                Some(IndexPath::new(match settings.theme {
-                    ThemeSetting::System => 0,
-                    ThemeSetting::Light => 1,
-                    ThemeSetting::Dark => 2,
+                Some(IndexPath::new(match settings.theme.mode {
+                    ThemeMode::System => 0,
+                    ThemeMode::Light => 1,
+                    ThemeMode::Dark => 2,
                 })),
                 window,
                 cx,
@@ -1336,7 +1460,7 @@ impl AppView {
         cx.notify();
     }
 
-    fn set_theme(&mut self, setting: ThemeSetting, window: &mut Window, cx: &mut Context<Self>) {
+    fn set_theme(&mut self, setting: ThemeMode, window: &mut Window, cx: &mut Context<Self>) {
         if self
             .state
             .as_mut()
@@ -1347,6 +1471,25 @@ impl AppView {
         self.refresh_preferences(window, cx);
         cx.notify();
     }
+    fn set_theme_file(
+        &mut self,
+        theme: ResolvedTheme,
+        name: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self
+            .state
+            .as_mut()
+            .is_some_and(|state| state.set_theme_file(theme, name).is_err())
+        {
+            self.status_message = Some(MessageId::StorageCorrupt);
+        }
+        self.refresh_preferences(window, cx);
+        self.refresh_theme_selects(window, cx);
+        cx.notify();
+    }
+
     fn set_new_tab_action(&mut self, setting: NewTabAction, cx: &mut Context<Self>) {
         if self
             .state
@@ -1772,8 +1915,10 @@ impl AppView {
         cx.stop_propagation();
     }
 
-    fn on_open_settings(&mut self, _: &OpenSettings, _: &mut Window, cx: &mut Context<Self>) {
+    fn on_open_settings(&mut self, _: &OpenSettings, window: &mut Window, cx: &mut Context<Self>) {
         self.main_view = MainView::Settings;
+        self.refresh_theme_selects(window, cx);
+        self.reload_theme_file(window, cx);
         cx.notify();
         cx.stop_propagation();
     }

@@ -43,6 +43,31 @@ OxideSSH 是用 Rust 编写的桌面 SSH 客户端，采用原生 GPU 渲染界�
 - macOS：Cmd+Q 退出、Dock 图标，以及“新建窗口”菜单项。
 - Windows 提供 `.msi` 安装包，macOS 提供 `.app` / `.dmg`。
 
+#### 自定义界面主题
+
+应用自带 Codex 风格的 `codex-light` 和 `codex-dark`，可直接在两个下拉框中选择。
+
+将 JSON 文件放在可执行文件同级的 `themes` 目录（开发运行时为 `target/debug/themes`；macOS 打包后为 `OxideSSH.app/Contents/MacOS/themes`）。在**设置 → 外观**中分别为浅色和深色模式选择文件。省略的字段继承内置配色。颜色使用 `#RRGGBB` 或 `#RRGGBBAA`。
+
+```json
+{
+  "background": "#1C1917",
+  "raised": "#292524",
+  "hover": "#3A3735",
+  "border": "#44403C",
+  "foreground": "#FAFAF9",
+  "mutedForeground": "#A8A29E",
+  "primary": "#D97757",
+  "primaryHover": "#E88C70",
+  "primaryActive": "#C76648",
+  "primaryForeground": "#1C1917",
+  "strip": "#211E1C",
+  "danger": "#D64545"
+}
+```
+
+所选文件无效或丢失时回退到内置配色，并保留已保存的选择。编辑文件后重新打开设置页或重启应用。终端 ANSI 调色板仍由独立设置管理。
+
 > 侧边栏中的密钥链、端口转发、代码片段、已知主机和日志入口目前只是占位项。端口转发与代码片段尚未实现。
 
 ## 平台支持

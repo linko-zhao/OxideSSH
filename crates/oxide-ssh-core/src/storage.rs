@@ -608,7 +608,7 @@ mod tests {
     use super::*;
     use crate::model::{
         AuthConfig, ConnectionProfile, CredentialRef, EnvironmentVariable, LocaleSetting,
-        ProfileId, Tag, TagId, ThemeSetting,
+        ProfileId, Tag, TagId, ThemeMode,
     };
 
     fn profile(name: &str) -> ConnectionProfile {
@@ -652,7 +652,7 @@ mod tests {
         let source = AppStore::open(source_dir.path().to_path_buf()).unwrap();
         let mut config = AppConfig::default();
         config.settings.locale = LocaleSetting::ZhCn;
-        config.settings.theme = ThemeSetting::Dark;
+        config.settings.theme.mode = ThemeMode::Dark;
         let tag = Tag::new("Migration");
         config.tags.push(tag.clone());
         let mut migration_profile = profile("migration");
@@ -682,7 +682,7 @@ mod tests {
         assert_eq!(imported.profiles.len(), 2);
         assert_eq!(imported.profiles[0].name, "migration");
         assert_eq!(imported.settings.locale, LocaleSetting::ZhCn);
-        assert_eq!(imported.settings.theme, ThemeSetting::Dark);
+        assert_eq!(imported.settings.theme.mode, ThemeMode::Dark);
         assert_eq!(imported.tags, vec![tag.clone()]);
         assert_eq!(imported.profiles[0].tag_ids, vec![tag.id]);
         assert!(matches!(
@@ -767,7 +767,7 @@ mod tests {
         let store = AppStore::open(directory.path().to_path_buf()).unwrap();
         let mut config = AppConfig::default();
         config.settings.locale = LocaleSetting::ZhCn;
-        config.settings.theme = ThemeSetting::Dark;
+        config.settings.theme.mode = ThemeMode::Dark;
         let mut first = profile("first");
         first.startup_command = Some("tmux attach".into());
         first.environment_variables.push(EnvironmentVariable {

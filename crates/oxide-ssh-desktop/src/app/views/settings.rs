@@ -49,31 +49,49 @@ impl AppView {
         control: AnyElement,
         cx: &Context<Self>,
     ) -> AnyElement {
+        self.setting_row_with_error(title, description, control, None, cx)
+    }
+
+    fn setting_row_with_error(
+        &self,
+        title: MessageId,
+        description: MessageId,
+        control: AnyElement,
+        error: Option<&str>,
+        cx: &Context<Self>,
+    ) -> AnyElement {
+        let mut labels = div()
+            .flex_1()
+            .min_w(px(0.))
+            .flex()
+            .flex_col()
+            .gap(px(4.))
+            .child(
+                div()
+                    .text_sm()
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .child(self.text(title)),
+            )
+            .child(
+                div()
+                    .text_sm()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(self.text(description)),
+            );
+        if let Some(error) = error {
+            labels = labels.child(
+                div()
+                    .text_sm()
+                    .text_color(cx.theme().danger)
+                    .child(format!("{} {error}", self.text(MessageId::ThemeFileError))),
+            );
+        }
         h_flex()
             .w_full()
             .items_center()
             .gap(px(24.))
             .p(px(20.))
-            .child(
-                div()
-                    .flex_1()
-                    .min_w(px(0.))
-                    .flex()
-                    .flex_col()
-                    .gap(px(4.))
-                    .child(
-                        div()
-                            .text_sm()
-                            .font_weight(gpui::FontWeight::SEMIBOLD)
-                            .child(self.text(title)),
-                    )
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(cx.theme().muted_foreground)
-                            .child(self.text(description)),
-                    ),
-            )
+            .child(labels)
             .child(div().flex_shrink_0().child(control))
             .into_any_element()
     }
@@ -306,6 +324,26 @@ impl AppView {
                             .w(px(180.))
                             .with_size(gpui_component::Size::Small)
                             .into_any_element(),
+                        cx,
+                    ),
+                    self.setting_row_with_error(
+                        MessageId::LightTheme,
+                        MessageId::LightThemeDescription,
+                        Select::new(&self.light_theme_select)
+                            .w(px(180.))
+                            .with_size(gpui_component::Size::Small)
+                            .into_any_element(),
+                        self.light_theme_error.as_deref(),
+                        cx,
+                    ),
+                    self.setting_row_with_error(
+                        MessageId::DarkTheme,
+                        MessageId::DarkThemeDescription,
+                        Select::new(&self.dark_theme_select)
+                            .w(px(180.))
+                            .with_size(gpui_component::Size::Small)
+                            .into_any_element(),
+                        self.dark_theme_error.as_deref(),
                         cx,
                     ),
                     self.setting_row(

@@ -319,11 +319,58 @@ pub enum LocaleSetting {
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub enum ThemeSetting {
+pub enum ThemeMode {
     #[default]
     System,
     Light,
     Dark,
+}
+
+fn built_in_theme() -> String {
+    "built-in".to_owned()
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThemeSetting {
+    #[serde(default)]
+    pub mode: ThemeMode,
+    #[serde(default = "built_in_theme")]
+    pub light: String,
+    #[serde(default = "built_in_theme")]
+    pub dark: String,
+}
+
+impl Default for ThemeSetting {
+    fn default() -> Self {
+        Self {
+            mode: ThemeMode::System,
+            light: built_in_theme(),
+            dark: built_in_theme(),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum CompatibleThemeSetting {
+    Legacy(ThemeMode),
+    Current(ThemeSetting),
+}
+
+impl ThemeSetting {
+    pub fn from_legacy<'de, D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Ok(match CompatibleThemeSetting::deserialize(deserializer)? {
+            CompatibleThemeSetting::Legacy(mode) => Self {
+                mode,
+                ..Self::default()
+            },
+            CompatibleThemeSetting::Current(settings) => settings,
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -379,7 +426,7 @@ pub enum TerminalBell {
 pub struct AppSettings {
     #[serde(default)]
     pub locale: LocaleSetting,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "ThemeSetting::from_legacy")]
     pub theme: ThemeSetting,
     #[serde(default = "default_ssh_connect_timeout_seconds")]
     pub ssh_connect_timeout_seconds: u64,
@@ -727,7 +774,7 @@ mod tests {
         assert!(!settings.ssh_compression);
         assert_eq!(settings.ssh_connect_timeout_seconds, 15);
         assert!(!settings.copy_on_select);
-        assert_eq!(settings.theme, ThemeSetting::Dark);
+        assert_eq!(settings.theme.mode, ThemeMode::Dark);
         assert!(settings.local_shell_path.is_empty());
         assert!(settings.local_shell_args.is_empty());
     }
@@ -830,6 +877,23 @@ mod tests {
             assert_eq!(serde_json::from_str::<TerminalBell>(json).unwrap(), mode);
             assert_eq!(serde_json::to_string(&mode).unwrap(), json);
         }
+    }
+
+    #[test]
+    fn theme_settings_accept_legacy_mode_and_named_files() {
+        let legacy: AppSettings =
+            serde_json::from_str(r#"{"locale":"zh-CN","theme":"dark"}"#).unwrap();
+        assert_eq!(legacy.theme.mode, ThemeMode::Dark);
+        assert_eq!(legacy.theme.light, "built-in");
+        assert_eq!(legacy.theme.dark, "built-in");
+
+        let custom: AppSettings = serde_json::from_str(
+            r#"{"theme":{"mode":"system","light":"paper","dark":"midnight"}}"#,
+        )
+        .unwrap();
+        assert_eq!(custom.theme.mode, ThemeMode::System);
+        assert_eq!(custom.theme.light, "paper");
+        assert_eq!(custom.theme.dark, "midnight");
     }
 
     #[test]

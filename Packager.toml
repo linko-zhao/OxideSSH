@@ -15,6 +15,7 @@ icons = [
     "assets/oxide-ssh.icns",
 ]
 binaries = [{ path = "oxide-ssh", main = true }]
+resources = [{ src = "themes", target = "themes" }]
 out_dir = "target/package"
 binaries_dir = "target/package"
 [macos]

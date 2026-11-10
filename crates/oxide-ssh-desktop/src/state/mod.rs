@@ -5,7 +5,7 @@ use std::{collections::HashSet, path::PathBuf, sync::Arc};
 use oxide_ssh_core::{
     model::{
         AppSettings, ConnectionProfile, CursorStyleSetting, Endpoint, LocaleSetting, NewTabAction,
-        Osc52Clipboard, Tag, TagColor, TagId, TerminalBell, ThemeSetting,
+        Osc52Clipboard, Tag, TagColor, TagId, TerminalBell, ThemeMode,
     },
     storage::{AppConfig, AppStore, KnownHostEntry, KnownHosts, StorageError},
 };
@@ -231,9 +231,24 @@ impl AppState {
         Ok(())
     }
 
-    pub fn set_theme(&mut self, theme: ThemeSetting) -> Result<(), StorageError> {
+    pub fn set_theme(&mut self, mode: ThemeMode) -> Result<(), StorageError> {
         let mut config = self.config.clone();
-        config.settings.theme = theme;
+        config.settings.theme.mode = mode;
+        self.store.save_config(&config)?;
+        self.config = config;
+        Ok(())
+    }
+
+    pub fn set_theme_file(
+        &mut self,
+        theme: ResolvedTheme,
+        name: String,
+    ) -> Result<(), StorageError> {
+        let mut config = self.config.clone();
+        match theme {
+            ResolvedTheme::Light => config.settings.theme.light = name,
+            ResolvedTheme::Dark => config.settings.theme.dark = name,
+        }
         self.store.save_config(&config)?;
         self.config = config;
         Ok(())
@@ -444,7 +459,14 @@ impl AppState {
     }
 
     pub fn resolved_theme(&self, system_is_dark: bool) -> ResolvedTheme {
-        ResolvedTheme::resolve(self.config.settings.theme, system_is_dark)
+        ResolvedTheme::resolve(self.config.settings.theme.mode, system_is_dark)
+    }
+
+    pub fn theme_name(&self, theme: ResolvedTheme) -> &str {
+        match theme {
+            ResolvedTheme::Light => &self.config.settings.theme.light,
+            ResolvedTheme::Dark => &self.config.settings.theme.dark,
+        }
     }
 }
 
@@ -762,7 +784,13 @@ mod tests {
         };
 
         state.set_locale(LocaleSetting::ZhCn).unwrap();
-        state.set_theme(ThemeSetting::Dark).unwrap();
+        state.set_theme(ThemeMode::Dark).unwrap();
+        state
+            .set_theme_file(ResolvedTheme::Light, "paper".into())
+            .unwrap();
+        state
+            .set_theme_file(ResolvedTheme::Dark, "midnight".into())
+            .unwrap();
         state
             .set_terminal_settings("Test Mono".into(), 15, 19)
             .unwrap();
@@ -778,7 +806,9 @@ mod tests {
         let stored = state.store().load_config().unwrap();
         assert_eq!(stored.schema_version(), 1);
         assert_eq!(stored.settings.locale, LocaleSetting::ZhCn);
-        assert_eq!(stored.settings.theme, ThemeSetting::Dark);
+        assert_eq!(stored.settings.theme.mode, ThemeMode::Dark);
+        assert_eq!(stored.settings.theme.light, "paper");
+        assert_eq!(stored.settings.theme.dark, "midnight");
         assert_eq!(stored.settings.terminal_font_family, "Test Mono");
         assert_eq!(stored.settings.terminal_font_size, 15);
         assert_eq!(stored.settings.terminal_line_height, 19);
@@ -787,7 +817,7 @@ mod tests {
         let stored = state.store().load_config().unwrap();
         assert_eq!(stored.schema_version(), 1);
         assert_eq!(stored.settings.locale, LocaleSetting::ZhCn);
-        assert_eq!(stored.settings.theme, ThemeSetting::Dark);
+        assert_eq!(stored.settings.theme.mode, ThemeMode::Dark);
         assert_eq!(
             stored.settings.local_shell_path,
             "C:/Program Files/Git/bin/bash.exe"
@@ -797,25 +827,25 @@ mod tests {
         state.set_ssh_keepalive(45, 4).unwrap();
         let stored = state.store().load_config().unwrap();
         assert_eq!(stored.settings.locale, LocaleSetting::ZhCn);
-        assert_eq!(stored.settings.theme, ThemeSetting::Dark);
+        assert_eq!(stored.settings.theme.mode, ThemeMode::Dark);
         assert_eq!(stored.settings.ssh_keepalive_interval_seconds, 45);
         assert_eq!(stored.settings.ssh_keepalive_max_count, 4);
         assert!(stored.settings.ssh_compression);
         state.set_confirm_before_close_with_sessions(false).unwrap();
         let stored = state.store().load_config().unwrap();
         assert_eq!(stored.settings.locale, LocaleSetting::ZhCn);
-        assert_eq!(stored.settings.theme, ThemeSetting::Dark);
+        assert_eq!(stored.settings.theme.mode, ThemeMode::Dark);
         assert!(!stored.settings.confirm_before_close_with_sessions);
         state.set_osc52_clipboard(Osc52Clipboard::Ask).unwrap();
         let stored = state.store().load_config().unwrap();
         assert_eq!(stored.settings.locale, LocaleSetting::ZhCn);
-        assert_eq!(stored.settings.theme, ThemeSetting::Dark);
+        assert_eq!(stored.settings.theme.mode, ThemeMode::Dark);
         assert_eq!(stored.settings.osc52_clipboard, Osc52Clipboard::Ask);
         assert_eq!(stored.schema_version(), 1);
         state.set_copy_on_select(true).unwrap();
         let stored = state.store().load_config().unwrap();
         assert_eq!(stored.settings.locale, LocaleSetting::ZhCn);
-        assert_eq!(stored.settings.theme, ThemeSetting::Dark);
+        assert_eq!(stored.settings.theme.mode, ThemeMode::Dark);
         assert!(stored.settings.copy_on_select);
         assert_eq!(stored.settings.ssh_term, "tmux-256color");
         assert_eq!(state.resolved_locale(Some("en-US")), ResolvedLocale::ZhCn);
