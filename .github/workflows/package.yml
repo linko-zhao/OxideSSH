@@ -80,6 +80,7 @@ jobs:
 
       - name: Create unsigned packages
         run: |
+          rm -rf target/package
           mkdir -p target/package
           cp target/${{ matrix.target }}/release/oxide-ssh* target/package/
           cargo packager --release --target ${{ matrix.target }} --formats ${{ matrix.formats }}

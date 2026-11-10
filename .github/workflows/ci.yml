@@ -85,6 +85,7 @@ jobs:
 
       - name: Smoke-test unsigned package creation
         run: |
+          rm -rf target/package
           mkdir -p target/package
           cp target/${{ matrix.target }}/release/oxide-ssh* target/package/
           cargo packager --release --target ${{ matrix.target }} --formats ${{ matrix.formats }}
