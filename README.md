@@ -23,6 +23,7 @@ OxideSSH is a desktop SSH client written in Rust with a native GPU-rendered UI (
 
 ### Connections and credentials
 - **Profiles** — name, host, port, username, and authentication method; create, edit, and delete from the workspace.
+- **Configuration discovery** — preview and import explicit hosts from `~/.ssh/config` (including `Include` files); on Windows, import installed WSL distributions as persistent local connections. Imported entries are independent and are not synchronized back to their source.
 - **Authentication** — password, private key with optional passphrase, or SSH agent (OpenSSH agent; Pageant fallback on Windows).
 - **OS keychain storage** — passwords and passphrases are stored in Windows Credential Manager, macOS Keychain, or the Linux Secret Service. Only an opaque `CredentialRef` is persisted; secrets are never written to disk or logs.
 - **Host key verification** — unknown hosts require explicit trust of a SHA-256 fingerprint; a changed host key blocks the connection and must be resolved manually. Trusted hosts are listed and removable in Settings.

@@ -4580,6 +4580,7 @@ dependencies = [
  "async-channel 2.5.0",
  "bytes",
  "futures",
+ "glob",
  "pageant",
  "parking_lot",
  "portable-pty",

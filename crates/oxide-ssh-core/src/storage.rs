@@ -15,8 +15,9 @@ use tempfile::Builder;
 use thiserror::Error;
 
 use crate::model::{
-    AppSettings, AuthConfig, ConnectionProfile, CredentialRef, Endpoint, ProfileId,
-    ProfileValidationError, Tag, TagId, TagValidationError,
+    AppSettings, AuthConfig, ConnectionProfile, CredentialRef, Endpoint, LocalConnection,
+    LocalConnectionId, LocalConnectionValidationError, ProfileId, ProfileValidationError, Tag,
+    TagId, TagValidationError,
 };
 
 pub const CONFIG_FILE_NAME: &str = "config.json";
@@ -30,6 +31,8 @@ pub struct AppConfig {
     pub settings: AppSettings,
     pub profiles: Vec<ConnectionProfile>,
     #[serde(default)]
+    pub local_connections: Vec<LocalConnection>,
+    #[serde(default)]
     pub tags: Vec<Tag>,
 }
 
@@ -39,6 +42,7 @@ impl Default for AppConfig {
             schema_version: SCHEMA_VERSION,
             settings: AppSettings::default(),
             profiles: Vec::new(),
+            local_connections: Vec::new(),
             tags: Vec::new(),
         }
     }
@@ -125,6 +129,10 @@ pub enum StorageError {
     InvalidScrollbackLines,
     #[error("duplicate profile id {id:?}")]
     DuplicateProfile { id: ProfileId },
+    #[error("duplicate local connection id {id:?}")]
+    DuplicateLocalConnection { id: LocalConnectionId },
+    #[error("duplicate WSL distribution {name:?}")]
+    DuplicateLocalDistribution { name: String },
     #[error("duplicate tag id {id:?}")]
     DuplicateTag { id: TagId },
     #[error("duplicate tag name {name:?}")]
@@ -151,6 +159,8 @@ pub enum StorageError {
     HostKeyConflict,
     #[error(transparent)]
     InvalidProfile(#[from] ProfileValidationError),
+    #[error(transparent)]
+    InvalidLocalConnection(#[from] LocalConnectionValidationError),
     #[error(transparent)]
     InvalidTag(#[from] TagValidationError),
 }
@@ -237,6 +247,17 @@ impl AppStore {
 
     pub fn backup_config(&self, path: &Path) -> Result<(), StorageError> {
         self.export_config(path)
+    }
+
+    pub fn import_discovered(
+        &self,
+        profiles: Vec<ConnectionProfile>,
+        local_connections: Vec<LocalConnection>,
+    ) -> Result<(), StorageError> {
+        self.update_config(|config| {
+            config.profiles.extend(profiles);
+            config.local_connections.extend(local_connections);
+        })
     }
 
     pub fn save_config(&self, config: &AppConfig) -> Result<(), StorageError> {
@@ -438,6 +459,19 @@ fn validate_config(config: &AppConfig) -> Result<(), StorageError> {
             });
         }
     }
+    let mut local_ids = HashSet::new();
+    let mut distributions = HashSet::new();
+    for connection in &config.local_connections {
+        if !local_ids.insert(connection.id) {
+            return Err(StorageError::DuplicateLocalConnection { id: connection.id });
+        }
+        connection.validate()?;
+        if !distributions.insert(connection.distribution.to_lowercase()) {
+            return Err(StorageError::DuplicateLocalDistribution {
+                name: connection.distribution.clone(),
+            });
+        }
+    }
     let mut seen = HashSet::new();
     for profile in &config.profiles {
         if !seen.insert(profile.id) {
@@ -607,8 +641,8 @@ mod tests {
 
     use super::*;
     use crate::model::{
-        AuthConfig, ConnectionProfile, CredentialRef, EnvironmentVariable, LocaleSetting,
-        ProfileId, Tag, TagId, ThemeMode,
+        AuthConfig, ConnectionProfile, CredentialRef, EnvironmentVariable, LocalConnection,
+        LocaleSetting, ProfileId, Tag, TagId, ThemeMode,
     };
 
     fn profile(name: &str) -> ConnectionProfile {
@@ -646,6 +680,29 @@ mod tests {
     }
 
     #[test]
+    fn invalid_discovery_batch_does_not_partially_import() {
+        let directory = tempdir().unwrap();
+        let store = AppStore::open(directory.path().to_path_buf()).unwrap();
+        let mut config = AppConfig::default();
+        config.profiles.push(profile("existing"));
+        store.save_config(&config).unwrap();
+        let persisted = fs::read(store.config_path()).unwrap();
+
+        let result = store.import_discovered(
+            vec![profile("new host")],
+            vec![LocalConnection::new("", "Ubuntu")],
+        );
+
+        assert!(matches!(
+            result,
+            Err(StorageError::InvalidLocalConnection(
+                LocalConnectionValidationError::Name
+            ))
+        ));
+        assert_eq!(fs::read(store.config_path()).unwrap(), persisted);
+    }
+
+    #[test]
     fn config_export_import_preserves_data_but_drops_credentials() {
         let source_dir = tempdir().unwrap();
         let target_dir = tempdir().unwrap();
@@ -655,6 +712,9 @@ mod tests {
         config.settings.theme.mode = ThemeMode::Dark;
         let tag = Tag::new("Migration");
         config.tags.push(tag.clone());
+        config
+            .local_connections
+            .push(LocalConnection::new("Ubuntu", "Ubuntu"));
         let mut migration_profile = profile("migration");
         migration_profile.tag_ids.push(tag.id);
         config.profiles.push(migration_profile);
@@ -684,6 +744,9 @@ mod tests {
         assert_eq!(imported.settings.locale, LocaleSetting::ZhCn);
         assert_eq!(imported.settings.theme.mode, ThemeMode::Dark);
         assert_eq!(imported.tags, vec![tag.clone()]);
+        assert_eq!(imported.local_connections.len(), 1);
+        assert_eq!(imported.local_connections[0].name, "Ubuntu");
+        assert_eq!(imported.local_connections[0].distribution, "Ubuntu");
         assert_eq!(imported.profiles[0].tag_ids, vec![tag.id]);
         assert!(matches!(
             imported.profiles[0].auth,

@@ -1,3 +1,6 @@
+use super::discovery::{
+    DiscoveryDialog, DiscoveryKey, LocalRenameDialog, discovered_username, skip_reason_text,
+};
 use super::editor::{EditorId, EditorSaveState, editor_save_state};
 use super::tags::TagManagerEntry;
 use super::*;
@@ -7,6 +10,7 @@ pub(super) enum ConfirmAction {
     DeleteProfile(ProfileId),
     DeleteHost(Endpoint),
     DeleteTag(TagId),
+    DeleteLocalConnection(LocalConnectionId),
     ClearAllCredentials,
     Paste {
         tab_id: TabId,
@@ -50,6 +54,10 @@ enum DialogIdentityKind {
     },
     ConfirmClose(TabId),
     TagManager,
+    Discovery,
+    LocalRename {
+        id: LocalConnectionId,
+    },
 }
 
 /// Stable logical identity used to decide whether a deferred focus pass is
@@ -63,6 +71,8 @@ enum DialogFocusIdentity {
     ChangedHostKey { tab_id: TabId, request_id: Uuid },
     ConfirmClose(TabId),
     TagManager,
+    Discovery,
+    LocalRename(LocalConnectionId),
 }
 
 impl DialogIdentityKind {
@@ -81,6 +91,8 @@ impl DialogIdentityKind {
             },
             Self::ConfirmClose(tab_id) => DialogFocusIdentity::ConfirmClose(*tab_id),
             Self::TagManager => DialogFocusIdentity::TagManager,
+            Self::Discovery => DialogFocusIdentity::Discovery,
+            Self::LocalRename { id } => DialogFocusIdentity::LocalRename(*id),
         }
     }
 }
@@ -98,6 +110,8 @@ enum DialogSnapshot {
         /// The manager's inline "create tag" field.
         new_tag: Entity<InputState>,
     },
+    Discovery(DiscoveryDialog),
+    LocalRename(LocalRenameDialog),
     Modal {
         request: ModalRequest,
         /// The shared one-time credential input; rendered by the presenter for
@@ -179,6 +193,8 @@ impl DialogPresenter {
     fn dialog_width(&self) -> Pixels {
         match &self.payload.snapshot {
             DialogSnapshot::Editor(_) => px(560.),
+            DialogSnapshot::Discovery(_) => px(640.),
+            DialogSnapshot::LocalRename(_) => px(420.),
             _ => px(520.),
         }
     }
@@ -204,6 +220,10 @@ impl DialogPresenter {
                     Some(entry) => entry.name.update(cx, |input, cx| input.focus(window, cx)),
                     None => new_tag.update(cx, |input, cx| input.focus(window, cx)),
                 }
+                return;
+            }
+            DialogSnapshot::LocalRename(dialog) => {
+                dialog.name.update(cx, |input, cx| input.focus(window, cx));
                 return;
             }
             _ => {}
@@ -252,6 +272,18 @@ impl DialogPresenter {
             DialogSnapshot::TagManager { .. } => {
                 self.owner
                     .update(cx, |app, cx| app.commit_tag_names(window, cx))
+                    .ok();
+            }
+            DialogSnapshot::Discovery(dialog) => {
+                if !dialog.scanning {
+                    self.owner
+                        .update(cx, |app, cx| app.commit_discovery_import(cx))
+                        .ok();
+                }
+            }
+            DialogSnapshot::LocalRename(_) => {
+                self.owner
+                    .update(cx, |app, cx| app.commit_local_rename(window, cx))
                     .ok();
             }
             DialogSnapshot::Modal { request, .. } => match request {
@@ -310,6 +342,16 @@ impl DialogPresenter {
             DialogSnapshot::TagManager { .. } => {
                 self.owner
                     .update(cx, |app, cx| app.close_tag_manager(window, cx))
+                    .ok();
+            }
+            DialogSnapshot::Discovery(_) => {
+                self.owner
+                    .update(cx, |app, cx| app.close_discovery(cx))
+                    .ok();
+            }
+            DialogSnapshot::LocalRename(_) => {
+                self.owner
+                    .update(cx, |app, cx| app.cancel_local_rename(cx))
                     .ok();
             }
             DialogSnapshot::Modal { request, .. } => match request {
@@ -656,6 +698,9 @@ impl DialogPresenter {
             ConfirmAction::DeleteProfile(_) => (MessageId::ConfirmDeleteProfile, MessageId::Delete),
             ConfirmAction::DeleteHost(_) => (MessageId::ConfirmDeleteHost, MessageId::Delete),
             ConfirmAction::DeleteTag(_) => (MessageId::ConfirmDeleteTag, MessageId::Delete),
+            ConfirmAction::DeleteLocalConnection(_) => {
+                (MessageId::ConfirmDeleteLocalConnection, MessageId::Delete)
+            }
             ConfirmAction::ClearAllCredentials => (
                 MessageId::ConfirmClearAllCredentials,
                 MessageId::ClearAllCredentials,
@@ -904,6 +949,416 @@ impl DialogPresenter {
         cx.notify();
     }
 
+    fn render_discovery(
+        &self,
+        dialog: &DiscoveryDialog,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let muted = cx.theme().muted_foreground;
+        let warning = cx.theme().warning;
+        let border = cx.theme().border;
+        let row_bg = cx.theme().secondary;
+        let scanning = dialog.scanning;
+        let scan_listener = cx.listener(|this, _, _, cx| {
+            this.owner
+                .update(cx, |app, cx| app.start_discovery_scan(cx))
+                .ok();
+        });
+        let scan_label = if scanning {
+            self.text(MessageId::DiscoveryScanning)
+        } else {
+            #[cfg(target_os = "windows")]
+            let has_results = (dialog.include_ssh && dialog.ssh.is_some())
+                || (dialog.include_wsl && dialog.wsl.is_some());
+            #[cfg(not(target_os = "windows"))]
+            let has_results = dialog.include_ssh && dialog.ssh.is_some();
+            if has_results {
+                self.text(MessageId::DiscoveryRescan)
+            } else {
+                self.text(MessageId::DiscoveryScan)
+            }
+        };
+        let mut scan_row = h_flex().items_center().gap(px(8.)).child(
+            Button::new("discovery-scan")
+                .label(scan_label)
+                .icon(IconName::Search)
+                .loading(scanning)
+                .disabled(scanning)
+                .on_click(scan_listener),
+        );
+        let ssh_enabled = dialog.include_ssh;
+        let ssh_listener = cx.listener(|this, checked, _, cx| {
+            let enabled = *checked;
+            this.owner
+                .update(cx, |app, cx| app.set_discovery_ssh_enabled(enabled, cx))
+                .ok();
+            if let DialogSnapshot::Discovery(dialog) = &mut this.payload.snapshot {
+                dialog.include_ssh = enabled;
+                if !enabled {
+                    dialog.ssh = None;
+                    dialog.ssh_error = None;
+                }
+            }
+            cx.notify();
+        });
+        scan_row = scan_row.child(
+            Checkbox::new("discovery-include-ssh")
+                .label(self.text(MessageId::DiscoverySshOption))
+                .checked(ssh_enabled)
+                .on_click(ssh_listener),
+        );
+        #[cfg(target_os = "windows")]
+        {
+            let enabled = dialog.include_wsl;
+            let listener = cx.listener(|this, checked, _, cx| {
+                let enabled = *checked;
+                this.owner
+                    .update(cx, |app, cx| app.set_discovery_wsl_enabled(enabled, cx))
+                    .ok();
+                if let DialogSnapshot::Discovery(dialog) = &mut this.payload.snapshot {
+                    dialog.include_wsl = enabled;
+                }
+                cx.notify();
+            });
+            scan_row = scan_row.child(
+                Checkbox::new("discovery-include-wsl")
+                    .label(self.text(MessageId::DiscoveryWslOption))
+                    .checked(enabled)
+                    .on_click(listener),
+            );
+        }
+        let mut content = div()
+            .flex()
+            .flex_col()
+            .gap(px(10.))
+            .child(
+                div()
+                    .text_size(px(20.))
+                    .font_weight(gpui::FontWeight::BOLD)
+                    .child(self.text(MessageId::DiscoveryTitle)),
+            )
+            .child(
+                div()
+                    .text_sm()
+                    .text_color(muted)
+                    .child(self.text(MessageId::DiscoveryDescription)),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(muted)
+                    .child(self.text(MessageId::DiscoveryExistingExcluded)),
+            )
+            .child(scan_row);
+        if dialog.include_ssh
+            && let Some(path) = &dialog.ssh_path
+        {
+            content = content.child(div().text_xs().text_color(muted).child(format!(
+                "{} {}",
+                self.text(MessageId::DiscoverySshConfigPath),
+                path.display()
+            )));
+        }
+        if dialog.include_ssh
+            && let Some(error) = &dialog.ssh_error
+        {
+            content = content.child(div().text_sm().text_color(warning).child(format!(
+                "{} {error}",
+                self.text(MessageId::DiscoverySshConfigReadFailed)
+            )));
+        }
+        if dialog.include_ssh
+            && let Some(ssh) = &dialog.ssh
+        {
+            content = content.child(
+                div()
+                    .text_sm()
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .child(format!(
+                        "{} ({})",
+                        self.text(MessageId::DiscoverySshSection),
+                        ssh.hosts.len()
+                    )),
+            );
+            if ssh.hosts.is_empty() {
+                content = content.child(
+                    div()
+                        .text_sm()
+                        .text_color(muted)
+                        .child(self.text(MessageId::DiscoveryNoSshHosts)),
+                );
+            }
+            for host in &ssh.hosts {
+                let key = DiscoveryKey::Ssh(host.alias.to_lowercase());
+                let selected = dialog.selected.contains(&key);
+                let listener = {
+                    let key = key.clone();
+                    cx.listener(move |this, checked, _, cx| {
+                        let selected = *checked;
+                        this.owner
+                            .update(cx, |app, cx| {
+                                app.set_discovery_selection(key.clone(), selected, cx)
+                            })
+                            .ok();
+                        if let DialogSnapshot::Discovery(dialog) = &mut this.payload.snapshot {
+                            if selected {
+                                dialog.selected.insert(key.clone());
+                            } else {
+                                dialog.selected.remove(&key);
+                            }
+                        }
+                        cx.notify();
+                    })
+                };
+                let endpoint = format!(
+                    "{}@{}:{}",
+                    discovered_username(host),
+                    host.hostname,
+                    host.port
+                );
+                let auth = match &host.identity_file {
+                    Some(path) => {
+                        format!("{}: {}", self.text(MessageId::PrivateKey), path.display())
+                    }
+                    None => self.text(MessageId::Agent).to_owned(),
+                };
+                let mut row = div()
+                    .flex()
+                    .items_start()
+                    .gap(px(10.))
+                    .p(px(10.))
+                    .rounded(px(8.))
+                    .border_1()
+                    .border_color(border)
+                    .bg(row_bg)
+                    .child(
+                        Checkbox::new(SharedString::from(format!(
+                            "discovery-ssh-{}",
+                            host.alias.to_lowercase()
+                        )))
+                        .checked(selected)
+                        .on_click(listener),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w(px(0.))
+                            .flex()
+                            .flex_col()
+                            .gap(px(2.))
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                    .child(host.alias.clone()),
+                            )
+                            .child(div().text_xs().text_color(muted).child(endpoint))
+                            .child(div().text_xs().text_color(muted).child(auth)),
+                    );
+                if host.identity_file_missing
+                    && let Some(path) = &host.identity_file
+                {
+                    row = row.child(div().text_xs().text_color(warning).child(format!(
+                        "{} {}",
+                        self.text(MessageId::DiscoveryIdentityMissing),
+                        path.display()
+                    )));
+                }
+                content = content.child(row);
+            }
+            if !ssh.skipped.is_empty() {
+                content = content.child(
+                    div()
+                        .text_sm()
+                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                        .child(self.text(MessageId::DiscoverySkipped)),
+                );
+                for skipped in &ssh.skipped {
+                    content = content.child(
+                        div()
+                            .flex()
+                            .gap(px(6.))
+                            .text_xs()
+                            .child(skipped.alias.clone())
+                            .child(div().text_color(muted).child(skip_reason_text(
+                                self.payload.identity.locale,
+                                &skipped.reason,
+                            ))),
+                    );
+                }
+            }
+        }
+        #[cfg(target_os = "windows")]
+        if dialog.include_wsl {
+            content = content.child(
+                div()
+                    .text_sm()
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .child(self.text(MessageId::DiscoveryWslSection)),
+            );
+            if let Some(error) = &dialog.wsl_error {
+                content = content.child(div().text_sm().text_color(warning).child(format!(
+                    "{} {error}",
+                    self.text(MessageId::DiscoveryWslReadFailed)
+                )));
+            }
+            if let Some(distributions) = &dialog.wsl {
+                if distributions.is_empty() {
+                    content = content.child(
+                        div()
+                            .text_sm()
+                            .text_color(muted)
+                            .child(self.text(MessageId::DiscoveryNoWslDistributions)),
+                    );
+                }
+                for distribution in distributions {
+                    let key = DiscoveryKey::Wsl(distribution.to_lowercase());
+                    let selected = dialog.selected.contains(&key);
+                    let listener = {
+                        let key = key.clone();
+                        cx.listener(move |this, checked, _, cx| {
+                            let selected = *checked;
+                            this.owner
+                                .update(cx, |app, cx| {
+                                    app.set_discovery_selection(key.clone(), selected, cx)
+                                })
+                                .ok();
+                            if let DialogSnapshot::Discovery(dialog) = &mut this.payload.snapshot {
+                                if selected {
+                                    dialog.selected.insert(key.clone());
+                                } else {
+                                    dialog.selected.remove(&key);
+                                }
+                            }
+                            cx.notify();
+                        })
+                    };
+                    content = content.child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(10.))
+                            .p(px(10.))
+                            .rounded(px(8.))
+                            .border_1()
+                            .border_color(border)
+                            .bg(row_bg)
+                            .child(
+                                Checkbox::new(SharedString::from(format!(
+                                    "discovery-wsl-{}",
+                                    distribution
+                                )))
+                                .checked(selected)
+                                .on_click(listener),
+                            )
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w(px(0.))
+                                    .text_sm()
+                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                    .child(distribution.clone()),
+                            ),
+                    );
+                }
+            }
+        }
+        let close_listener = cx.listener(|this, _, _, cx| {
+            this.owner
+                .update(cx, |app, cx| app.close_discovery(cx))
+                .ok();
+        });
+        let import_listener = cx.listener(|this, _, _, cx| {
+            this.owner
+                .update(cx, |app, cx| app.commit_discovery_import(cx))
+                .ok();
+        });
+        let import_count = dialog.import_count();
+        let import_label = if import_count == 0 {
+            self.text(MessageId::DiscoveryImport).to_owned()
+        } else {
+            format!("{} ({import_count})", self.text(MessageId::DiscoveryImport))
+        };
+        content
+            .child(
+                div()
+                    .flex()
+                    .justify_end()
+                    .gap(px(8.))
+                    .child(
+                        Button::new("close-discovery")
+                            .label(self.text(MessageId::Close))
+                            .on_click(close_listener),
+                    )
+                    .child(
+                        Button::new("import-discovery")
+                            .label(import_label)
+                            .primary()
+                            .disabled(scanning || import_count == 0)
+                            .on_click(import_listener),
+                    ),
+            )
+            .into_any_element()
+    }
+
+    fn render_local_rename(
+        &self,
+        dialog: &LocalRenameDialog,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let cancel_listener = cx.listener(|this, _, _, cx| {
+            this.owner
+                .update(cx, |app, cx| app.cancel_local_rename(cx))
+                .ok();
+        });
+        let save_listener = cx.listener(|this, _, window, cx| {
+            this.owner
+                .update(cx, |app, cx| app.commit_local_rename(window, cx))
+                .ok();
+        });
+        v_form()
+            .w(px(420.))
+            .label_width(px(130.))
+            .child(
+                field().child(
+                    div()
+                        .text_size(px(20.))
+                        .font_weight(gpui::FontWeight::BOLD)
+                        .child(self.text(MessageId::RenameLocalConnection)),
+                ),
+            )
+            .child(
+                field()
+                    .label(self.text(MessageId::Distribution))
+                    .child(div().text_sm().child(dialog.distribution.clone())),
+            )
+            .child(
+                field()
+                    .label(self.text(MessageId::Name))
+                    .child(Input::new(&dialog.name)),
+            )
+            .child(
+                field().child(
+                    div()
+                        .flex()
+                        .justify_end()
+                        .gap(px(8.))
+                        .child(
+                            Button::new("cancel-local-rename")
+                                .label(self.text(MessageId::Cancel))
+                                .on_click(cancel_listener),
+                        )
+                        .child(
+                            Button::new("save-local-rename")
+                                .label(self.text(MessageId::Rename))
+                                .primary()
+                                .on_click(save_listener),
+                        ),
+                ),
+            )
+            .into_any_element()
+    }
+
     fn render_modal(
         &self,
         request: &ModalRequest,
@@ -1123,6 +1578,8 @@ impl Render for DialogPresenter {
             DialogSnapshot::TagManager { entries, new_tag } => {
                 self.render_tag_manager(entries, new_tag, cx)
             }
+            DialogSnapshot::Discovery(dialog) => self.render_discovery(dialog, cx),
+            DialogSnapshot::LocalRename(dialog) => self.render_local_rename(dialog, cx),
             DialogSnapshot::Modal {
                 request,
                 secret_input,
@@ -1204,6 +1661,24 @@ impl AppView {
                     tag_ids: editor.form.tag_ids.clone(),
                     tag_name: editor.tag_name.clone(),
                 })),
+            });
+        }
+        if let Some(dialog) = &self.discovery {
+            return Some(DialogPayload {
+                identity: DialogIdentity {
+                    locale,
+                    kind: DialogIdentityKind::Discovery,
+                },
+                snapshot: DialogSnapshot::Discovery(dialog.clone()),
+            });
+        }
+        if let Some(dialog) = &self.local_rename {
+            return Some(DialogPayload {
+                identity: DialogIdentity {
+                    locale,
+                    kind: DialogIdentityKind::LocalRename { id: dialog.id },
+                },
+                snapshot: DialogSnapshot::LocalRename(dialog.clone()),
             });
         }
         if let Some(action) = &self.confirm {

@@ -30,9 +30,9 @@ use gpui::WindowControlArea;
 use oxide_ssh_core::{
     credentials::{CredentialError, CredentialStore},
     model::{
-        AuthConfig, ConnectionProfile, CursorStyleSetting, Endpoint, LocaleSetting, NewTabAction,
-        Osc52Clipboard, ProfileId, SessionId, Tag, TagColor, TagId, TerminalBell,
-        TerminalSize as CoreTerminalSize, ThemeMode,
+        AuthConfig, ConnectionProfile, CursorStyleSetting, Endpoint, LocalConnection,
+        LocalConnectionId, LocaleSetting, NewTabAction, Osc52Clipboard, ProfileId, SessionId, Tag,
+        TagColor, TagId, TerminalBell, TerminalSize as CoreTerminalSize, ThemeMode,
     },
     session::{
         ConnectRequest, HostKeyDecision, SessionError, SessionEvent, SshService,
@@ -73,6 +73,10 @@ use self::messages::{
     form_error_message_id, is_dark, local_error_message_id, session_error_message_id,
     system_locale, tag_storage_error_message_id, transaction_error_message_id,
 };
+
+mod discovery;
+
+use self::discovery::{DiscoveryDialog, LocalRenameDialog};
 
 mod editor;
 
@@ -273,6 +277,9 @@ pub struct AppView {
     connecting_profiles: std::collections::HashSet<ProfileId>,
     editor: Option<ConnectionEditor>,
     tag_manager: Option<TagManager>,
+    discovery: Option<DiscoveryDialog>,
+    discovery_generation: u64,
+    local_rename: Option<LocalRenameDialog>,
     confirm: Option<ConfirmAction>,
     saving_editor: Option<EditorId>,
     dialog_presenter: Option<Entity<DialogPresenter>>,
@@ -320,6 +327,7 @@ pub struct AppView {
     terminal_geometry_tab: Option<TabId>,
     pending_sessions: HashMap<TabId, Option<SecretString>>,
     pending_local_sessions: Vec<TabId>,
+    local_session_commands: HashMap<TabId, (String, Vec<String>)>,
     terminal_selecting: bool,
     terminal_selection_dragged: bool,
     terminal_mouse_reporting: bool,
@@ -951,6 +959,9 @@ impl AppView {
             connecting_profiles: std::collections::HashSet::new(),
             editor: None,
             tag_manager: None,
+            discovery: None,
+            discovery_generation: 0,
+            local_rename: None,
             confirm: None,
             saving_editor: None,
             dialog_presenter: None,
@@ -1006,6 +1017,7 @@ impl AppView {
             terminal_geometry_tab: None,
             pending_sessions: HashMap::new(),
             pending_local_sessions: Vec::new(),
+            local_session_commands: HashMap::new(),
             terminal_selecting: false,
             terminal_selection_dragged: false,
             terminal_mouse_reporting: false,
@@ -1425,6 +1437,11 @@ impl AppView {
                     field.set_placeholder(Catalog::text(locale, MessageId::Name), window, cx);
                 });
             }
+        }
+        if let Some(dialog) = &self.local_rename {
+            dialog.name.update(cx, |field, cx| {
+                field.set_placeholder(Catalog::text(locale, MessageId::Name), window, cx);
+            });
         }
     }
 

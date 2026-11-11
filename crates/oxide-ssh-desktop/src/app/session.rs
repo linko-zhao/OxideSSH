@@ -263,6 +263,27 @@ impl AppView {
         cx.notify();
     }
 
+    pub(super) fn connect_local_connection(
+        &mut self,
+        connection: oxide_ssh_core::model::LocalConnection,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.main_view = MainView::Sessions;
+        let tab_id = self
+            .tabs
+            .open_local(self.estimated_terminal_size(window), self.terminal_colors());
+        self.local_session_commands.insert(
+            tab_id,
+            (
+                "wsl.exe".to_owned(),
+                vec!["-d".to_owned(), connection.distribution],
+            ),
+        );
+        self.start_local_session(tab_id, cx);
+        cx.notify();
+    }
+
     pub(super) fn start_local_session(&mut self, tab_id: TabId, cx: &mut Context<Self>) {
         if self.terminal_geometry_tab != Some(tab_id) {
             if !self.pending_local_sessions.contains(&tab_id) {
@@ -280,6 +301,14 @@ impl AppView {
             .map(|state| state.settings().clone())
             .unwrap_or_default();
         let working_directory = settings.local_working_directory;
+        let command = self.local_session_commands.get(&tab_id).cloned();
+        let (shell_path, shell_args) = match command {
+            Some((path, args)) => (Some(path), args),
+            None => (
+                (!settings.local_shell_path.is_empty()).then_some(settings.local_shell_path),
+                settings.local_shell_args,
+            ),
+        };
         let result = oxide_ssh_core::local::spawn_local_shell(
             CoreTerminalSize {
                 columns: size.columns as u32,
@@ -287,8 +316,8 @@ impl AppView {
                 pixel_width: size.pixel_width,
                 pixel_height: size.pixel_height,
             },
-            (!settings.local_shell_path.is_empty()).then_some(settings.local_shell_path.as_str()),
-            &settings.local_shell_args,
+            shell_path.as_deref(),
+            &shell_args,
             &working_directory,
         );
         match result {
@@ -656,6 +685,15 @@ impl AppView {
                     } else {
                         self.status_message = Some(MessageId::InvalidProfile);
                     }
+                }
+            }
+            ConfirmAction::DeleteLocalConnection(id) => {
+                if self
+                    .state
+                    .as_mut()
+                    .is_some_and(|state| state.delete_local_connection(id).is_err())
+                {
+                    self.status_message = Some(MessageId::StorageCorrupt);
                 }
             }
             ConfirmAction::DeleteHost(endpoint) => {

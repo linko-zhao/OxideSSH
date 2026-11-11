@@ -152,6 +152,151 @@ impl AppView {
             .into_any_element()
     }
 
+    fn render_local_card(
+        &mut self,
+        connection: LocalConnection,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        const PALETTE: [u32; 8] = [
+            0x006b_8cae,
+            0x007b_a389,
+            0x00b5_936b,
+            0x009a_7bb5,
+            0x005f_9ea8,
+            0x00b5_7e7e,
+            0x007e_93b8,
+            0x00a8_927c,
+        ];
+        let hash: usize = connection.id.0.as_bytes().iter().fold(0usize, |acc, byte| {
+            acc.wrapping_mul(31).wrapping_add(*byte as usize)
+        });
+        let tile_color = rgb(PALETTE[hash % PALETTE.len()]);
+        let initial: String = connection
+            .name
+            .trim()
+            .chars()
+            .next()
+            .map(|ch| ch.to_uppercase().collect())
+            .unwrap_or_else(|| "?".into());
+        let name = connection.name.clone();
+        let distribution = connection.distribution.clone();
+        let rename_id = SharedString::from(format!("rename-local-{}", connection.id.0));
+        let delete_id = SharedString::from(format!("delete-local-{}", connection.id.0));
+        let connection_for_connect = connection.clone();
+        let connection_for_rename = connection.clone();
+        let connection_for_delete = connection.clone();
+        let view = cx.entity();
+        let theme = cx.theme();
+        let border = theme.border;
+        let card_bg = theme.secondary;
+        let hover_bg = theme.accent;
+        let radius_lg = theme.radius_lg;
+        let muted_foreground = theme.muted_foreground;
+        div()
+            .id(SharedString::from(format!(
+                "local-card-{}",
+                connection.id.0
+            )))
+            .group("local-card")
+            .w(px(300.))
+            .p(px(14.))
+            .flex()
+            .flex_col()
+            .gap(px(10.))
+            .rounded(radius_lg)
+            .border_1()
+            .border_color(border)
+            .bg(card_bg)
+            .cursor_pointer()
+            .hover(move |style| style.bg(hover_bg))
+            .on_click(cx.listener(move |this, _, window, cx| {
+                this.connect_local_connection(connection_for_connect.clone(), window, cx)
+            }))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(12.))
+                    .child(
+                        div()
+                            .size(px(36.))
+                            .flex_none()
+                            .rounded_full()
+                            .bg(tile_color)
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .text_color(rgb(0x00f5_f6f8))
+                            .font_weight(gpui::FontWeight::BOLD)
+                            .child(initial),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .overflow_hidden()
+                            .flex()
+                            .flex_col()
+                            .gap(px(2.))
+                            .child(
+                                div()
+                                    .whitespace_nowrap()
+                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                    .text_sm()
+                                    .child(name),
+                            )
+                            .child(
+                                div()
+                                    .whitespace_nowrap()
+                                    .text_xs()
+                                    .text_color(muted_foreground)
+                                    .child(distribution),
+                            ),
+                    )
+                    .child(
+                        h_flex()
+                            .gap(px(2.))
+                            .opacity(0.)
+                            .group_hover("local-card", |style| style.opacity(1.))
+                            .child(
+                                Button::new(rename_id)
+                                    .icon(IconName::Settings2)
+                                    .ghost()
+                                    .compact()
+                                    .tooltip(self.text(MessageId::Rename))
+                                    .on_click(move |_, window, cx| {
+                                        view.update(cx, |this, cx| {
+                                            cx.stop_propagation();
+                                            this.start_local_rename(
+                                                connection_for_rename.clone(),
+                                                window,
+                                                cx,
+                                            );
+                                        });
+                                    }),
+                            )
+                            .child({
+                                let view = cx.entity();
+                                Button::new(delete_id)
+                                    .icon(IconName::Delete)
+                                    .ghost()
+                                    .compact()
+                                    .tooltip(self.text(MessageId::Delete))
+                                    .on_click(move |_, _, cx| {
+                                        view.update(cx, |this, cx| {
+                                            cx.stop_propagation();
+                                            this.confirm =
+                                                Some(ConfirmAction::DeleteLocalConnection(
+                                                    connection_for_delete.id,
+                                                ));
+                                            cx.notify();
+                                        });
+                                    })
+                            }),
+                    ),
+            )
+            .into_any_element()
+    }
+
     pub(in crate::app) fn render_workspace(&mut self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let query = self.search.read(cx).value().to_string();
         let Some(state) = &mut self.state else {
@@ -159,7 +304,13 @@ impl AppView {
         };
         state.set_search_query(query);
         let profiles: Vec<_> = state.filtered_profiles().into_iter().cloned().collect();
+        let local_connections: Vec<_> = state
+            .filtered_local_connections()
+            .into_iter()
+            .cloned()
+            .collect();
         let total_profiles = state.profiles().len();
+        let total_local_connections = state.local_connections().len();
         let filter = state.tag_filter().clone();
         let untagged_count = state
             .profiles()
@@ -178,15 +329,40 @@ impl AppView {
                 (tag.id, tag.name.clone(), tag.color, count)
             })
             .collect();
-        let empty_message = if total_profiles == 0 {
+        let empty_message = if total_profiles == 0 && total_local_connections == 0 {
             MessageId::NoConnections
         } else {
             MessageId::NoSearchResults
         };
-        let is_empty = profiles.is_empty();
-        let mut grid = div().flex().flex_wrap().gap(px(12.));
-        for profile in profiles {
-            grid = grid.child(self.render_host_card(profile, cx));
+        let is_empty = profiles.is_empty() && local_connections.is_empty();
+        let mut groups = div().flex().flex_col().gap(px(18.));
+        if !profiles.is_empty() {
+            let mut grid = div().flex().flex_wrap().gap(px(12.));
+            for profile in profiles {
+                grid = grid.child(self.render_host_card(profile, cx));
+            }
+            groups = groups
+                .child(
+                    div()
+                        .text_sm()
+                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                        .child(self.text(MessageId::SshHosts)),
+                )
+                .child(grid);
+        }
+        if !local_connections.is_empty() {
+            let mut grid = div().flex().flex_wrap().gap(px(12.));
+            for connection in local_connections {
+                grid = grid.child(self.render_local_card(connection, cx));
+            }
+            groups = groups
+                .child(
+                    div()
+                        .text_sm()
+                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                        .child(self.text(MessageId::LocalConnections)),
+                )
+                .child(grid);
         }
         let content = if is_empty {
             div()
@@ -202,7 +378,7 @@ impl AppView {
                 .id("workspace-hosts")
                 .size_full()
                 .overflow_y_scroll()
-                .child(grid)
+                .child(groups)
                 .into_any_element()
         };
         // Tag sidebar: "All hosts" clears the filter (highlighted when no
@@ -316,6 +492,7 @@ impl AppView {
                             .child(
                                 h_flex()
                                     .gap(px(8.))
+                                    .flex_wrap()
                                     .child(
                                         Button::new("add-connection")
                                             .label(self.text(MessageId::NewHost))
@@ -331,6 +508,14 @@ impl AppView {
                                             .icon(IconName::SquareTerminal)
                                             .on_click(cx.listener(|this, _, window, cx| {
                                                 this.connect_local(window, cx)
+                                            })),
+                                    )
+                                    .child(
+                                        Button::new("discover-configurations")
+                                            .label(self.text(MessageId::DiscoverConfigurations))
+                                            .icon(IconName::Search)
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.open_discovery(cx)
                                             })),
                                     ),
                             )

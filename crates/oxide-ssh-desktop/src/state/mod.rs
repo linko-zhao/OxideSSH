@@ -4,8 +4,9 @@ use std::{collections::HashSet, path::PathBuf, sync::Arc};
 
 use oxide_ssh_core::{
     model::{
-        AppSettings, ConnectionProfile, CursorStyleSetting, Endpoint, LocaleSetting, NewTabAction,
-        Osc52Clipboard, Tag, TagColor, TagId, TerminalBell, ThemeMode,
+        AppSettings, ConnectionProfile, CursorStyleSetting, Endpoint, LocalConnection,
+        LocalConnectionId, LocaleSetting, NewTabAction, Osc52Clipboard, Tag, TagColor, TagId,
+        TerminalBell, ThemeMode,
     },
     storage::{AppConfig, AppStore, KnownHostEntry, KnownHosts, StorageError},
 };
@@ -96,6 +97,63 @@ impl AppState {
 
     pub fn known_hosts(&self) -> &[KnownHostEntry] {
         &self.known_hosts.hosts
+    }
+
+    pub fn local_connections(&self) -> &[LocalConnection] {
+        &self.config.local_connections
+    }
+
+    pub fn filtered_local_connections(&self) -> Vec<&LocalConnection> {
+        let query = self.search_query.trim().to_lowercase();
+        let mut connections: Vec<_> = self
+            .config
+            .local_connections
+            .iter()
+            .filter(|connection| {
+                query.is_empty()
+                    || connection.name.to_lowercase().contains(&query)
+                    || connection.distribution.to_lowercase().contains(&query)
+            })
+            .collect();
+        connections.sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
+        connections
+    }
+
+    pub fn import_discovered(
+        &mut self,
+        profiles: Vec<ConnectionProfile>,
+        local_connections: Vec<LocalConnection>,
+    ) -> Result<(), StorageError> {
+        self.store.import_discovered(profiles, local_connections)?;
+        self.reload_config()
+    }
+
+    pub fn rename_local_connection(
+        &mut self,
+        id: LocalConnectionId,
+        name: String,
+    ) -> Result<(), StorageError> {
+        let mut config = self.config.clone();
+        if let Some(connection) = config
+            .local_connections
+            .iter_mut()
+            .find(|connection| connection.id == id)
+        {
+            connection.name = name;
+            self.store.save_config(&config)?;
+            self.config = config;
+        }
+        Ok(())
+    }
+
+    pub fn delete_local_connection(&mut self, id: LocalConnectionId) -> Result<(), StorageError> {
+        let mut config = self.config.clone();
+        config
+            .local_connections
+            .retain(|connection| connection.id != id);
+        self.store.save_config(&config)?;
+        self.config = config;
+        Ok(())
     }
 
     pub fn set_search_query(&mut self, query: impl Into<String>) {

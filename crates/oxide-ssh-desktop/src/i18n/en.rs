@@ -242,5 +242,47 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::LocalWorkingDirectoryInvalid => {
             "The configured local working directory does not exist or cannot be accessed."
         }
+        MessageId::DiscoverConfigurations => "Discover configurations",
+        MessageId::DiscoveryTitle => "Discover connections",
+        MessageId::DiscoveryDescription => {
+            "Scan the default OpenSSH client config and installed WSL distributions. Select the entries to add; nothing is saved until you import."
+        }
+        MessageId::DiscoveryExistingExcluded => {
+            "Existing SSH aliases and WSL distributions are unselected by default."
+        }
+        MessageId::DiscoverySshConfigPath => "SSH config:",
+        MessageId::DiscoverySshOption => "Scan SSH config",
+        MessageId::DiscoverySshSection => "SSH hosts",
+        MessageId::DiscoveryWslSection => "WSL distributions",
+        MessageId::DiscoveryWslOption => "Scan WSL distributions",
+        MessageId::DiscoveryScan => "Scan",
+        MessageId::DiscoveryRescan => "Rescan",
+        MessageId::DiscoveryScanning => "Scanning",
+        MessageId::DiscoverySshConfigUnavailable => {
+            "The default SSH config location could not be determined."
+        }
+        MessageId::DiscoverySshConfigReadFailed => "Could not read the SSH config:",
+        MessageId::DiscoveryWslReadFailed => "Could not list WSL distributions.",
+        MessageId::DiscoveryNoSshHosts => "No SSH hosts found.",
+        MessageId::DiscoveryNoWslDistributions => "No WSL distributions found.",
+        MessageId::DiscoverySkipped => "Skipped",
+        MessageId::DiscoveryIdentityMissing => "Identity file missing:",
+        MessageId::DiscoveryImport => "Import selected",
+        MessageId::DiscoveryImportFailed => "Import failed; no changes were saved.",
+        MessageId::DiscoveryImportSuccess => "Discovered connections imported.",
+        MessageId::DiscoverySkipWildcard => "wildcard Host pattern",
+        MessageId::DiscoverySkipMatch => "Match block",
+        MessageId::DiscoverySkipDuplicate => "duplicate alias",
+        MessageId::DiscoverySkipMultipleIdentityFiles => "multiple identity files",
+        MessageId::DiscoverySkipUnsupportedDirective => "unsupported option",
+        MessageId::DiscoverySkipInvalidValue => "invalid value",
+        MessageId::DiscoverySkipIncludeFailed => "included file could not be read",
+        MessageId::LocalConnections => "Local connections",
+        MessageId::SshHosts => "SSH hosts",
+        MessageId::RenameLocalConnection => "Rename local connection",
+        MessageId::Rename => "Rename",
+        MessageId::Distribution => "WSL distribution",
+        MessageId::ConfirmDeleteLocalConnection => "Delete this local connection?",
+        MessageId::InvalidLocalConnectionName => "Local connection names must be 1-64 characters.",
     }
 }

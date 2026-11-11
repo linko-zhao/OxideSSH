@@ -21,6 +21,53 @@ impl Default for ProfileId {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(transparent)]
+pub struct LocalConnectionId(pub Uuid);
+
+impl LocalConnectionId {
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalConnection {
+    pub id: LocalConnectionId,
+    pub name: String,
+    pub distribution: String,
+}
+
+impl LocalConnection {
+    pub fn new(name: impl Into<String>, distribution: impl Into<String>) -> Self {
+        Self {
+            id: LocalConnectionId::new(),
+            name: name.into(),
+            distribution: distribution.into(),
+        }
+    }
+
+    pub fn validate(&self) -> Result<(), LocalConnectionValidationError> {
+        let name_len = self.name.trim().chars().count();
+        if !(1..=64).contains(&name_len) {
+            return Err(LocalConnectionValidationError::Name);
+        }
+        if self.distribution.trim().is_empty() {
+            return Err(LocalConnectionValidationError::Distribution);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum LocalConnectionValidationError {
+    #[error("local connection name is invalid")]
+    Name,
+    #[error("WSL distribution name is invalid")]
+    Distribution,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(transparent)]
 pub struct SessionId(pub Uuid);
 
 impl SessionId {

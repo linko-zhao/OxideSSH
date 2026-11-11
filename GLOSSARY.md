@@ -24,6 +24,34 @@ _Avoid_: 主题模式
 在会话传输与终端界面之间维护终端状态的后端无关模块；统一表达终端内容、输入模式、选区与动作，使界面和会话编排无需识别具体终端实现。
 _Avoid_: 终端核心
 
+**应用设置 (Application settings)**:
+控制界面、终端、本地 shell 与 SSH 默认行为的用户偏好；不包含主机、标签、凭据或已知主机。
+_Avoid_: 全局配置、连接配置
+
+**连接级覆盖 (Profile override)**:
+主机为特定会话显式设置的偏好；未设置时继承应用设置。
+_Avoid_: 主机默认值、全局设置
+
+**窗口状态 (Window state)**:
+由应用记录的上次窗口尺寸等运行状态；不是需要用户手工维护的应用设置。
+_Avoid_: 窗口偏好、界面配置
+
+**全局 ANSI 调色板 (Global ANSI palette)**:
+未设置连接级覆盖的终端会话所使用的 16 色集合；未自定义时采用当前主题的内置 ANSI 调色板。
+_Avoid_: 终端主题
+
+**配置发现 (Configuration discovery)**:
+手动扫描受支持的本地配置来源，预览并选择要导入的条目；导入后的配置独立保存，不与原来源持续同步或回写。
+_Avoid_: 配置同步、自动导入
+
+**WSL 发行版 (WSL distribution)**:
+Windows 本机已安装且可用的 Linux 发行版；配置发现将每个发行版视为一个独立候选项。
+_Avoid_: WSL 主机
+
+**本地连接 (Local connection)**:
+持久化的本地终端启动配置；WSL 发行版导入后成为本地连接，并通过对应发行版启动，不视为 SSH 主机。
+_Avoid_: WSL 主机、本地会话配置
+
 **本地会话 (Local session)**:
 不关联主机的终端会话，在本机 PTY 中运行用户配置的 shell 和启动参数；shell 路径未设置时使用平台默认回退链（Unix 为 `$SHELL` 回退 `/bin/sh`；Windows 按 PATH 探测 `pwsh.exe` → `powershell.exe`，回退 `%COMSPEC%`/`cmd.exe`），工作目录为用户主目录。不持久化、不参与标签过滤，退出或关闭即销毁；重连语义为重新启动 shell。
 _Avoid_: 本地主机、本机主机
