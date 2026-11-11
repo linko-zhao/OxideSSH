@@ -16,6 +16,7 @@ use super::*;
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(super) enum DiscoveryKey {
     Ssh(String),
+    #[cfg(target_os = "windows")]
     Wsl(String),
 }
 
@@ -23,7 +24,7 @@ impl DiscoveryKey {
     fn ssh(alias: &str) -> Self {
         Self::Ssh(alias.to_lowercase())
     }
-
+    #[cfg(target_os = "windows")]
     fn wsl(distribution: &str) -> Self {
         Self::Wsl(distribution.to_lowercase())
     }
@@ -68,12 +69,11 @@ impl DiscoveryDialog {
     pub(super) fn import_count(&self) -> usize {
         #[cfg(target_os = "windows")]
         let include_wsl = self.include_wsl;
-        #[cfg(not(target_os = "windows"))]
-        let include_wsl = false;
         self.selected
             .iter()
             .filter(|key| match key {
                 DiscoveryKey::Ssh(_) => self.include_ssh,
+                #[cfg(target_os = "windows")]
                 DiscoveryKey::Wsl(_) => include_wsl,
             })
             .count()
@@ -387,7 +387,10 @@ impl AppView {
                 }
             }
         }
+        #[cfg(target_os = "windows")]
         let mut local_connections = Vec::new();
+        #[cfg(not(target_os = "windows"))]
+        let local_connections = Vec::new();
         #[cfg(target_os = "windows")]
         if dialog.include_wsl
             && let Some(wsl) = &dialog.wsl

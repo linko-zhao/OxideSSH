@@ -131,7 +131,7 @@ impl AppState {
                     || connection.distribution.to_lowercase().contains(&query)
             })
             .collect();
-        connections.sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
+        connections.sort_by_key(|connection| connection.name.to_lowercase());
         connections
     }
 
