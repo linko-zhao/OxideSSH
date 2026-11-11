@@ -378,7 +378,7 @@ fn built_in_theme() -> String {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ThemeSetting {
     #[serde(default)]
     pub mode: ThemeMode,
@@ -469,7 +469,7 @@ pub enum TerminalBell {
     Off,
 }
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AppSettings {
     #[serde(default)]
     pub locale: LocaleSetting,

@@ -13,16 +13,81 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tempfile::Builder;
 use thiserror::Error;
+use toml_edit::{DocumentMut, InlineTable, Item, Table, Value, value};
 
 use crate::model::{
     AppSettings, AuthConfig, ConnectionProfile, CredentialRef, Endpoint, LocalConnection,
     LocalConnectionId, LocalConnectionValidationError, ProfileId, ProfileValidationError, Tag,
-    TagId, TagValidationError,
+    TagId, TagValidationError, WindowSize,
 };
 
 pub const CONFIG_FILE_NAME: &str = "config.json";
+pub const SETTINGS_FILE_NAME: &str = "config.toml";
 pub const KNOWN_HOSTS_FILE_NAME: &str = "known_hosts.json";
 const SCHEMA_VERSION: u32 = 1;
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StoredAppConfig {
+    schema_version: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    settings: Option<AppSettings>,
+    #[serde(default)]
+    profiles: Vec<ConnectionProfile>,
+    #[serde(default)]
+    local_connections: Vec<LocalConnection>,
+    #[serde(default)]
+    tags: Vec<Tag>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    window_size: Option<WindowSize>,
+}
+
+impl Default for StoredAppConfig {
+    fn default() -> Self {
+        Self {
+            schema_version: SCHEMA_VERSION,
+            settings: None,
+            profiles: Vec::new(),
+            local_connections: Vec::new(),
+            tags: Vec::new(),
+            window_size: None,
+        }
+    }
+}
+
+impl StoredAppConfig {
+    fn into_config(self, mut settings: AppSettings) -> AppConfig {
+        settings.window_size = self.window_size;
+        AppConfig {
+            schema_version: self.schema_version,
+            settings,
+            profiles: self.profiles,
+            local_connections: self.local_connections,
+            tags: self.tags,
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StoredAppConfigRef<'a> {
+    schema_version: u32,
+    profiles: &'a [ConnectionProfile],
+    local_connections: &'a [LocalConnection],
+    tags: &'a [Tag],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    window_size: Option<WindowSize>,
+}
+
+fn stored_config(config: &AppConfig) -> StoredAppConfigRef<'_> {
+    StoredAppConfigRef {
+        schema_version: config.schema_version,
+        profiles: &config.profiles,
+        local_connections: &config.local_connections,
+        tags: &config.tags,
+        window_size: config.settings.window_size,
+    }
+}
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -111,6 +176,26 @@ pub enum StorageError {
         #[source]
         source: serde_json::Error,
     },
+    #[error("corrupt settings file at {path}")]
+    CorruptSettings {
+        path: PathBuf,
+        #[source]
+        source: Box<toml_edit::TomlError>,
+    },
+    #[error("corrupt settings values at {path}")]
+    InvalidSettings {
+        path: PathBuf,
+        #[source]
+        source: Box<toml_edit::de::Error>,
+    },
+    #[error("invalid value for {field} in settings file at {path}")]
+    InvalidSettingsValue { path: PathBuf, field: &'static str },
+    #[error("unable to serialize settings file at {path}")]
+    SerializeSettings {
+        path: PathBuf,
+        #[source]
+        source: Box<toml_edit::ser::Error>,
+    },
     #[error("unable to access storage file at {path}")]
     Io {
         path: PathBuf,
@@ -192,15 +277,46 @@ impl AppStore {
         self.root.join(CONFIG_FILE_NAME)
     }
 
+    pub fn settings_path(&self) -> PathBuf {
+        self.root.join(SETTINGS_FILE_NAME)
+    }
+
     pub fn known_hosts_path(&self) -> PathBuf {
         self.root.join(KNOWN_HOSTS_FILE_NAME)
     }
 
     pub fn load_config(&self) -> Result<AppConfig, StorageError> {
         let _guard = self.config_lock.lock();
-        let mut config = read_versioned(&self.config_path(), AppConfig::default)?;
+        self.load_config_locked()
+    }
+
+    fn load_config_locked(&self) -> Result<AppConfig, StorageError> {
+        let mut stored = read_versioned(&self.config_path(), StoredAppConfig::default)?;
+        let legacy_window_size = stored
+            .settings
+            .as_ref()
+            .and_then(|settings| settings.window_size);
+        let settings_path = self.settings_path();
+        let settings_exists = settings_path
+            .try_exists()
+            .map_err(|source| StorageError::Io {
+                path: settings_path.clone(),
+                source,
+            })?;
+        let migrate = !settings_exists && stored.settings.is_some();
+        let settings = if settings_exists {
+            read_settings(&settings_path)?
+        } else {
+            stored.settings.take().unwrap_or_default()
+        };
+        let mut config = stored.into_config(settings);
+        config.settings.window_size = config.settings.window_size.or(legacy_window_size);
         prune_dangling_tag_refs(&mut config);
         validate_config(&config)?;
+        if migrate {
+            write_settings(&settings_path, &config.settings)?;
+            atomic_write(&self.root, &self.config_path(), &stored_config(&config))?;
+        }
         Ok(config)
     }
 
@@ -242,7 +358,8 @@ impl AppStore {
             })?;
         validate_config(&config)?;
         clear_credential_refs(&mut config);
-        self.save_config(&config)
+        self.save_config(&config)?;
+        self.save_settings(&config.settings)
     }
 
     pub fn backup_config(&self, path: &Path) -> Result<(), StorageError> {
@@ -263,18 +380,47 @@ impl AppStore {
     pub fn save_config(&self, config: &AppConfig) -> Result<(), StorageError> {
         let _guard = self.config_lock.lock();
         let path = self.config_path();
-        guard_existing(&path, AppConfig::default)?;
+        guard_existing(&path, StoredAppConfig::default)?;
         validate_config(config)?;
-        atomic_write(&self.root, &path, config)
+        atomic_write(&self.root, &path, &stored_config(config))
+    }
+
+    pub fn save_settings(&self, settings: &AppSettings) -> Result<(), StorageError> {
+        let _guard = self.config_lock.lock();
+        write_settings(&self.settings_path(), settings)
+    }
+
+    pub fn update_settings(
+        &self,
+        update: impl FnOnce(&mut AppSettings),
+    ) -> Result<AppSettings, StorageError> {
+        let _guard = self.config_lock.lock();
+        let path = self.settings_path();
+        let (mut settings, mut stored_document) = read_settings_document(&path)?;
+        let before = settings_document(&settings)?;
+        update(&mut settings);
+        let after = settings_document(&settings)?;
+        if before.to_string() == after.to_string() {
+            return Ok(settings);
+        }
+        patch_table(
+            stored_document.as_table_mut(),
+            before.as_table(),
+            after.as_table(),
+        );
+        if stored_document.get("schemaVersion").is_none() {
+            stored_document.insert("schemaVersion", value(i64::from(SCHEMA_VERSION)));
+        }
+        atomic_write_text(&self.root, &path, &stored_document.to_string())?;
+        Ok(settings)
     }
 
     pub fn update_config(&self, update: impl FnOnce(&mut AppConfig)) -> Result<(), StorageError> {
         let _guard = self.config_lock.lock();
-        let path = self.config_path();
-        let mut config = read_versioned(&path, AppConfig::default)?;
+        let mut config = self.load_config_locked()?;
         update(&mut config);
         validate_config(&config)?;
-        atomic_write(&self.root, &path, &config)
+        atomic_write(&self.root, &self.config_path(), &stored_config(&config))
     }
 
     pub fn export_known_hosts(&self, path: &Path) -> Result<(), StorageError> {
@@ -576,7 +722,189 @@ where
     })
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SettingsSchemaProbe {
+    #[serde(default = "default_schema_version")]
+    schema_version: u64,
+}
+
+const fn default_schema_version() -> u64 {
+    1
+}
+
+fn read_settings(path: &Path) -> Result<AppSettings, StorageError> {
+    read_settings_document(path).map(|(settings, _)| settings)
+}
+
+fn read_settings_document(path: &Path) -> Result<(AppSettings, DocumentMut), StorageError> {
+    let text = match fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(source) if source.kind() == io::ErrorKind::NotFound => {
+            return Ok((AppSettings::default(), DocumentMut::new()));
+        }
+        Err(source) => {
+            return Err(StorageError::Io {
+                path: path.to_path_buf(),
+                source,
+            });
+        }
+    };
+    let probe: SettingsSchemaProbe =
+        toml_edit::de::from_str(&text).map_err(|source| StorageError::InvalidSettings {
+            path: path.to_path_buf(),
+            source: Box::new(source),
+        })?;
+    if probe.schema_version != u64::from(SCHEMA_VERSION) {
+        return Err(StorageError::UnsupportedSchema {
+            path: path.to_path_buf(),
+            found: probe.schema_version,
+        });
+    }
+    let document = text
+        .parse::<DocumentMut>()
+        .map_err(|source| StorageError::CorruptSettings {
+            path: path.to_path_buf(),
+            source: Box::new(source),
+        })?;
+    let mut values = document.clone();
+    values.remove("schemaVersion");
+    values.remove("windowSize");
+    let settings: AppSettings =
+        toml_edit::de::from_document(values).map_err(|source| StorageError::InvalidSettings {
+            path: path.to_path_buf(),
+            source: Box::new(source),
+        })?;
+    let invalid_field = if document.get("windowSize").is_some() {
+        Some("windowSize")
+    } else if document.get("ansiPalette").is_some() && settings.ansi_palette.is_none() {
+        Some("ansiPalette")
+    } else if !crate::model::valid_ssh_term(&settings.ssh_term) {
+        Some("sshTerm")
+    } else if !(1..=300).contains(&settings.ssh_connect_timeout_seconds) {
+        Some("sshConnectTimeoutSeconds")
+    } else if !(1..=1_000_000).contains(&settings.terminal_scrollback_lines) {
+        Some("terminalScrollbackLines")
+    } else {
+        None
+    };
+    if let Some(field) = invalid_field {
+        return Err(StorageError::InvalidSettingsValue {
+            path: path.to_path_buf(),
+            field,
+        });
+    }
+    Ok((settings, document))
+}
+
+fn settings_document(settings: &AppSettings) -> Result<DocumentMut, StorageError> {
+    let mut document = toml_edit::ser::to_document(settings).map_err(|source| {
+        StorageError::SerializeSettings {
+            path: PathBuf::from(SETTINGS_FILE_NAME),
+            source: Box::new(source),
+        }
+    })?;
+    document.remove("windowSize");
+    Ok(document)
+}
+
+fn patch_table(target: &mut Table, before: &Table, after: &Table) {
+    for (key, after_item) in after.iter() {
+        if let (
+            Some(Item::Table(before_table)),
+            Item::Table(after_table),
+            Some(Item::Table(target_table)),
+        ) = (before.get(key), after_item, target.get_mut(key))
+        {
+            patch_table(target_table, before_table, after_table);
+        } else if let (
+            Some(Item::Value(Value::InlineTable(before_inline))),
+            Item::Value(Value::InlineTable(after_inline)),
+            Some(Item::Table(target_table)),
+        ) = (before.get(key), after_item, target.get_mut(key))
+        {
+            patch_inline_into_table(target_table, before_inline, after_inline);
+        } else if before.get(key).map(ToString::to_string) != Some(after_item.to_string()) {
+            let mut replacement = after_item.clone();
+            if let (Some(existing), Some(value)) = (
+                target.get(key).and_then(Item::as_value),
+                replacement.as_value_mut(),
+            ) {
+                *value.decor_mut() = existing.decor().clone();
+            }
+            replace_item(target, key, replacement);
+        }
+    }
+    for key in before.iter().map(|(key, _)| key) {
+        if after.get(key).is_none() {
+            target.remove(key);
+        }
+    }
+}
+
+fn replace_item(target: &mut Table, key: &str, replacement: Item) {
+    if let Some((_, existing)) = target.get_key_value_mut(key) {
+        *existing = replacement;
+    } else {
+        target.insert(key, replacement);
+    }
+}
+
+fn patch_inline_into_table(target: &mut Table, before: &InlineTable, after: &InlineTable) {
+    for (key, after_value) in after.iter() {
+        if before.get(key).map(ToString::to_string) == Some(after_value.to_string()) {
+            continue;
+        }
+        let mut replacement = after_value.clone();
+        if let Some(existing) = target.get(key).and_then(Item::as_value) {
+            *replacement.decor_mut() = existing.decor().clone();
+        }
+        replace_item(target, key, Item::Value(replacement));
+    }
+    for key in before.iter().map(|(key, _)| key) {
+        if !after.contains_key(key) {
+            target.remove(key);
+        }
+    }
+}
+
+fn write_settings(path: &Path, settings: &AppSettings) -> Result<(), StorageError> {
+    let root = path.parent().unwrap_or_else(|| Path::new("."));
+    let mut document = settings_document(settings)?;
+    document.insert("schemaVersion", value(i64::from(SCHEMA_VERSION)));
+    atomic_write_text(root, path, &document.to_string())
+}
+
 fn atomic_write<T: Serialize>(root: &Path, path: &Path, value: &T) -> Result<(), StorageError> {
+    atomic_write_with(root, path, |file| {
+        serde_json::to_writer_pretty(&mut *file, value).map_err(|source| {
+            StorageError::Serialize {
+                path: path.to_path_buf(),
+                source,
+            }
+        })?;
+        file.write_all(b"\n").map_err(|source| StorageError::Io {
+            path: path.to_path_buf(),
+            source,
+        })
+    })
+}
+
+fn atomic_write_text(root: &Path, path: &Path, text: &str) -> Result<(), StorageError> {
+    atomic_write_with(root, path, |file| {
+        file.write_all(text.as_bytes())
+            .map_err(|source| StorageError::Io {
+                path: path.to_path_buf(),
+                source,
+            })
+    })
+}
+
+fn atomic_write_with(
+    root: &Path,
+    path: &Path,
+    write: impl FnOnce(&mut fs::File) -> Result<(), StorageError>,
+) -> Result<(), StorageError> {
     let mut temporary = Builder::new()
         .prefix(".oxide-ssh-")
         .tempfile_in(root)
@@ -597,24 +925,12 @@ fn atomic_write<T: Serialize>(root: &Path, path: &Path, value: &T) -> Result<(),
             })?;
     }
 
-    serde_json::to_writer_pretty(temporary.as_file_mut(), value).map_err(|source| {
-        StorageError::Serialize {
-            path: path.to_path_buf(),
-            source,
-        }
-    })?;
-    temporary
-        .as_file_mut()
-        .write_all(b"\n")
-        .map_err(|source| StorageError::Io {
-            path: temporary.path().to_path_buf(),
-            source,
-        })?;
+    write(temporary.as_file_mut())?;
     temporary
         .as_file()
         .sync_all()
         .map_err(|source| StorageError::Io {
-            path: temporary.path().to_path_buf(),
+            path: path.to_path_buf(),
             source,
         })?;
     temporary.persist(path).map_err(|error| StorageError::Io {
@@ -726,6 +1042,7 @@ mod tests {
         };
         config.profiles.push(key_profile);
         source.save_config(&config).unwrap();
+        source.save_settings(&config.settings).unwrap();
         let file = target_dir.path().join("export.json");
         source.export_config(&file).unwrap();
         let exported: serde_json::Value =
@@ -839,15 +1156,17 @@ mod tests {
         });
         config.profiles.push(first);
         store.save_config(&config).unwrap();
+        store.save_settings(&config.settings).unwrap();
         config.profiles.push(profile("second"));
         store.save_config(&config).unwrap();
 
         assert_eq!(store.load_config().unwrap(), config);
-        let names: Vec<_> = fs::read_dir(directory.path())
+        let mut names: Vec<_> = fs::read_dir(directory.path())
             .unwrap()
             .map(|entry| entry.unwrap().file_name())
             .collect();
-        assert_eq!(names, ["config.json"]);
+        names.sort();
+        assert_eq!(names, ["config.json", "config.toml"]);
     }
 
     #[test]
@@ -1180,6 +1499,92 @@ mod tests {
         assert!(!serialized.contains(input_password));
         assert!(serialized.contains("credentialRef"));
         assert!(!serialized.contains("password-never-persist"));
+    }
+
+    #[test]
+    fn invalid_or_unknown_toml_fields_are_rejected_without_rewriting() {
+        let directory = tempdir().unwrap();
+        let store = AppStore::open(directory.path().to_path_buf()).unwrap();
+        let invalid = [
+            "terminalFontsize = 18\n",
+            "windowSize = { width = 1280, height = 720 }\n",
+            "ansiPalette = [1]\n",
+            "sshTerm = \"bad term\"\n",
+            "sshConnectTimeoutSeconds = 0\n",
+            "schemaVersion = 2\n",
+            "[theme]\nunknown = true\n",
+        ];
+
+        for text in invalid {
+            fs::write(store.settings_path(), text).unwrap();
+            assert!(
+                store.load_config().is_err(),
+                "accepted invalid TOML: {text}"
+            );
+            assert_eq!(fs::read_to_string(store.settings_path()).unwrap(), text);
+        }
+    }
+
+    #[test]
+    fn settings_writes_are_sparse_and_preserve_external_comments_and_values() {
+        let directory = tempdir().unwrap();
+        let store = AppStore::open(directory.path().to_path_buf()).unwrap();
+
+        store
+            .update_settings(|settings| settings.locale = LocaleSetting::ZhCn)
+            .unwrap();
+
+        assert!(!store.config_path().exists());
+        let initial = fs::read_to_string(store.settings_path()).unwrap();
+        assert!(initial.contains("schemaVersion = 1"));
+        assert!(initial.contains("locale = \"zh-CN\""));
+        assert!(!initial.contains("terminalFontSize"));
+
+        fs::write(
+            store.settings_path(),
+            "# keep this comment\nschemaVersion = 1\nlocale = \"zh-CN\"\nterminalFontSize = 18\n[theme]\n# keep theme comment\nmode = \"system\"\nlight = \"custom\"\n",
+        )
+        .unwrap();
+        store
+            .update_settings(|settings| settings.theme.mode = ThemeMode::Dark)
+            .unwrap();
+
+        let updated = fs::read_to_string(store.settings_path()).unwrap();
+        assert!(updated.contains("# keep this comment"));
+        assert!(updated.contains("# keep theme comment"), "{updated}");
+        assert!(updated.contains("terminalFontSize = 18"));
+        assert!(updated.contains("light = \"custom\""));
+        let loaded = store.load_config().unwrap();
+        assert_eq!(loaded.settings.terminal_font_size, 18);
+        assert_eq!(loaded.settings.theme.mode, ThemeMode::Dark);
+    }
+
+    #[test]
+    fn legacy_json_settings_migrate_to_toml_and_window_state_stays_in_json() {
+        let directory = tempdir().unwrap();
+        let mut legacy = AppConfig::default();
+        legacy.settings.locale = LocaleSetting::ZhCn;
+        legacy.settings.window_size = Some(crate::model::WindowSize {
+            width: 1280,
+            height: 720,
+        });
+        fs::write(
+            directory.path().join(CONFIG_FILE_NAME),
+            serde_json::to_vec(&legacy).unwrap(),
+        )
+        .unwrap();
+        let store = AppStore::open(directory.path().to_path_buf()).unwrap();
+
+        let loaded = store.load_config().unwrap();
+
+        assert_eq!(loaded.settings.locale, LocaleSetting::ZhCn);
+        assert_eq!(loaded.settings.window_size, legacy.settings.window_size);
+        assert!(directory.path().join("config.toml").exists());
+        let json: serde_json::Value =
+            serde_json::from_slice(&fs::read(directory.path().join(CONFIG_FILE_NAME)).unwrap())
+                .unwrap();
+        assert!(json.get("settings").is_none());
+        assert_eq!(json["windowSize"]["width"], 1280);
     }
 
     #[test]

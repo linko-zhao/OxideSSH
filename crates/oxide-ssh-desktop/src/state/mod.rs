@@ -25,6 +25,7 @@ pub enum AppLoadOutcome {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RecoveryState {
     pub root: PathBuf,
+    pub error: String,
 }
 
 pub struct AppState {
@@ -63,15 +64,30 @@ impl AppState {
     pub fn load(root: PathBuf) -> AppLoadOutcome {
         let store = match AppStore::open(root.clone()) {
             Ok(store) => Arc::new(store),
-            Err(_) => return AppLoadOutcome::Recovery(RecoveryState { root }),
+            Err(error) => {
+                return AppLoadOutcome::Recovery(RecoveryState {
+                    root,
+                    error: error.to_string(),
+                });
+            }
         };
         let config = match store.load_config() {
             Ok(config) => config,
-            Err(_) => return AppLoadOutcome::Recovery(RecoveryState { root }),
+            Err(error) => {
+                return AppLoadOutcome::Recovery(RecoveryState {
+                    root,
+                    error: error.to_string(),
+                });
+            }
         };
         let known_hosts = match store.load_known_hosts() {
             Ok(hosts) => hosts,
-            Err(_) => return AppLoadOutcome::Recovery(RecoveryState { root }),
+            Err(error) => {
+                return AppLoadOutcome::Recovery(RecoveryState {
+                    root,
+                    error: error.to_string(),
+                });
+            }
         };
 
         AppLoadOutcome::Ready(Box::new(Self {
@@ -281,20 +297,23 @@ impl AppState {
         Ok(())
     }
 
-    pub fn set_locale(&mut self, locale: LocaleSetting) -> Result<(), StorageError> {
-        let mut config = self.config.clone();
-        config.settings.locale = locale;
-        self.store.save_config(&config)?;
-        self.config = config;
+    fn update_settings(
+        &mut self,
+        update: impl FnOnce(&mut AppSettings),
+    ) -> Result<(), StorageError> {
+        let window_size = self.config.settings.window_size;
+        let mut settings = self.store.update_settings(update)?;
+        settings.window_size = window_size;
+        self.config.settings = settings;
         Ok(())
     }
 
+    pub fn set_locale(&mut self, locale: LocaleSetting) -> Result<(), StorageError> {
+        self.update_settings(|settings| settings.locale = locale)
+    }
+
     pub fn set_theme(&mut self, mode: ThemeMode) -> Result<(), StorageError> {
-        let mut config = self.config.clone();
-        config.settings.theme.mode = mode;
-        self.store.save_config(&config)?;
-        self.config = config;
-        Ok(())
+        self.update_settings(|settings| settings.theme.mode = mode)
     }
 
     pub fn set_theme_file(
@@ -302,56 +321,39 @@ impl AppState {
         theme: ResolvedTheme,
         name: String,
     ) -> Result<(), StorageError> {
-        let mut config = self.config.clone();
-        match theme {
-            ResolvedTheme::Light => config.settings.theme.light = name,
-            ResolvedTheme::Dark => config.settings.theme.dark = name,
-        }
-        self.store.save_config(&config)?;
-        self.config = config;
-        Ok(())
+        self.update_settings(|settings| match theme {
+            ResolvedTheme::Light => settings.theme.light = name,
+            ResolvedTheme::Dark => settings.theme.dark = name,
+        })
     }
 
     pub fn set_new_tab_action(&mut self, action: NewTabAction) -> Result<(), StorageError> {
-        let mut config = self.config.clone();
-        config.settings.new_tab_action = action;
-        self.store.save_config(&config)?;
-        self.config = config;
-
-        Ok(())
+        self.update_settings(|settings| settings.new_tab_action = action)
     }
+
     pub fn set_ssh_term(&mut self, term: &str) -> Result<(), StorageError> {
         let term = term.trim();
         if !oxide_ssh_core::model::valid_ssh_term(term) {
             return Ok(());
         }
-        let mut config = self.config.clone();
-        config.settings.ssh_term = term.to_owned();
-        self.store.save_config(&config)?;
-        self.config = config;
-        Ok(())
+        self.update_settings(|settings| settings.ssh_term = term.to_owned())
     }
 
     pub fn set_osc52_clipboard(&mut self, setting: Osc52Clipboard) -> Result<(), StorageError> {
-        let mut config = self.config.clone();
-        config.settings.osc52_clipboard = setting;
-        self.store.save_config(&config)?;
-        self.config = config;
-        Ok(())
+        self.update_settings(|settings| settings.osc52_clipboard = setting)
     }
+
     pub fn set_terminal_settings(
         &mut self,
         font_family: String,
         font_size: u16,
         line_height: u16,
     ) -> Result<(), StorageError> {
-        let mut config = self.config.clone();
-        config.settings.terminal_font_family = font_family;
-        config.settings.terminal_font_size = font_size;
-        config.settings.terminal_line_height = line_height;
-        self.store.save_config(&config)?;
-        self.config = config;
-        Ok(())
+        self.update_settings(|settings| {
+            settings.terminal_font_family = font_family;
+            settings.terminal_font_size = font_size;
+            settings.terminal_line_height = line_height;
+        })
     }
 
     pub fn set_cursor_preferences(
@@ -359,41 +361,28 @@ impl AppState {
         style: CursorStyleSetting,
         blink: bool,
     ) -> Result<(), StorageError> {
-        let mut config = self.config.clone();
-        config.settings.cursor_style = style;
-        config.settings.cursor_blink = blink;
-        self.store.save_config(&config)?;
-        self.config = config;
-        Ok(())
+        self.update_settings(|settings| {
+            settings.cursor_style = style;
+            settings.cursor_blink = blink;
+        })
     }
 
     pub fn set_ssh_compression(&mut self, enabled: bool) -> Result<(), StorageError> {
-        let mut config = self.config.clone();
-        config.settings.ssh_compression = enabled;
-        self.store.save_config(&config)?;
-        self.config = config;
-        Ok(())
+        self.update_settings(|settings| settings.ssh_compression = enabled)
     }
 
     pub fn set_ansi_palette(&mut self, palette: Option<[u32; 16]>) -> Result<(), StorageError> {
         if palette.is_some_and(|colors| colors.iter().any(|color| color & 0xff00_0000 != 0)) {
             return Ok(());
         }
-        let mut config = self.config.clone();
-        config.settings.ansi_palette = palette;
-        self.store.save_config(&config)?;
-        self.config = config;
-        Ok(())
+        self.update_settings(|settings| settings.ansi_palette = palette)
     }
+
     pub fn set_ssh_connect_timeout_seconds(&mut self, seconds: u64) -> Result<(), StorageError> {
         if !(1..=300).contains(&seconds) {
             return Ok(());
         }
-        let mut config = self.config.clone();
-        config.settings.ssh_connect_timeout_seconds = seconds;
-        self.store.save_config(&config)?;
-        self.config = config;
-        Ok(())
+        self.update_settings(|settings| settings.ssh_connect_timeout_seconds = seconds)
     }
 
     pub fn set_ssh_keepalive(
@@ -401,64 +390,46 @@ impl AppState {
         interval_seconds: u64,
         max_count: usize,
     ) -> Result<(), StorageError> {
-        let mut config = self.config.clone();
-        config.settings.ssh_keepalive_interval_seconds = interval_seconds;
-        config.settings.ssh_keepalive_max_count = max_count;
-        self.store.save_config(&config)?;
-        self.config = config;
-        Ok(())
+        self.update_settings(|settings| {
+            settings.ssh_keepalive_interval_seconds = interval_seconds;
+            settings.ssh_keepalive_max_count = max_count;
+        })
     }
 
     pub fn set_confirm_before_close_with_sessions(
         &mut self,
         confirm: bool,
     ) -> Result<(), StorageError> {
-        let mut config = self.config.clone();
-        config.settings.confirm_before_close_with_sessions = confirm;
-        self.store.save_config(&config)?;
-        self.config = config;
-        Ok(())
+        self.update_settings(|settings| settings.confirm_before_close_with_sessions = confirm)
     }
 
     pub fn set_terminal_bell(&mut self, bell: TerminalBell) -> Result<(), StorageError> {
-        let mut config = self.config.clone();
-        config.settings.terminal_bell = bell;
-        self.store.save_config(&config)?;
-        self.config = config;
-        Ok(())
+        self.update_settings(|settings| settings.terminal_bell = bell)
     }
 
     pub fn set_paste_confirm_threshold(&mut self, threshold: usize) -> Result<(), StorageError> {
-        let mut config = self.config.clone();
-        config.settings.paste_confirm_threshold = threshold;
-        self.store.save_config(&config)?;
-        self.config = config;
-        Ok(())
+        self.update_settings(|settings| settings.paste_confirm_threshold = threshold)
     }
 
     pub fn set_local_working_directory(&mut self, directory: String) -> Result<(), StorageError> {
-        let mut config = self.config.clone();
-        config.settings.local_working_directory = directory;
-        self.store.save_config(&config)?;
-        self.config = config;
-        Ok(())
+        self.update_settings(|settings| settings.local_working_directory = directory)
     }
 
     pub fn set_copy_on_select(&mut self, enabled: bool) -> Result<(), StorageError> {
-        let mut config = self.config.clone();
-        config.settings.copy_on_select = enabled;
-        self.store.save_config(&config)?;
-        self.config = config;
-        Ok(())
+        self.update_settings(|settings| settings.copy_on_select = enabled)
     }
 
     pub fn set_remember_window_size(&mut self, remember: bool) -> Result<(), StorageError> {
+        let window_size = self.config.settings.window_size;
+        let mut settings = self.store.update_settings(|settings| {
+            settings.remember_window_size = remember;
+        })?;
+        settings.window_size = if remember { window_size } else { None };
         let mut config = self.config.clone();
-        config.settings.remember_window_size = remember;
+        config.settings = settings;
         if !remember {
-            config.settings.window_size = None;
+            self.store.save_config(&config)?;
         }
-        self.store.save_config(&config)?;
         self.config = config;
         Ok(())
     }
@@ -478,20 +449,14 @@ impl AppState {
         if !(1..=1_000_000).contains(&lines) {
             return Err(StorageError::InvalidScrollbackLines);
         }
-        let mut config = self.config.clone();
-        config.settings.terminal_scrollback_lines = lines;
-        self.store.save_config(&config)?;
-        self.config = config;
-        Ok(())
+        self.update_settings(|settings| settings.terminal_scrollback_lines = lines)
     }
 
     pub fn set_local_shell(&mut self, path: String, args: Vec<String>) -> Result<(), StorageError> {
-        let mut config = self.config.clone();
-        config.settings.local_shell_path = path;
-        config.settings.local_shell_args = args;
-        self.store.save_config(&config)?;
-        self.config = config;
-        Ok(())
+        self.update_settings(|settings| {
+            settings.local_shell_path = path;
+            settings.local_shell_args = args;
+        })
     }
 
     pub fn reload_config(&mut self) -> Result<(), StorageError> {
@@ -764,7 +729,10 @@ mod tests {
         fs::write(&path, b"not json").unwrap();
 
         let outcome = AppState::load(directory.path().to_path_buf());
-        assert!(matches!(outcome, AppLoadOutcome::Recovery(_)));
+        let AppLoadOutcome::Recovery(recovery) = outcome else {
+            panic!("expected recovery state");
+        };
+        assert!(recovery.error.contains(CONFIG_FILE_NAME));
         assert_eq!(fs::read(path).unwrap(), b"not json");
     }
 

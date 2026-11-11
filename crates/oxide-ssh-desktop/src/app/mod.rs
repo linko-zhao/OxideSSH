@@ -321,6 +321,7 @@ pub struct AppView {
     last_bell_sound: Option<std::time::Instant>,
     bell_generation: u64,
     status_message: Option<MessageId>,
+    recovery_error: Option<String>,
     credential_clear_failures: Vec<String>,
     status_rendered: Option<MessageId>,
     terminal_geometry: Option<TerminalGeometry>,
@@ -365,7 +366,7 @@ impl AppView {
     ) -> Self {
         let system_locale = system_locale();
         let system_is_dark = is_dark(window.appearance());
-        let (state, credentials, coordinator, ssh, status_message) = match outcome {
+        let (state, credentials, coordinator, ssh, status_message, recovery_error) = match outcome {
             AppLoadOutcome::Ready(state) => {
                 let store = state.store().clone();
                 let credentials = Arc::new(SystemCredentialStore::new());
@@ -384,9 +385,12 @@ impl AppView {
                     Some(coordinator),
                     ssh.ok(),
                     status_message,
+                    None,
                 )
             }
-            AppLoadOutcome::Recovery(_) => (None, None, None, None, None),
+            AppLoadOutcome::Recovery(recovery) => {
+                (None, None, None, None, None, Some(recovery.error))
+            }
         };
         let locale = state
             .as_ref()
@@ -1011,6 +1015,7 @@ impl AppView {
             bell_generation: 0,
             ssh_term_input,
             status_message,
+            recovery_error,
             credential_clear_failures: Vec::new(),
             status_rendered: None,
             terminal_geometry: None,

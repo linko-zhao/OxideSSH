@@ -29,6 +29,12 @@ impl AppView {
                         div()
                             .text_sm()
                             .text_color(cx.theme().muted_foreground)
+                            .child(self.recovery_error.clone().unwrap_or_default()),
+                    )
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(cx.theme().muted_foreground)
                             .child(self.root.to_string_lossy().into_owned()),
                     )
                     .child(

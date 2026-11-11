@@ -5,8 +5,9 @@
 
 ## ⚠️ Schema 约束（实现任何一项前必读）
 
-- `config.json` 的 `schemaVersion` 必须恒为 1，**不能 bump**（否则旧文件被判 `UnsupportedSchema`，进 Recovery 只读界面）。
-- 所有新增字段必须加 `#[serde(default)]`（`AppSettings` 现有的 `locale`/`theme` 都没加，借机一并补上）。
+- `config.json` 与 `config.toml` 的 `schemaVersion` 必须恒为 1，**不能 bump**（否则旧文件被判 `UnsupportedSchema`，进 Recovery 只读界面）。
+- `config.toml` 存应用设置；主机、本地连接、标签和 `windowSize` 窗口状态存 `config.json`。TOML 字段使用与 `AppSettings` 一致的扁平 camelCase，本路线图中的点号键名仅表示功能分组。
+- 所有新增字段必须加 `#[serde(default)]`；未知 TOML 字段会被拒绝。
 - 新增项固定落点四处：`oxide-ssh-core/src/model.rs`（字段）→ `oxide-ssh-desktop/src/state/mod.rs`（setter）→ `app/views/settings.rs`（UI 控件）→ `i18n/{mod,en,zh_cn}.rs`（新增 `MessageId` 并加入 `MessageId::ALL`）。
 - Profile 级项统一建模为：全局 `AppSettings` 存默认值 + `ConnectionProfile` 加 `Option<T>` 覆盖字段。
 

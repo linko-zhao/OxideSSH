@@ -157,8 +157,18 @@ OxideSSH uses the OS project-config directory. Typical locations (the recovery s
 
 | File | Contents |
 | --- | --- |
-| `config.json` | Profiles, tags, and app settings |
+| `config.toml` | Hand-editable application settings; omitted fields use built-in defaults |
+| `config.json` | Profiles, local connections, tags, and window state |
 | `known_hosts.json` | Trusted host keys and SHA-256 fingerprints |
+
+`config.toml` uses flat camelCase fields:
+
+```toml
+terminalFontSize = 15
+sshCompression = true
+```
+
+`schemaVersion` is optional and defaults to `1`. Settings UI writes only changed fields and preserves other content and comments; external edits take effect after restart. Syntax errors, unknown fields, invalid values, and unsupported versions open the read-only recovery view instead of overwriting the file with defaults.
 
 Writes are atomic (temp file + rename). If the storage root is corrupt, OxideSSH starts in a read-only recovery view and never overwrites the damaged files.
 
