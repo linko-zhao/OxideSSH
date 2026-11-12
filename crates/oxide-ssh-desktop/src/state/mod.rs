@@ -15,6 +15,7 @@ use crate::i18n::ResolvedLocale;
 use crate::state::theme::ResolvedTheme;
 
 pub mod connection_form;
+pub mod palette;
 pub mod theme;
 
 pub enum AppLoadOutcome {
@@ -371,11 +372,11 @@ impl AppState {
         self.update_settings(|settings| settings.ssh_compression = enabled)
     }
 
-    pub fn set_ansi_palette(&mut self, palette: Option<[u32; 16]>) -> Result<(), StorageError> {
-        if palette.is_some_and(|colors| colors.iter().any(|color| color & 0xff00_0000 != 0)) {
-            return Ok(());
-        }
-        self.update_settings(|settings| settings.ansi_palette = palette)
+    pub fn set_ansi_palette_file(&mut self, name: Option<String>) -> Result<(), StorageError> {
+        self.update_settings(|settings| {
+            settings.ansi_palette_file = name;
+            settings.ansi_palette = None;
+        })
     }
 
     pub fn set_ssh_connect_timeout_seconds(&mut self, seconds: u64) -> Result<(), StorageError> {
@@ -661,26 +662,37 @@ mod tests {
     }
 
     #[test]
-    fn ansi_palette_is_persisted_and_invalid_values_are_ignored() {
+    fn ansi_palette_file_selection_is_persisted_and_clears_legacy_custom_palette() {
         let directory = tempdir().unwrap();
+        let store = AppStore::open(directory.path().to_path_buf()).unwrap();
+        store
+            .update_settings(|settings| settings.ansi_palette = Some([0x112233; 16]))
+            .unwrap();
         let AppLoadOutcome::Ready(mut state) = AppState::load(directory.path().to_path_buf())
         else {
             panic!("expected ready state");
         };
-        let mut palette = [0x112233; 16];
-        palette[1] = 0x123456;
-        state.set_ansi_palette(Some(palette)).unwrap();
-        assert_eq!(state.settings().ansi_palette, Some(palette));
 
-        let mut invalid = palette;
-        invalid[0] = 0x1_000000;
-        state.set_ansi_palette(Some(invalid)).unwrap();
-        assert_eq!(state.settings().ansi_palette, Some(palette));
+        state
+            .set_ansi_palette_file(Some("solarized".to_owned()))
+            .unwrap();
+        assert_eq!(
+            state.settings().ansi_palette_file.as_deref(),
+            Some("solarized")
+        );
+        assert_eq!(state.settings().ansi_palette, None);
 
-        let AppLoadOutcome::Ready(reloaded) = AppState::load(directory.path().to_path_buf()) else {
+        let AppLoadOutcome::Ready(mut reloaded) = AppState::load(directory.path().to_path_buf())
+        else {
             panic!("expected ready state");
         };
-        assert_eq!(reloaded.settings().ansi_palette, Some(palette));
+        assert_eq!(
+            reloaded.settings().ansi_palette_file.as_deref(),
+            Some("solarized")
+        );
+        reloaded.set_ansi_palette_file(None).unwrap();
+        assert_eq!(reloaded.settings().ansi_palette_file, None);
+        assert_eq!(reloaded.settings().ansi_palette, None);
         assert_eq!(reloaded.config.schema_version(), 1);
     }
 

@@ -54,6 +54,7 @@ enum DialogIdentityKind {
     },
     ConfirmClose(TabId),
     TagManager,
+    AnsiPalette,
     Discovery,
     LocalRename {
         id: LocalConnectionId,
@@ -71,6 +72,7 @@ enum DialogFocusIdentity {
     ChangedHostKey { tab_id: TabId, request_id: Uuid },
     ConfirmClose(TabId),
     TagManager,
+    AnsiPalette,
     Discovery,
     LocalRename(LocalConnectionId),
 }
@@ -91,6 +93,7 @@ impl DialogIdentityKind {
             },
             Self::ConfirmClose(tab_id) => DialogFocusIdentity::ConfirmClose(*tab_id),
             Self::TagManager => DialogFocusIdentity::TagManager,
+            Self::AnsiPalette => DialogFocusIdentity::AnsiPalette,
             Self::Discovery => DialogFocusIdentity::Discovery,
             Self::LocalRename { id } => DialogFocusIdentity::LocalRename(*id),
         }
@@ -109,6 +112,10 @@ enum DialogSnapshot {
         entries: Vec<TagManagerEntry>,
         /// The manager's inline "create tag" field.
         new_tag: Entity<InputState>,
+    },
+    AnsiPalette {
+        palettes: Vec<AnsiPalette>,
+        selected: usize,
     },
     Discovery(DiscoveryDialog),
     LocalRename(LocalRenameDialog),
@@ -201,6 +208,10 @@ impl DialogPresenter {
 
     fn focus_initial(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         match &self.payload.snapshot {
+            DialogSnapshot::AnsiPalette { .. } => {
+                self.focus.scope.focus(window);
+                return;
+            }
             DialogSnapshot::Editor(editor) => {
                 editor.name.update(cx, |input, cx| input.focus(window, cx));
                 return;
@@ -274,6 +285,11 @@ impl DialogPresenter {
                     .update(cx, |app, cx| app.commit_tag_names(window, cx))
                     .ok();
             }
+            DialogSnapshot::AnsiPalette { .. } => {
+                self.owner
+                    .update(cx, |app, cx| app.confirm_ansi_palette_selection(cx))
+                    .ok();
+            }
             DialogSnapshot::Discovery(dialog) => {
                 if !dialog.scanning {
                     self.owner
@@ -342,6 +358,11 @@ impl DialogPresenter {
             DialogSnapshot::TagManager { .. } => {
                 self.owner
                     .update(cx, |app, cx| app.close_tag_manager(window, cx))
+                    .ok();
+            }
+            DialogSnapshot::AnsiPalette { .. } => {
+                self.owner
+                    .update(cx, |app, cx| app.close_ansi_palette_dialog(cx))
                     .ok();
             }
             DialogSnapshot::Discovery(_) => {
@@ -947,6 +968,62 @@ impl DialogPresenter {
             entry.color = color;
         }
         cx.notify();
+    }
+
+    fn render_ansi_palette(
+        &self,
+        palettes: &[AnsiPalette],
+        selected: usize,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let mut rows = div().flex().flex_col().gap(px(8.));
+        for (index, palette) in palettes.iter().enumerate() {
+            let name = palette.name.clone();
+            let label = match palette.name.as_str() {
+                BUILT_IN_PALETTE => self.text(MessageId::BuiltInAnsiPalette),
+                CUSTOM_PALETTE => self.text(MessageId::CustomAnsiPalette),
+                name => name,
+            };
+            let listener = cx.listener(move |this, _, _, cx| {
+                this.owner
+                    .update(cx, |app, cx| app.select_ansi_palette(name.clone(), cx))
+                    .ok();
+            });
+            rows = rows.child(
+                Button::new(SharedString::from(format!("ansi-palette-{index}")))
+                    .w_full()
+                    .h(px(64.))
+                    .ghost()
+                    .selected(index == selected)
+                    .child(
+                        h_flex()
+                            .items_center()
+                            .gap(px(12.))
+                            .child(ansi_palette_preview(&palette.colors, px(16.), cx))
+                            .child(div().text_sm().child(SharedString::from(label.to_owned()))),
+                    )
+                    .on_click(listener),
+            );
+        }
+        let cancel_listener = cx.listener(|this, _, window, cx| this.on_cancel(window, cx));
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(16.))
+            .child(
+                div()
+                    .font_weight(gpui::FontWeight::BOLD)
+                    .child(self.text(MessageId::SelectAnsiPalette)),
+            )
+            .child(rows)
+            .child(
+                div().flex().justify_end().child(
+                    Button::new("cancel-ansi-palette")
+                        .label(self.text(MessageId::Cancel))
+                        .on_click(cancel_listener),
+                ),
+            )
+            .into_any_element()
     }
 
     fn render_discovery(
@@ -1578,6 +1655,9 @@ impl Render for DialogPresenter {
             DialogSnapshot::TagManager { entries, new_tag } => {
                 self.render_tag_manager(entries, new_tag, cx)
             }
+            DialogSnapshot::AnsiPalette { palettes, selected } => {
+                self.render_ansi_palette(palettes, *selected, cx)
+            }
             DialogSnapshot::Discovery(dialog) => self.render_discovery(dialog, cx),
             DialogSnapshot::LocalRename(dialog) => self.render_local_rename(dialog, cx),
             DialogSnapshot::Modal {
@@ -1604,6 +1684,16 @@ impl Render for DialogPresenter {
             .on_action(
                 cx.listener(|this, _: &DialogFocusPrev, window, cx| this.on_focus_prev(window, cx)),
             )
+            .on_action(cx.listener(|this, _: &DialogPrevious, _, cx| {
+                this.owner
+                    .update(cx, |app, cx| app.move_ansi_palette_selection(false, cx))
+                    .ok();
+            }))
+            .on_action(cx.listener(|this, _: &DialogNext, _, cx| {
+                this.owner
+                    .update(cx, |app, cx| app.move_ansi_palette_selection(true, cx))
+                    .ok();
+            }))
             .on_action(cx.listener(|this, _: &DialogSubmit, window, cx| this.on_submit(window, cx)))
             .on_action(cx.listener(|this, _: &DialogCancel, window, cx| this.on_cancel(window, cx)))
             .child(div().track_focus(&self.focus.start))
@@ -1621,6 +1711,18 @@ impl Render for DialogPresenter {
 impl AppView {
     fn requested_dialog(&self) -> Option<DialogPayload> {
         let locale = self.locale;
+        if let Some(dialog) = self.ansi_palette_dialog {
+            return Some(DialogPayload {
+                identity: DialogIdentity {
+                    locale,
+                    kind: DialogIdentityKind::AnsiPalette,
+                },
+                snapshot: DialogSnapshot::AnsiPalette {
+                    palettes: self.ansi_palette_choices(),
+                    selected: dialog.selected,
+                },
+            });
+        }
         if let Some(editor) = &self.editor {
             let save_state = editor_save_state(self.saving_editor, editor.id);
             let tags: Vec<Tag> = self
@@ -1775,8 +1877,10 @@ impl AppView {
                 cx.notify();
             }
             (Some(payload), None) => {
+                let overlay_closable =
+                    matches!(&payload.snapshot, DialogSnapshot::AnsiPalette { .. });
                 let owner = cx.entity().downgrade();
-                let presenter = cx.new(|cx| DialogPresenter::new(owner, payload, cx));
+                let presenter = cx.new(|cx| DialogPresenter::new(owner.clone(), payload, cx));
                 let presenter_entity = presenter.clone();
                 self.dialog_presenter = Some(presenter);
                 window.open_dialog(cx, move |mut dialog, window, _cx| {
@@ -1788,12 +1892,22 @@ impl AppView {
                     // engages and the panel stays fully visible.
                     dialog.style().max_size.height =
                         Some((window.viewport_size().height * 0.8).into());
-                    dialog
-                        .overlay_closable(false)
+                    let mut dialog = dialog
+                        .overlay_closable(overlay_closable)
                         .keyboard(false)
                         .close_button(false)
                         .width(width)
-                        .child(presenter)
+                        .child(presenter);
+                    if overlay_closable {
+                        let owner = owner.clone();
+                        dialog = dialog.on_cancel(move |_, _, cx| {
+                            owner
+                                .update(cx, |app, cx| app.close_ansi_palette_dialog(cx))
+                                .ok();
+                            true
+                        });
+                    }
+                    dialog
                 });
                 self.schedule_dialog_focus(window, cx);
             }

@@ -70,6 +70,23 @@ Put JSON files in the `themes` directory beside the executable (`target/debug/th
 
 Invalid or missing selected files fall back to the built-in palette without changing the saved selection. Reopen Settings or restart the app after editing a file. Terminal ANSI palettes remain separate settings.
 
+#### Terminal ANSI palettes
+
+Put JSON files in the `palettes` directory beside the executable. Each file name becomes a palette name, and each file contains exactly 16 `#RRGGBB` colors in ANSI index order (0–7 standard, 8–15 bright). The names `built-in` and `custom` are reserved.
+
+```json
+{
+  "colors": [
+    "#1B1D23", "#E06C75", "#98C379", "#E5C07B",
+    "#61AFEF", "#C678DD", "#56B6C2", "#ABB2BF",
+    "#5C6370", "#FF7B86", "#B3E98C", "#FFD68A",
+    "#76C7FF", "#D99BFF", "#70E1ED", "#F5F7FA"
+  ]
+}
+```
+
+Choose a palette under **Settings → Appearance → ANSI palette**; selection is saved and applied immediately. Palette files are read only at startup, so restart after adding or editing them. Invalid or missing selections retain the saved name and report an error while using the fixed **Built-in** entry. A legacy inline palette appears as **Custom** until another entry is selected.
+
 > Sidebar entries for Keychain, Port forwarding, Snippets, Known Hosts, and Logs are placeholders. Port forwarding and snippets are not implemented yet.
 
 ## Platform support

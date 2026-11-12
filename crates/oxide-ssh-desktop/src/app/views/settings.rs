@@ -49,7 +49,14 @@ impl AppView {
         control: AnyElement,
         cx: &Context<Self>,
     ) -> AnyElement {
-        self.setting_row_with_error(title, description, control, None, cx)
+        self.setting_row_with_error(
+            title,
+            description,
+            control,
+            None,
+            MessageId::ThemeFileError,
+            cx,
+        )
     }
 
     fn setting_row_with_error(
@@ -58,6 +65,7 @@ impl AppView {
         description: MessageId,
         control: AnyElement,
         error: Option<&str>,
+        error_label: MessageId,
         cx: &Context<Self>,
     ) -> AnyElement {
         let mut labels = div()
@@ -83,7 +91,7 @@ impl AppView {
                 div()
                     .text_sm()
                     .text_color(cx.theme().danger)
-                    .child(format!("{} {error}", self.text(MessageId::ThemeFileError))),
+                    .child(format!("{} {error}", self.text(error_label))),
             );
         }
         h_flex()
@@ -334,6 +342,7 @@ impl AppView {
                             .with_size(gpui_component::Size::Small)
                             .into_any_element(),
                         self.light_theme_error.as_deref(),
+                        MessageId::ThemeFileError,
                         cx,
                     ),
                     self.setting_row_with_error(
@@ -344,6 +353,7 @@ impl AppView {
                             .with_size(gpui_component::Size::Small)
                             .into_any_element(),
                         self.dark_theme_error.as_deref(),
+                        MessageId::ThemeFileError,
                         cx,
                     ),
                     self.setting_row(
@@ -394,33 +404,48 @@ impl AppView {
                             .into_any_element(),
                         cx,
                     ),
-                    self.setting_row(
+                    self.setting_row_with_error(
                         MessageId::AnsiPalette,
                         MessageId::AnsiPaletteDescription,
                         div()
                             .flex()
                             .flex_col()
+                            .items_end()
                             .gap(px(8.))
-                            .child(Input::new(&self.ansi_palette_input).w(px(280.)))
                             .child(
                                 h_flex()
-                                    .gap(px(8.))
+                                    .items_center()
+                                    .gap(px(12.))
+                                    .child(ansi_palette_preview(
+                                        &self.terminal_colors().ansi.map(|color| color.to_hex()),
+                                        px(12.),
+                                        cx,
+                                    ))
                                     .child(
-                                        Button::new("save-ansi-palette")
-                                            .label(self.text(MessageId::Save))
-                                            .on_click(cx.listener(|this, _, window, cx| {
-                                                this.save_ansi_palette(window, cx);
-                                            })),
-                                    )
-                                    .child(
-                                        Button::new("reset-ansi-palette")
-                                            .label(self.text(MessageId::Reset))
-                                            .on_click(cx.listener(|this, _, window, cx| {
-                                                this.reset_ansi_palette(window, cx);
-                                            })),
+                                        div().text_sm().child(SharedString::from(
+                                            match self.ansi_palette_name() {
+                                                BUILT_IN_PALETTE => {
+                                                    self.text(MessageId::BuiltInAnsiPalette)
+                                                }
+                                                CUSTOM_PALETTE => {
+                                                    self.text(MessageId::CustomAnsiPalette)
+                                                }
+                                                name => name,
+                                            }
+                                            .to_owned(),
+                                        )),
                                     ),
                             )
+                            .child(
+                                Button::new("change-ansi-palette")
+                                    .label(self.text(MessageId::Change))
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.open_ansi_palette_dialog(cx);
+                                    })),
+                            )
                             .into_any_element(),
+                        self.ansi_palette_error(),
+                        MessageId::AnsiPaletteFileError,
                         cx,
                     ),
                 ],

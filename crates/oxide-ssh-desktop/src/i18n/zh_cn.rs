@@ -53,9 +53,12 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::CursorBlink => "光标闪烁",
         MessageId::CursorBlinkDescription => "默认启用光标闪烁",
         MessageId::AnsiPalette => "ANSI 调色板",
-        MessageId::AnsiPaletteDescription => {
-            "按索引顺序输入 16 个逗号分隔的 RGB 十六进制颜色（0–7 标准色，8–15 高亮色）。"
-        }
+        MessageId::AnsiPaletteDescription => "从启动时加载的 JSON 文件中选择 16 色调色板",
+        MessageId::SelectAnsiPalette => "选择 ANSI 调色板",
+        MessageId::BuiltInAnsiPalette => "内置",
+        MessageId::CustomAnsiPalette => "自定义",
+        MessageId::AnsiPaletteFileError => "调色板文件错误，已回退到内置 ANSI 配色：",
+        MessageId::Change => "更改",
         MessageId::Reset => "重置",
         MessageId::CopyOnSelect => "选中即复制",
         MessageId::CopyOnSelectDescription => "将选中的终端文本复制到剪贴板",

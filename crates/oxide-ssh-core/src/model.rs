@@ -505,6 +505,8 @@ pub struct AppSettings {
         deserialize_with = "deserialize_ansi_palette"
     )]
     pub ansi_palette: Option<[u32; 16]>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ansi_palette_file: Option<String>,
     #[serde(default = "default_keepalive_interval")]
     pub ssh_keepalive_interval_seconds: u64,
     #[serde(default = "default_keepalive_max")]
@@ -615,6 +617,7 @@ impl Default for AppSettings {
             window_size: None,
             confirm_before_close_with_sessions: default_confirm_before_close_with_sessions(),
             ansi_palette: None,
+            ansi_palette_file: None,
             terminal_bell: TerminalBell::default(),
             paste_confirm_threshold: default_paste_confirm_threshold(),
             osc52_clipboard: Osc52Clipboard::default(),

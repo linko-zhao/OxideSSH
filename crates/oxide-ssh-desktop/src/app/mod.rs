@@ -9,8 +9,8 @@ use gpui::{
     actions, div, fill, point, prelude::*, px, relative, rgb, size,
 };
 use gpui_component::{
-    ActiveTheme as _, Disableable as _, Icon, IconName, IndexPath, Root, Sizable as _,
-    WindowExt as _,
+    ActiveTheme as _, Disableable as _, Icon, IconName, IndexPath, Root, Selectable as _,
+    Sizable as _, WindowExt as _,
     alert::Alert,
     button::{Button, ButtonVariants as _},
     checkbox::Checkbox,
@@ -56,6 +56,9 @@ use crate::{
     state::{
         AppLoadOutcome, AppState,
         connection_form::{AuthMethod, ConnectionForm, FormError},
+        palette::{
+            AnsiPalette, AnsiPaletteCatalog, BUILT_IN_PALETTE, CUSTOM_PALETTE, palettes_directory,
+        },
         theme::{
             BUILT_IN_THEME, CARD_GAP, CARD_PADDING, ResolvedTheme, apply_theme, available_themes,
             load_theme,
@@ -113,6 +116,8 @@ actions!(
         TerminalShiftTab,
         DialogFocusNext,
         DialogFocusPrev,
+        DialogPrevious,
+        DialogNext,
         DialogSubmit,
         DialogCancel,
         QuitApp,
@@ -130,6 +135,8 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("shift-tab", DialogFocusPrev, Some("OxideSSHDialog")),
         KeyBinding::new("tab", DialogFocusNext, Some("OxideSSHDialog > Input")),
         KeyBinding::new("shift-tab", DialogFocusPrev, Some("OxideSSHDialog > Input")),
+        KeyBinding::new("up", DialogPrevious, Some("OxideSSHDialog")),
+        KeyBinding::new("down", DialogNext, Some("OxideSSHDialog")),
         KeyBinding::new("enter", DialogSubmit, Some("OxideSSHDialog")),
         KeyBinding::new("enter", DialogSubmit, Some("OxideSSHDialog > Input")),
         KeyBinding::new("escape", DialogCancel, Some("OxideSSHDialog")),
@@ -177,6 +184,11 @@ enum SettingsCategory {
     General,
     Appearance,
     Security,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct PaletteDialogState {
+    pub selected: usize,
 }
 
 fn new_input(
@@ -262,6 +274,29 @@ fn tag_color_rgb(color: TagColor) -> u32 {
     }
 }
 
+pub(super) fn ansi_palette_preview(colors: &[u32; 16], swatch: Pixels, cx: &App) -> AnyElement {
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(4.))
+        .children(colors.chunks(8).map(|row| {
+            h_flex()
+                .gap(px(4.))
+                .children(row.iter().map(|color| {
+                    div()
+                        .w(swatch)
+                        .h(swatch)
+                        .rounded(px(3.))
+                        .border_1()
+                        .border_color(cx.theme().border)
+                        .bg(rgb(*color))
+                        .into_any_element()
+                }))
+                .into_any_element()
+        }))
+        .into_any_element()
+}
+
 pub struct AppView {
     root: PathBuf,
     state: Option<AppState>,
@@ -295,7 +330,8 @@ pub struct AppView {
     terminal_font_family: Entity<InputState>,
     terminal_font_size: Entity<InputState>,
     terminal_line_height: Entity<InputState>,
-    ansi_palette_input: Entity<InputState>,
+    ansi_palettes: AnsiPaletteCatalog,
+    ansi_palette_dialog: Option<PaletteDialogState>,
     ssh_keepalive_interval: Entity<InputState>,
     ssh_keepalive_max_count: Entity<InputState>,
     terminal_bell_select: SettingSelect,
@@ -341,22 +377,71 @@ pub struct AppView {
 }
 
 impl AppView {
+    fn ansi_palette_override(&self) -> Option<[u32; 16]> {
+        let settings = self.state.as_ref()?.settings();
+        if let Some(name) = &settings.ansi_palette_file {
+            return self.ansi_palettes.get(name).map(|palette| palette.colors);
+        }
+        settings.ansi_palette
+    }
+
+    pub(super) fn ansi_palette_name(&self) -> &str {
+        let Some(settings) = self.state.as_ref().map(|state| state.settings()) else {
+            return BUILT_IN_PALETTE;
+        };
+        if let Some(name) = &settings.ansi_palette_file {
+            name
+        } else if settings.ansi_palette.is_some() {
+            CUSTOM_PALETTE
+        } else {
+            BUILT_IN_PALETTE
+        }
+    }
+
+    pub(super) fn ansi_palette_error(&self) -> Option<&str> {
+        let name = self
+            .state
+            .as_ref()?
+            .settings()
+            .ansi_palette_file
+            .as_deref()?;
+        self.ansi_palettes.error(name)
+    }
+
+    pub(super) fn ansi_palette_choices(&self) -> Vec<AnsiPalette> {
+        let mut choices = vec![AnsiPalette {
+            name: BUILT_IN_PALETTE.to_owned(),
+            colors: self
+                .theme
+                .terminal_colors(None)
+                .ansi
+                .map(|color| color.to_hex()),
+        }];
+        if let Some(settings) = self.state.as_ref().map(|state| state.settings())
+            && settings.ansi_palette_file.is_none()
+            && let Some(colors) = settings.ansi_palette
+        {
+            choices.push(AnsiPalette {
+                name: CUSTOM_PALETTE.to_owned(),
+                colors,
+            });
+        }
+        choices.extend(self.ansi_palettes.palettes().iter().cloned());
+        choices
+    }
+
     pub(super) fn terminal_colors(&self) -> oxide_ssh_terminal::TerminalColors {
-        self.theme.terminal_colors(
-            self.state
-                .as_ref()
-                .and_then(|state| state.settings().ansi_palette),
-        )
+        self.theme.terminal_colors(self.ansi_palette_override())
     }
     pub(super) fn profile_terminal_colors(
         &self,
         profile: &ConnectionProfile,
     ) -> oxide_ssh_terminal::TerminalColors {
-        self.theme.terminal_colors(profile.ansi_palette.or_else(|| {
-            self.state
-                .as_ref()
-                .and_then(|state| state.settings().ansi_palette)
-        }))
+        self.theme.terminal_colors(
+            profile
+                .ansi_palette
+                .or_else(|| self.ansi_palette_override()),
+        )
     }
     pub fn new(
         root: PathBuf,
@@ -468,17 +553,9 @@ impl AppView {
             false,
             locale,
         );
-        let ansi_palette_input = cx.new(|cx| {
-            InputState::new(window, cx).default_value(
-                theme
-                    .terminal_colors(preferences.ansi_palette)
-                    .ansi
-                    .iter()
-                    .map(|color| format!("{:06x}", color.to_hex()))
-                    .collect::<Vec<_>>()
-                    .join(","),
-            )
-        });
+        let ansi_palettes = palettes_directory()
+            .map(|directory| AnsiPaletteCatalog::load(&directory))
+            .unwrap_or_default();
         let ssh_term_input = new_input(
             window,
             cx,
@@ -983,7 +1060,8 @@ impl AppView {
             terminal_font_family,
             terminal_font_size,
             terminal_line_height,
-            ansi_palette_input,
+            ansi_palettes,
+            ansi_palette_dialog: None,
             ssh_keepalive_interval,
             ssh_keepalive_max_count,
             terminal_bell_select,
@@ -1094,17 +1172,14 @@ impl AppView {
     }
 
     fn refresh_preferences(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some((locale, theme, theme_name, has_custom_ansi_palette)) =
-            self.state.as_ref().map(|state| {
-                let theme = state.resolved_theme(is_dark(window.appearance()));
-                (
-                    state.resolved_locale(self.system_locale.as_deref()),
-                    theme,
-                    state.theme_name(theme).to_owned(),
-                    state.settings().ansi_palette.is_some(),
-                )
-            })
-        else {
+        let Some((locale, theme, theme_name)) = self.state.as_ref().map(|state| {
+            let theme = state.resolved_theme(is_dark(window.appearance()));
+            (
+                state.resolved_locale(self.system_locale.as_deref()),
+                theme,
+                state.theme_name(theme).to_owned(),
+            )
+        }) else {
             return;
         };
         if self.locale != locale {
@@ -1126,18 +1201,6 @@ impl AppView {
                 ResolvedTheme::Dark => self.dark_theme_error = result.err(),
             }
             self.tabs.set_terminal_colors(self.terminal_colors());
-            if !has_custom_ansi_palette {
-                let value = self
-                    .terminal_colors()
-                    .ansi
-                    .iter()
-                    .map(|color| format!("{:06x}", color.to_hex()))
-                    .collect::<Vec<_>>()
-                    .join(",");
-                self.ansi_palette_input.update(cx, |input, cx| {
-                    input.set_value(value, window, cx);
-                });
-            }
         }
     }
 
@@ -1366,26 +1429,6 @@ impl AppView {
         for (input, value) in values {
             input.update(cx, |input, cx| input.set_value(value, window, cx));
         }
-        let palette = settings
-            .ansi_palette
-            .map(|colors| {
-                colors
-                    .iter()
-                    .map(|color| format!("{color:06x}"))
-                    .collect::<Vec<_>>()
-                    .join(",")
-            })
-            .unwrap_or_else(|| {
-                self.theme
-                    .terminal_colors(None)
-                    .ansi
-                    .iter()
-                    .map(|color| format!("{:06x}", color.to_hex()))
-                    .collect::<Vec<_>>()
-                    .join(",")
-            });
-        self.ansi_palette_input
-            .update(cx, |input, cx| input.set_value(palette, window, cx));
         self.update_setting_selects(window, cx);
     }
 
@@ -1615,45 +1658,59 @@ impl AppView {
         cx.notify();
     }
 
-    fn save_ansi_palette(&mut self, _: &mut Window, cx: &mut Context<Self>) {
-        let parsed =
-            crate::state::connection_form::parse_palette(&self.ansi_palette_input.read(cx).value())
-                .ok()
-                .flatten();
-        let Some(palette) = parsed else {
-            return;
-        };
-        if self
-            .state
-            .as_mut()
-            .is_some_and(|state| state.set_ansi_palette(Some(palette)).is_err())
-        {
-            self.status_message = Some(MessageId::StorageCorrupt);
-            return;
-        }
-        self.tabs.set_terminal_colors(self.terminal_colors());
+    pub(super) fn open_ansi_palette_dialog(&mut self, cx: &mut Context<Self>) {
+        let selected = self
+            .ansi_palette_choices()
+            .iter()
+            .position(|palette| palette.name == self.ansi_palette_name())
+            .unwrap_or(0);
+        self.ansi_palette_dialog = Some(PaletteDialogState { selected });
         cx.notify();
     }
 
-    fn reset_ansi_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let value = self
-            .theme
-            .terminal_colors(None)
-            .ansi
-            .iter()
-            .map(|color| format!("{:06x}", color.to_hex()))
-            .collect::<Vec<_>>()
-            .join(",");
-        if self
-            .state
-            .as_mut()
-            .is_some_and(|state| state.set_ansi_palette(None).is_err())
-        {
-            self.status_message = Some(MessageId::StorageCorrupt);
+    pub(super) fn close_ansi_palette_dialog(&mut self, cx: &mut Context<Self>) {
+        self.ansi_palette_dialog = None;
+        cx.notify();
+    }
+
+    pub(super) fn move_ansi_palette_selection(&mut self, next: bool, cx: &mut Context<Self>) {
+        let last = self.ansi_palette_choices().len().saturating_sub(1);
+        let Some(dialog) = &mut self.ansi_palette_dialog else {
             return;
+        };
+        dialog.selected = if next {
+            (dialog.selected + 1).min(last)
+        } else {
+            dialog.selected.saturating_sub(1)
+        };
+        cx.notify();
+    }
+
+    pub(super) fn confirm_ansi_palette_selection(&mut self, cx: &mut Context<Self>) {
+        let Some(dialog) = self.ansi_palette_dialog else {
+            return;
+        };
+        let choices = self.ansi_palette_choices();
+        let Some(palette) = choices.get(dialog.selected) else {
+            return;
+        };
+        self.select_ansi_palette(palette.name.clone(), cx);
+    }
+
+    pub(super) fn select_ansi_palette(&mut self, name: String, cx: &mut Context<Self>) {
+        if name != CUSTOM_PALETTE {
+            let name = (name != BUILT_IN_PALETTE).then_some(name);
+            if self
+                .state
+                .as_mut()
+                .is_some_and(|state| state.set_ansi_palette_file(name).is_err())
+            {
+                self.status_message = Some(MessageId::StorageCorrupt);
+                cx.notify();
+                return;
+            }
         }
-        self.ansi_palette_input
-            .update(cx, |input, cx| input.set_value(value, window, cx));
+        self.ansi_palette_dialog = None;
         self.tabs.set_terminal_colors(self.terminal_colors());
         cx.notify();
     }

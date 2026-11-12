@@ -58,8 +58,13 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::CursorBlinkDescription => "Blink the cursor by default",
         MessageId::AnsiPalette => "ANSI palette",
         MessageId::AnsiPaletteDescription => {
-            "Enter 16 comma-separated RGB hex colors in index order (0–7 standard, 8–15 bright)."
+            "Choose a 16-color palette from JSON files loaded at startup"
         }
+        MessageId::SelectAnsiPalette => "Select ANSI palette",
+        MessageId::BuiltInAnsiPalette => "Built-in",
+        MessageId::CustomAnsiPalette => "Custom",
+        MessageId::AnsiPaletteFileError => "Palette file error; using built-in ANSI colors:",
+        MessageId::Change => "Change",
         MessageId::Reset => "Reset",
         MessageId::CopyOnSelect => "Copy on select",
         MessageId::CopyOnSelectDescription => "Copy selected terminal text to the clipboard",
