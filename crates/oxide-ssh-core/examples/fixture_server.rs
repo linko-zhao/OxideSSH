@@ -4,7 +4,7 @@ use async_channel::{Sender, bounded};
 use russh::{
     Channel, ChannelId,
     keys::ssh_key::{Algorithm, HashAlg, LineEnding, PrivateKey, PublicKey},
-    server::{self, Msg, Server as _, Session},
+    server::{self, Msg, Server as _, Session, VerifiedPublicKey},
 };
 use tempfile::tempdir;
 
@@ -40,9 +40,9 @@ impl server::Handler for FixtureServer {
     async fn auth_publickey(
         &mut self,
         user: &str,
-        key: &PublicKey,
+        key: VerifiedPublicKey<'_>,
     ) -> Result<server::Auth, Self::Error> {
-        if user == "oxide" && key == self.accepted_key.as_ref() {
+        if user == "oxide" && key.public_key == self.accepted_key.as_ref() {
             Ok(server::Auth::Accept)
         } else {
             Ok(server::Auth::reject())

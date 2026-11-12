@@ -15,7 +15,7 @@ use parking_lot::Mutex;
 use russh::{
     ChannelMsg, Disconnect, client,
     keys::{
-        PrivateKeyWithHashAlg,
+        PrivateKeyWithHashAlg, PublicKeyOrCertificate,
         agent::client::{AgentClient, AgentStream},
         ssh_key::{self, HashAlg},
     },
@@ -576,12 +576,13 @@ impl client::Handler for ClientHandler {
 
     async fn check_server_key(
         &mut self,
-        server_public_key: &ssh_key::PublicKey,
+        server_public_key: &PublicKeyOrCertificate,
     ) -> Result<bool, Self::Error> {
         self.events
             .send(SessionEvent::StateChanged(SessionState::VerifyingHostKey))
             .await
             .map_err(|_| SessionError::Disconnected)?;
+        let server_public_key = server_public_key.public_key();
         let presented = PresentedHostKey {
             algorithm: server_public_key.algorithm().to_string(),
             public_key: server_public_key
@@ -921,7 +922,7 @@ mod tests {
     use russh::{
         Channel, ChannelId, Pty,
         keys::ssh_key::{Algorithm, LineEnding, PrivateKey, PublicKey},
-        server::{self, Server as _, Session},
+        server::{self, Server as _, Session, VerifiedPublicKey},
     };
     use tempfile::{TempDir, tempdir};
 
@@ -1421,9 +1422,14 @@ mod tests {
         async fn auth_publickey(
             &mut self,
             user: &str,
-            key: &PublicKey,
+            key: VerifiedPublicKey<'_>,
         ) -> Result<server::Auth, Self::Error> {
-            if user == "oxide" && self.accepted_keys.iter().any(|accepted| accepted == key) {
+            if user == "oxide"
+                && self
+                    .accepted_keys
+                    .iter()
+                    .any(|accepted| accepted == key.public_key)
+            {
                 Ok(server::Auth::Accept)
             } else {
                 Ok(server::Auth::reject())
