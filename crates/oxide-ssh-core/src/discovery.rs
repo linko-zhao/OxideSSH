@@ -142,15 +142,17 @@ fn decode_wsl_output(bytes: &[u8]) -> io::Result<String> {
 }
 
 fn decode_utf16_le(bytes: &[u8]) -> io::Result<String> {
-    if bytes.len() % 2 != 0 {
+    if !bytes.len().is_multiple_of(2) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "odd-length UTF-16 output",
         ));
     }
     let units: Vec<u16> = bytes
-        .chunks_exact(2)
-        .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|[low, high]| u16::from_le_bytes([*low, *high]))
         .collect();
     String::from_utf16(&units).map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
 }
@@ -280,13 +282,13 @@ impl Parser {
                 }),
             },
             "identityfile" => block.identity_files.extend(args.iter().cloned()),
-            "proxyjump" | "proxycommand" => {
-                if !args.iter().all(|arg| arg.eq_ignore_ascii_case("none")) {
-                    block.skip(SshConfigSkipReason::UnsupportedDirective {
-                        directive: keyword.to_owned(),
-                        value: args.join(" "),
-                    });
-                }
+            "proxyjump" | "proxycommand"
+                if !args.iter().all(|arg| arg.eq_ignore_ascii_case("none")) =>
+            {
+                block.skip(SshConfigSkipReason::UnsupportedDirective {
+                    directive: keyword.to_owned(),
+                    value: args.join(" "),
+                });
             }
             _ => {}
         }
@@ -317,10 +319,10 @@ impl Parser {
                     self.include_failed(pattern, error.to_string());
                 }
             }
-        } else if path.is_file() {
-            if let Err(error) = self.parse_file(&path) {
-                self.include_failed(pattern, error.to_string());
-            }
+        } else if path.is_file()
+            && let Err(error) = self.parse_file(&path)
+        {
+            self.include_failed(pattern, error.to_string());
         }
     }
 
@@ -441,21 +443,19 @@ mod tests {
         let root = write(
             dir.path(),
             "root.conf",
-            &format!(
-                "# comment\n\
-                 Host alpha\n\
-                 \tHostName alpha.example.com\n\
-                 \tUser alice\n\
-                 \tPort 2222\n\
-                 \tIdentityFile ~/.ssh/oxide-ssh-missing-key\n\
-                 \n\
-                 Host beta gamma\n\
-                 \tUser bob\n\
-                 \n\
-                 Include conf.d/*.conf\n\
-                 Host quoted\n\
-                 \tHostName \"quoted.example.com\"\n",
-            ),
+            "# comment\n\
+             Host alpha\n\
+             \tHostName alpha.example.com\n\
+             \tUser alice\n\
+             \tPort 2222\n\
+             \tIdentityFile ~/.ssh/oxide-ssh-missing-key\n\
+             \n\
+             Host beta gamma\n\
+             \tUser bob\n\
+             \n\
+             Include conf.d/*.conf\n\
+             Host quoted\n\
+             \tHostName \"quoted.example.com\"\n",
         );
         write(
             dir.path(),

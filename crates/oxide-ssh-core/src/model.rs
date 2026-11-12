@@ -28,6 +28,11 @@ impl LocalConnectionId {
         Self(Uuid::new_v4())
     }
 }
+impl Default for LocalConnectionId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
