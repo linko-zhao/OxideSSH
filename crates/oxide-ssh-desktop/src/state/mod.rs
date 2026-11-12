@@ -357,6 +357,19 @@ impl AppState {
         })
     }
 
+    pub fn set_terminal_base_colors(
+        &mut self,
+        foreground: Option<u32>,
+        background: Option<u32>,
+        cursor: Option<u32>,
+    ) -> Result<(), StorageError> {
+        self.update_settings(|settings| {
+            settings.terminal_foreground = foreground;
+            settings.terminal_background = background;
+            settings.terminal_cursor = cursor;
+        })
+    }
+
     pub fn set_cursor_preferences(
         &mut self,
         style: CursorStyleSetting,

@@ -507,6 +507,24 @@ pub struct AppSettings {
     pub ansi_palette: Option<[u32; 16]>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ansi_palette_file: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_terminal_color"
+    )]
+    pub terminal_foreground: Option<u32>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_terminal_color"
+    )]
+    pub terminal_background: Option<u32>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_terminal_color"
+    )]
+    pub terminal_cursor: Option<u32>,
     #[serde(default = "default_keepalive_interval")]
     pub ssh_keepalive_interval_seconds: u64,
     #[serde(default = "default_keepalive_max")]
@@ -598,6 +616,17 @@ where
     }
     Ok(Some(palette))
 }
+fn deserialize_terminal_color<'de, D>(deserializer: D) -> Result<Option<u32>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(value
+        .as_u64()
+        .filter(|color| *color <= 0x00ff_ffff)
+        .map(|color| color as u32))
+}
+
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
@@ -618,6 +647,9 @@ impl Default for AppSettings {
             confirm_before_close_with_sessions: default_confirm_before_close_with_sessions(),
             ansi_palette: None,
             ansi_palette_file: None,
+            terminal_foreground: None,
+            terminal_background: None,
+            terminal_cursor: None,
             terminal_bell: TerminalBell::default(),
             paste_confirm_threshold: default_paste_confirm_threshold(),
             osc52_clipboard: Osc52Clipboard::default(),

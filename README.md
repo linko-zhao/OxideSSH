@@ -70,6 +70,10 @@ Put JSON files in the `themes` directory beside the executable (`target/debug/th
 
 Invalid or missing selected files fall back to the built-in palette without changing the saved selection. Reopen Settings or restart the app after editing a file. Terminal ANSI palettes remain separate settings.
 
+#### Terminal base colors
+
+Configure terminal foreground, background, and cursor colors under **Settings → Appearance** using `#RRGGBB`. Leave a field blank to use the built-in color for the current theme mode. Changes are saved on input blur and immediately apply to every open and future terminal. These settings have no per-connection overrides; ANSI 16 colors remain a separate palette setting.
+
 #### Terminal ANSI palettes
 
 Put JSON files in the `palettes` directory beside the executable. Each file name becomes a palette name, and each file contains exactly 16 `#RRGGBB` colors in ANSI index order (0–7 standard, 8–15 bright). The names `built-in` and `custom` are reserved.

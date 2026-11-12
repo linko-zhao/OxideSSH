@@ -56,6 +56,11 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::CursorUnderline => "Underline",
         MessageId::CursorBlink => "Cursor blinking",
         MessageId::CursorBlinkDescription => "Blink the cursor by default",
+        MessageId::TerminalForeground => "Terminal foreground",
+        MessageId::TerminalBackground => "Terminal background",
+        MessageId::TerminalCursor => "Terminal cursor",
+        MessageId::TerminalColorDescription => "Blank uses the theme default; use #RRGGBB",
+        MessageId::InvalidTerminalColor => "Terminal colors must be blank or use #RRGGBB format.",
         MessageId::AnsiPalette => "ANSI palette",
         MessageId::AnsiPaletteDescription => {
             "Choose a 16-color palette from JSON files loaded at startup"

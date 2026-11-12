@@ -191,6 +191,22 @@ pub(super) struct PaletteDialogState {
     pub selected: usize,
 }
 
+fn terminal_color_text(color: Option<u32>) -> String {
+    color.map_or_else(String::new, |color| format!("#{color:06X}"))
+}
+
+fn parse_terminal_color(value: &str) -> Result<Option<u32>, ()> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Ok(None);
+    }
+    let digits = value.strip_prefix('#').ok_or(())?;
+    if digits.len() != 6 || !digits.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(());
+    }
+    u32::from_str_radix(digits, 16).map(Some).map_err(|_| ())
+}
+
 fn new_input(
     window: &mut Window,
     cx: &mut Context<AppView>,
@@ -330,6 +346,9 @@ pub struct AppView {
     terminal_font_family: Entity<InputState>,
     terminal_font_size: Entity<InputState>,
     terminal_line_height: Entity<InputState>,
+    terminal_foreground: Entity<InputState>,
+    terminal_background: Entity<InputState>,
+    terminal_cursor: Entity<InputState>,
     ansi_palettes: AnsiPaletteCatalog,
     ansi_palette_dialog: Option<PaletteDialogState>,
     ssh_keepalive_interval: Entity<InputState>,
@@ -431,17 +450,39 @@ impl AppView {
     }
 
     pub(super) fn terminal_colors(&self) -> oxide_ssh_terminal::TerminalColors {
-        self.theme.terminal_colors(self.ansi_palette_override())
+        self.terminal_colors_with_ansi(self.ansi_palette_override())
     }
     pub(super) fn profile_terminal_colors(
         &self,
         profile: &ConnectionProfile,
     ) -> oxide_ssh_terminal::TerminalColors {
-        self.theme.terminal_colors(
+        self.terminal_colors_with_ansi(
             profile
                 .ansi_palette
                 .or_else(|| self.ansi_palette_override()),
         )
+    }
+    fn terminal_colors_with_ansi(
+        &self,
+        ansi_palette: Option<[u32; 16]>,
+    ) -> oxide_ssh_terminal::TerminalColors {
+        let mut colors = self.theme.terminal_colors(ansi_palette);
+        if let Some(settings) = self.state.as_ref().map(|state| state.settings()) {
+            for (configured, target) in [
+                (settings.terminal_foreground, &mut colors.foreground),
+                (settings.terminal_background, &mut colors.background),
+                (settings.terminal_cursor, &mut colors.cursor),
+            ] {
+                if let Some(color) = configured {
+                    *target = oxide_ssh_terminal::RgbColor::new(
+                        ((color >> 16) & 0xff) as u8,
+                        ((color >> 8) & 0xff) as u8,
+                        (color & 0xff) as u8,
+                    );
+                }
+            }
+        }
+        colors
     }
     pub fn new(
         root: PathBuf,
@@ -534,6 +575,30 @@ impl AppView {
             cx,
             MessageId::TerminalLineHeight,
             &preferences.terminal_line_height.to_string(),
+            false,
+            locale,
+        );
+        let terminal_foreground = new_input(
+            window,
+            cx,
+            MessageId::TerminalColorDescription,
+            &terminal_color_text(preferences.terminal_foreground),
+            false,
+            locale,
+        );
+        let terminal_background = new_input(
+            window,
+            cx,
+            MessageId::TerminalColorDescription,
+            &terminal_color_text(preferences.terminal_background),
+            false,
+            locale,
+        );
+        let terminal_cursor = new_input(
+            window,
+            cx,
+            MessageId::TerminalColorDescription,
+            &terminal_color_text(preferences.terminal_cursor),
             false,
             locale,
         );
@@ -856,6 +921,33 @@ impl AppView {
                     },
                 ),
                 cx.subscribe_in(
+                    &terminal_foreground,
+                    window,
+                    |this, _, event: &InputEvent, _, cx| {
+                        if matches!(event, InputEvent::Blur) {
+                            this.commit_terminal_base_colors(cx);
+                        }
+                    },
+                ),
+                cx.subscribe_in(
+                    &terminal_background,
+                    window,
+                    |this, _, event: &InputEvent, _, cx| {
+                        if matches!(event, InputEvent::Blur) {
+                            this.commit_terminal_base_colors(cx);
+                        }
+                    },
+                ),
+                cx.subscribe_in(
+                    &terminal_cursor,
+                    window,
+                    |this, _, event: &InputEvent, _, cx| {
+                        if matches!(event, InputEvent::Blur) {
+                            this.commit_terminal_base_colors(cx);
+                        }
+                    },
+                ),
+                cx.subscribe_in(
                     &ssh_keepalive_interval,
                     window,
                     |this, _, event: &InputEvent, _, cx| {
@@ -1060,6 +1152,9 @@ impl AppView {
             terminal_font_family,
             terminal_font_size,
             terminal_line_height,
+            terminal_foreground,
+            terminal_background,
+            terminal_cursor,
             ansi_palettes,
             ansi_palette_dialog: None,
             ssh_keepalive_interval,
@@ -1413,6 +1508,18 @@ impl AppView {
                 settings.terminal_line_height.to_string(),
             ),
             (
+                &self.terminal_foreground,
+                terminal_color_text(settings.terminal_foreground),
+            ),
+            (
+                &self.terminal_background,
+                terminal_color_text(settings.terminal_background),
+            ),
+            (
+                &self.terminal_cursor,
+                terminal_color_text(settings.terminal_cursor),
+            ),
+            (
                 &self.ssh_keepalive_interval,
                 settings.ssh_keepalive_interval_seconds.to_string(),
             ),
@@ -1448,6 +1555,19 @@ impl AppView {
                 cx,
             );
         });
+        for input in [
+            &self.terminal_foreground,
+            &self.terminal_background,
+            &self.terminal_cursor,
+        ] {
+            input.update(cx, |field, cx| {
+                field.set_placeholder(
+                    Catalog::text(locale, MessageId::TerminalColorDescription),
+                    window,
+                    cx,
+                );
+            });
+        }
         if let Some(editor) = &self.editor {
             let fields = [
                 (&editor.name, MessageId::Name),
@@ -1714,6 +1834,27 @@ impl AppView {
         self.tabs.set_terminal_colors(self.terminal_colors());
         cx.notify();
     }
+    fn commit_terminal_base_colors(&mut self, cx: &mut Context<Self>) {
+        let foreground = parse_terminal_color(&self.terminal_foreground.read(cx).value());
+        let background = parse_terminal_color(&self.terminal_background.read(cx).value());
+        let cursor = parse_terminal_color(&self.terminal_cursor.read(cx).value());
+        let (Ok(foreground), Ok(background), Ok(cursor)) = (foreground, background, cursor) else {
+            self.status_message = Some(MessageId::InvalidTerminalColor);
+            cx.notify();
+            return;
+        };
+        if let Some(state) = &mut self.state
+            && state
+                .set_terminal_base_colors(foreground, background, cursor)
+                .is_err()
+        {
+            self.status_message = Some(MessageId::StorageCorrupt);
+            return;
+        }
+        self.tabs.set_terminal_colors(self.terminal_colors());
+        cx.notify();
+    }
+
     fn commit_ssh_keepalive(&mut self, cx: &mut Context<Self>) {
         let interval = self
             .ssh_keepalive_interval

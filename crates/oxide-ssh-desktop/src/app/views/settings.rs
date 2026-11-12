@@ -404,6 +404,30 @@ impl AppView {
                             .into_any_element(),
                         cx,
                     ),
+                    self.setting_row(
+                        MessageId::TerminalForeground,
+                        MessageId::TerminalColorDescription,
+                        Input::new(&self.terminal_foreground)
+                            .w(px(200.))
+                            .into_any_element(),
+                        cx,
+                    ),
+                    self.setting_row(
+                        MessageId::TerminalBackground,
+                        MessageId::TerminalColorDescription,
+                        Input::new(&self.terminal_background)
+                            .w(px(200.))
+                            .into_any_element(),
+                        cx,
+                    ),
+                    self.setting_row(
+                        MessageId::TerminalCursor,
+                        MessageId::TerminalColorDescription,
+                        Input::new(&self.terminal_cursor)
+                            .w(px(200.))
+                            .into_any_element(),
+                        cx,
+                    ),
                     self.setting_row_with_error(
                         MessageId::AnsiPalette,
                         MessageId::AnsiPaletteDescription,
