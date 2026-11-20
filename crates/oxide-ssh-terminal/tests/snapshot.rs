@@ -16,6 +16,7 @@ fn snapshot_exposes_text_styles_and_wide_cells() {
     engine.process_output("A\x1b[38;5;196m你".as_bytes());
 
     let snapshot = engine.snapshot();
+    assert_eq!(snapshot.cursor().point.column, 3);
     let cells: Vec<_> = snapshot.cells().collect();
     let a = cells.iter().find(|cell| cell.character == 'A').unwrap();
     assert_eq!(a.point.line, 0);
@@ -43,6 +44,31 @@ fn snapshot_exposes_combining_text_selection_and_cursor() {
     let cell = snapshot.cells().find(|cell| cell.character == 'e').unwrap();
     assert!(cell.selected);
     assert_eq!(cell.zerowidth(), Some(&['\u{301}'][..]));
+}
+
+#[test]
+fn snapshot_exposes_emoji_sequences_and_grid_columns() {
+    let mut engine = engine(10, 2);
+    engine.process_output("✈️A👩\u{200d}💻B".as_bytes());
+
+    let snapshot = engine.snapshot();
+    assert_eq!(snapshot.cursor().point.column, 7);
+    let cells: Vec<_> = snapshot.cells().collect();
+    let airplane = cells.iter().find(|cell| cell.character == '✈').unwrap();
+    assert_eq!(airplane.point.column, 0);
+    assert!(!airplane.style.wide);
+    assert_eq!(airplane.zerowidth(), Some(&['\u{fe0f}'][..]));
+    let ascii = cells.iter().find(|cell| cell.character == 'A').unwrap();
+    assert_eq!(ascii.point.column, 1);
+    let woman = cells.iter().find(|cell| cell.character == '👩').unwrap();
+    assert_eq!(woman.point.column, 2);
+    assert!(woman.style.wide);
+    assert_eq!(woman.zerowidth(), Some(&['\u{200d}'][..]));
+    let laptop = cells.iter().find(|cell| cell.character == '💻').unwrap();
+    assert_eq!(laptop.point.column, 4);
+    assert!(laptop.style.wide);
+    let trailing = cells.iter().find(|cell| cell.character == 'B').unwrap();
+    assert_eq!(trailing.point.column, 6);
 }
 
 #[test]

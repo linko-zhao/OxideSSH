@@ -54,12 +54,6 @@ pub(super) struct TerminalPrepaint {
     lines: Vec<(Point<Pixels>, ShapedLine)>,
 }
 
-#[derive(Clone, Copy, Eq, PartialEq)]
-struct RunKey {
-    style: CellRenderStyle,
-    selected: bool,
-}
-
 impl IntoElement for TerminalElement {
     type Element = Self;
 
@@ -156,12 +150,8 @@ impl Element for TerminalElement {
         let display_offset = content.display_offset() as i32;
 
         let mut row_text = Vec::with_capacity(geometry.rows);
-        let mut row_runs = Vec::with_capacity(geometry.rows);
-        let mut row_keys = Vec::with_capacity(geometry.rows);
         for _ in 0..geometry.rows {
-            row_text.push(String::with_capacity(geometry.columns));
-            row_runs.push(Vec::<TextRun>::new());
-            row_keys.push(None::<RunKey>);
+            row_text.push(Vec::new());
         }
 
         let mut backgrounds = Vec::with_capacity(geometry.rows * 4);
@@ -216,33 +206,36 @@ impl Element for TerminalElement {
             if style.wide_spacer || style.hidden {
                 continue;
             }
-            let text = &mut row_text[row];
-            let before = text.len();
+            if indexed.character == ' '
+                && indexed.zerowidth().is_none()
+                && !style.underline
+                && !style.strikeout
+            {
+                continue;
+            }
+            let mut text = String::new();
             text.push(indexed.character);
             if let Some(zerowidth) = indexed.zerowidth() {
                 text.extend(zerowidth);
             }
-            let byte_len = text.len() - before;
-            let key = RunKey { style, selected };
-            if row_keys[row] == Some(key) {
-                if let Some(run) = row_runs[row].last_mut() {
-                    run.len += byte_len;
-                }
+            let byte_len = text.len();
+            let mut font = base_font.clone();
+            if style.bold {
+                font = font.bold();
+            }
+            if style.italic {
+                font = font.italic();
+            }
+            let foreground = if selected {
+                terminal_colors.foreground.to_hex()
             } else {
-                row_keys[row] = Some(key);
-                let mut font = base_font.clone();
-                if style.bold {
-                    font = font.bold();
-                }
-                if style.italic {
-                    font = font.italic();
-                }
-                let foreground = if selected {
-                    terminal_colors.foreground.to_hex()
-                } else {
-                    style.foreground.to_hex()
-                };
-                row_runs[row].push(TextRun {
+                style.foreground.to_hex()
+            };
+            push_terminal_cell(
+                &mut row_text[row],
+                column,
+                text,
+                TextRun {
                     len: byte_len,
                     font,
                     color: rgb(foreground).into(),
@@ -256,22 +249,21 @@ impl Element for TerminalElement {
                         thickness: px(1.),
                         color: None,
                     }),
-                });
-            }
+                },
+            );
         }
         if let Some(segment) = background_segment {
             push_terminal_background(&mut backgrounds, segment, bounds, cell_width, cell_height);
         }
 
         let mut lines = Vec::with_capacity(geometry.rows);
-        for (row, (text, runs)) in row_text.into_iter().zip(row_runs).enumerate() {
-            let line = window
-                .text_system()
-                .shape_line(text.into(), font_size, &runs, None);
-            lines.push((
-                point(bounds.left(), bounds.top() + cell_height * row as f32),
-                line,
-            ));
+        for (row, cells) in row_text.into_iter().enumerate() {
+            for (origin, text, run) in position_terminal_row(row, cells, geometry) {
+                let line = window
+                    .text_system()
+                    .shape_line(text.into(), font_size, &[run], None);
+                lines.push((origin, line));
+            }
         }
 
         let cursor_row = usize::try_from(cursor.point.line + display_offset).ok();
@@ -358,6 +350,40 @@ impl Element for TerminalElement {
             let _ = line.paint(origin, window.line_height(), window, cx);
         }
     }
+}
+
+fn push_terminal_cell(
+    cells: &mut Vec<(usize, String, TextRun)>,
+    column: usize,
+    text: String,
+    run: TextRun,
+) {
+    if let Some((_, previous_text, previous_run)) = cells.last_mut()
+        && previous_text.ends_with('\u{200d}')
+    {
+        previous_text.push_str(&text);
+        previous_run.len = previous_text.len();
+        return;
+    }
+    cells.push((column, text, run));
+}
+
+fn position_terminal_row(
+    row: usize,
+    cells: Vec<(usize, String, TextRun)>,
+    geometry: TerminalGeometry,
+) -> impl Iterator<Item = (Point<Pixels>, String, TextRun)> {
+    let y = geometry.bounds.top() + geometry.cell_height * row as f32;
+    cells.into_iter().map(move |(column, text, run)| {
+        (
+            point(
+                geometry.bounds.left() + geometry.cell_width * column as f32,
+                y,
+            ),
+            text,
+            run,
+        )
+    })
 }
 
 fn push_terminal_background(
@@ -949,6 +975,77 @@ impl AppView {
             tab.terminal_mut().scroll_display(lines);
             cx.notify();
         }
+    }
+}
+
+#[cfg(test)]
+mod terminal_layout_tests {
+    use super::{TerminalGeometry, position_terminal_row, push_terminal_cell};
+    use gpui::{Bounds, TextRun, font, point, px, rgb, size};
+
+    #[test]
+    fn mixed_width_graphemes_keep_their_grid_origins() {
+        let run = TextRun {
+            len: 1,
+            font: font("Cascadia Mono"),
+            color: rgb(0xffffff).into(),
+            background_color: None,
+            underline: None,
+            strikethrough: None,
+        };
+        let cells = position_terminal_row(
+            0,
+            vec![(0, "你".into(), run.clone()), (2, "A".into(), run)],
+            TerminalGeometry {
+                bounds: Bounds::new(point(px(5.), px(7.)), size(px(80.), px(20.))),
+                cell_width: px(10.),
+                cell_height: px(20.),
+                columns: 8,
+                rows: 1,
+            },
+        )
+        .collect::<Vec<_>>();
+
+        assert_eq!(cells.len(), 2);
+        assert_eq!(cells[0].1, "你");
+        assert_eq!(cells[0].0, point(px(5.), px(7.)));
+        assert_eq!(cells[1].1, "A");
+        assert_eq!(cells[1].0, point(px(25.), px(7.)));
+    }
+
+    #[test]
+    fn zwj_cells_shape_together_without_moving_the_following_cell() {
+        let run = TextRun {
+            len: 0,
+            font: font("Cascadia Mono"),
+            color: rgb(0xffffff).into(),
+            background_color: None,
+            underline: None,
+            strikethrough: None,
+        };
+        let mut cells = Vec::new();
+        push_terminal_cell(&mut cells, 2, "👩\u{200d}".into(), run.clone());
+        push_terminal_cell(&mut cells, 4, "💻".into(), run.clone());
+        push_terminal_cell(&mut cells, 6, "B".into(), run);
+        let cells = position_terminal_row(
+            0,
+            cells,
+            TerminalGeometry {
+                bounds: Bounds::new(point(px(5.), px(7.)), size(px(80.), px(20.))),
+                cell_width: px(10.),
+                cell_height: px(20.),
+                columns: 8,
+                rows: 1,
+            },
+        )
+        .collect::<Vec<_>>();
+
+        assert_eq!(cells.len(), 2);
+        assert_eq!(cells[0].1, "👩\u{200d}💻");
+        assert_eq!(cells[0].2.len, "👩\u{200d}💻".len());
+        assert_eq!(cells[0].0, point(px(25.), px(7.)));
+        assert_eq!(cells[1].1, "B");
+        assert_eq!(cells[1].0, point(px(65.), px(7.)));
     }
 }
 

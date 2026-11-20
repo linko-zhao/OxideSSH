@@ -41,7 +41,7 @@ use oxide_ssh_core::{
     storage::StorageError,
 };
 use oxide_ssh_terminal::{
-    CellRenderStyle, CellSide, Key, KeyInput, Modifiers as TerminalModifiers, MouseAction,
+    CellSide, Key, KeyInput, Modifiers as TerminalModifiers, MouseAction,
     MouseButton as TerminalMouseButton, MouseInput, TerminalCursorShape, TerminalSize,
 };
 use secrecy::SecretString;
