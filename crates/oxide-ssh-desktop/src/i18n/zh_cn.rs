@@ -20,7 +20,7 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::Snippets => "代码片段",
         MessageId::KnownHosts => "已知主机",
         MessageId::Logs => "日志",
-        MessageId::NewHost => "新建主机",
+        MessageId::Add => "添加",
         MessageId::LocalTerminal => "本机终端",
         MessageId::LocalShellPath => "本地 Shell 程序路径",
         MessageId::LocalShellArgs => "本地 Shell 启动参数",
@@ -226,7 +226,7 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::TerminalFontSize => "终端字号",
         MessageId::TerminalLineHeight => "终端行高",
         MessageId::LocalWorkingDirectoryInvalid => "配置的本地工作目录不存在或无法访问。",
-        MessageId::DiscoverConfigurations => "发现配置",
+        MessageId::ManualAdd => "手动添加",
         MessageId::DiscoveryTitle => "发现连接",
         MessageId::DiscoveryDescription => {
             "扫描默认 OpenSSH 客户端配置和已安装的 WSL 发行版。勾选要添加的条目；点击导入前不会保存任何更改。"

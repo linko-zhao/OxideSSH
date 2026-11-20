@@ -227,6 +227,7 @@ impl AppView {
                             .is_some_and(|editor| editor.id == editor_id)
                         {
                             this.editor = None;
+                            this.discovery = None;
                         }
                         this.status_message = None;
                     }

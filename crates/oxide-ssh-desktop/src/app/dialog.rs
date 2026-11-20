@@ -1350,6 +1350,11 @@ impl DialogPresenter {
                 .update(cx, |app, cx| app.commit_discovery_import(cx))
                 .ok();
         });
+        let manual_add_listener = cx.listener(|this, _, window, cx| {
+            this.owner
+                .update(cx, |app, cx| app.show_add_connection(window, cx))
+                .ok();
+        });
         let import_count = dialog.import_count();
         let import_label = if import_count == 0 {
             self.text(MessageId::DiscoveryImport).to_owned()
@@ -1362,6 +1367,11 @@ impl DialogPresenter {
                     .flex()
                     .justify_end()
                     .gap(px(8.))
+                    .child(
+                        Button::new("manual-add-connection")
+                            .label(self.text(MessageId::ManualAdd))
+                            .on_click(manual_add_listener),
+                    )
                     .child(
                         Button::new("close-discovery")
                             .label(self.text(MessageId::Close))

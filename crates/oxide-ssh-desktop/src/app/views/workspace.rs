@@ -490,34 +490,15 @@ impl AppView {
                             .items_center()
                             .justify_between()
                             .child(
-                                h_flex()
-                                    .gap(px(8.))
-                                    .flex_wrap()
-                                    .child(
-                                        Button::new("add-connection")
-                                            .label(self.text(MessageId::NewHost))
-                                            .icon(IconName::Plus)
-                                            .primary()
-                                            .on_click(cx.listener(|this, _, window, cx| {
-                                                this.show_add_connection(window, cx)
-                                            })),
-                                    )
-                                    .child(
-                                        Button::new("local-terminal")
-                                            .label(self.text(MessageId::LocalTerminal))
-                                            .icon(IconName::SquareTerminal)
-                                            .on_click(cx.listener(|this, _, window, cx| {
-                                                this.connect_local(window, cx)
-                                            })),
-                                    )
-                                    .child(
-                                        Button::new("discover-configurations")
-                                            .label(self.text(MessageId::DiscoverConfigurations))
-                                            .icon(IconName::Search)
-                                            .on_click(cx.listener(|this, _, _, cx| {
-                                                this.open_discovery(cx)
-                                            })),
-                                    ),
+                                h_flex().child(
+                                    Button::new("add-connection")
+                                        .label(self.text(MessageId::Add))
+                                        .icon(IconName::Plus)
+                                        .primary()
+                                        .on_click(
+                                            cx.listener(|this, _, _, cx| this.open_discovery(cx)),
+                                        ),
+                                ),
                             )
                             .child(div().w(px(280.)).child(
                                 Input::new(&self.search).prefix(Icon::new(IconName::Search)),

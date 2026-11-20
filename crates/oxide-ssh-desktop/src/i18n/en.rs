@@ -20,7 +20,7 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::Snippets => "Snippets",
         MessageId::KnownHosts => "Known Hosts",
         MessageId::Logs => "Logs",
-        MessageId::NewHost => "New Host",
+        MessageId::Add => "Add",
         MessageId::LocalTerminal => "Local Terminal",
         MessageId::LocalShellPath => "Local shell executable",
         MessageId::LocalShellArgs => "Local shell arguments",
@@ -252,7 +252,7 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::LocalWorkingDirectoryInvalid => {
             "The configured local working directory does not exist or cannot be accessed."
         }
-        MessageId::DiscoverConfigurations => "Discover configurations",
+        MessageId::ManualAdd => "Add manually",
         MessageId::DiscoveryTitle => "Discover connections",
         MessageId::DiscoveryDescription => {
             "Scan the default OpenSSH client config and installed WSL distributions. Select the entries to add; nothing is saved until you import."
