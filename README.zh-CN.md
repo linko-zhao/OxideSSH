@@ -80,10 +80,10 @@ OxideSSH 是用 Rust 编写的桌面 SSH 客户端，采用原生 GPU 渲染界�
 ```json
 {
   "colors": [
-    "#1B1D23", "#E06C75", "#98C379", "#E5C07B",
-    "#61AFEF", "#C678DD", "#56B6C2", "#ABB2BF",
-    "#5C6370", "#FF7B86", "#B3E98C", "#FFD68A",
-    "#76C7FF", "#D99BFF", "#70E1ED", "#F5F7FA"
+    "#0D0D0D", "#E5484D", "#7FB069", "#D6A756",
+    "#6E9FDB", "#B583C7", "#65B8B2", "#D9D9D9",
+    "#5D5D5D", "#F26D72", "#9CC184", "#E7C77F",
+    "#8AB6E8", "#CFA0DC", "#83D0CA", "#FFFFFF"
   ]
 }
 ```

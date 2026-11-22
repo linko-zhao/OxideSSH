@@ -533,8 +533,8 @@ impl EntityInputHandler for AppView {
 /// component widget theme.
 fn terminal_selection_color(theme: ResolvedTheme) -> u32 {
     match theme {
-        ResolvedTheme::Dark => 0x5a4234,
-        ResolvedTheme::Light => 0xf2ddd0,
+        ResolvedTheme::Dark => 0x242424,
+        ResolvedTheme::Light => 0xececec,
     }
 }
 

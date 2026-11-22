@@ -165,21 +165,21 @@ impl ResolvedTheme {
     pub fn terminal_colors(self, ansi_palette: Option<[u32; 16]>) -> TerminalColors {
         let (foreground, background, cursor, default_palette) = match self {
             Self::Dark => (
-                0xe8e6dc,
-                0x1f1e1d,
-                0xd97757,
+                0xececec,
+                0x171717,
+                0xececec,
                 [
-                    0x1b1d23, 0xe06c75, 0x98c379, 0xe5c07b, 0x61afef, 0xc678dd, 0x56b6c2, 0xabb2bf,
-                    0x5c6370, 0xff7b86, 0xb3e98c, 0xffd68a, 0x76c7ff, 0xd99bff, 0x70e1ed, 0xf5f7fa,
+                    0x0d0d0d, 0xe5484d, 0x7fb069, 0xd6a756, 0x6e9fdb, 0xb583c7, 0x65b8b2, 0xd9d9d9,
+                    0x5d5d5d, 0xf26d72, 0x9cc184, 0xe7c77f, 0x8ab6e8, 0xcfa0dc, 0x83d0ca, 0xffffff,
                 ],
             ),
             Self::Light => (
-                0x1f1e1d,
-                0xfaf9f5,
-                0xd97757,
+                0x0d0d0d,
+                0xf7f7f7,
+                0x0d0d0d,
                 [
-                    0x202124, 0xb4232c, 0x2f7d32, 0x8a5a00, 0x005fb8, 0x7a3e9d, 0x007a7a, 0xdadce0,
-                    0x5f6368, 0xd93025, 0x188038, 0xb06000, 0x1967d2, 0x9334e6, 0x008b8b, 0xffffff,
+                    0x0d0d0d, 0xc42b1c, 0x337a3e, 0x8a5a00, 0x2764a5, 0x85519b, 0x287d78, 0xececec,
+                    0x5d5d5d, 0xd64535, 0x25834a, 0xa86b00, 0x1d73c9, 0x9c62b5, 0x168f88, 0xffffff,
                 ],
             ),
         };
@@ -558,12 +558,12 @@ mod tests {
             RgbColor::new(0x12, 0x34, 0x56)
         );
         assert_eq!(
-            ResolvedTheme::Light.terminal_colors(None).ansi[0],
-            RgbColor::new(0x20, 0x21, 0x24)
+            ResolvedTheme::Light.terminal_colors(None).ansi[1],
+            RgbColor::new(0xc4, 0x2b, 0x1c)
         );
         assert_eq!(
-            ResolvedTheme::Dark.terminal_colors(None).ansi[0],
-            RgbColor::new(0x1b, 0x1d, 0x23)
+            ResolvedTheme::Dark.terminal_colors(None).ansi[1],
+            RgbColor::new(0xe5, 0x48, 0x4d)
         );
     }
 }
