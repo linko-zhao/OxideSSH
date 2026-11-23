@@ -504,7 +504,7 @@ impl DialogPresenter {
             cx.notify();
         });
         let browse_button = Button::new("browse-private-key")
-            .label(text(MessageId::Browse))
+            .child(div().text_sm().child(text(MessageId::Browse)))
             .on_click(browse_listener);
         let mut tag_chips = h_flex().gap(px(6.)).flex_wrap();
         for tag in &editor.tags {
@@ -668,7 +668,7 @@ impl DialogPresenter {
                             .child(div().flex_1().child(Input::new(&editor.tag_name)))
                             .child(
                                 Button::new("create-tag")
-                                    .label(create_label)
+                                    .child(div().text_sm().child(create_label))
                                     .compact()
                                     .on_click(create_listener),
                             ),
@@ -683,12 +683,12 @@ impl DialogPresenter {
                         .gap(px(8.))
                         .child(
                             Button::new("cancel-editor")
-                                .label(self.text(MessageId::Cancel))
+                                .child(div().text_sm().child(self.text(MessageId::Cancel)))
                                 .on_click(cancel_listener),
                         )
                         .child(
                             Button::new("save-editor")
-                                .label(self.text(MessageId::Save))
+                                .child(div().text_sm().child(self.text(MessageId::Save)))
                                 .primary()
                                 .loading(editor.save_state == EditorSaveState::SavingThis)
                                 .disabled(editor.save_state != EditorSaveState::Idle)
@@ -764,12 +764,12 @@ impl DialogPresenter {
                     .gap(px(8.))
                     .child(
                         Button::new("cancel-confirm")
-                            .label(self.text(MessageId::Cancel))
+                            .child(div().text_sm().child(self.text(MessageId::Cancel)))
                             .on_click(cancel_listener),
                     )
                     .child(
                         Button::new("accept-confirm")
-                            .label(self.text(action_label))
+                            .child(div().text_sm().child(self.text(action_label)))
                             .danger()
                             .on_click(accept_listener),
                     ),
@@ -913,7 +913,7 @@ impl DialogPresenter {
                             .child(div().flex_1().child(Input::new(&entry.name)))
                             .child(
                                 Button::new(SharedString::from(format!("delete-tag-{}", id.0)))
-                                    .label(delete_label.clone())
+                                    .child(div().text_sm().child(delete_label.clone()))
                                     .icon(IconName::Delete)
                                     .ghost()
                                     .compact()
@@ -934,7 +934,7 @@ impl DialogPresenter {
                     .child(div().flex_1().child(Input::new(new_tag)))
                     .child(
                         Button::new("create-tag-from-manager")
-                            .label(create_label)
+                            .child(div().text_sm().child(create_label))
                             .compact()
                             .on_click(create_listener),
                     ),
@@ -943,7 +943,7 @@ impl DialogPresenter {
             .child(
                 div().flex().justify_end().child(
                     Button::new("close-tag-manager")
-                        .label(close_label)
+                        .child(div().text_sm().child(close_label))
                         .on_click(close_listener),
                 ),
             )
@@ -1019,7 +1019,7 @@ impl DialogPresenter {
             .child(
                 div().flex().justify_end().child(
                     Button::new("cancel-ansi-palette")
-                        .label(self.text(MessageId::Cancel))
+                        .child(div().text_sm().child(self.text(MessageId::Cancel)))
                         .on_click(cancel_listener),
                 ),
             )
@@ -1057,7 +1057,7 @@ impl DialogPresenter {
         };
         let mut scan_row = h_flex().items_center().gap(px(8.)).child(
             Button::new("discovery-scan")
-                .label(scan_label)
+                .child(div().text_sm().child(scan_label))
                 .icon(IconName::Search)
                 .loading(scanning)
                 .disabled(scanning)
@@ -1369,17 +1369,17 @@ impl DialogPresenter {
                     .gap(px(8.))
                     .child(
                         Button::new("manual-add-connection")
-                            .label(self.text(MessageId::ManualAdd))
+                            .child(div().text_sm().child(self.text(MessageId::ManualAdd)))
                             .on_click(manual_add_listener),
                     )
                     .child(
                         Button::new("close-discovery")
-                            .label(self.text(MessageId::Close))
+                            .child(div().text_sm().child(self.text(MessageId::Close)))
                             .on_click(close_listener),
                     )
                     .child(
                         Button::new("import-discovery")
-                            .label(import_label)
+                            .child(div().text_sm().child(import_label))
                             .primary()
                             .disabled(scanning || import_count == 0)
                             .on_click(import_listener),
@@ -1432,12 +1432,12 @@ impl DialogPresenter {
                         .gap(px(8.))
                         .child(
                             Button::new("cancel-local-rename")
-                                .label(self.text(MessageId::Cancel))
+                                .child(div().text_sm().child(self.text(MessageId::Cancel)))
                                 .on_click(cancel_listener),
                         )
                         .child(
                             Button::new("save-local-rename")
-                                .label(self.text(MessageId::Rename))
+                                .child(div().text_sm().child(self.text(MessageId::Rename)))
                                 .primary()
                                 .on_click(save_listener),
                         ),
@@ -1483,12 +1483,12 @@ impl DialogPresenter {
                             .gap(px(8.))
                             .child(
                                 Button::new("cancel-secret")
-                                    .label(self.text(MessageId::Cancel))
+                                    .child(div().text_sm().child(self.text(MessageId::Cancel)))
                                     .on_click(cancel_listener),
                             )
                             .child(
                                 Button::new("connect-once")
-                                    .label(self.text(MessageId::ConnectOnce))
+                                    .child(div().text_sm().child(self.text(MessageId::ConnectOnce)))
                                     .primary()
                                     .on_click(submit_listener),
                             ),
@@ -1542,13 +1542,15 @@ impl DialogPresenter {
                             .gap(px(8.))
                             .child(
                                 Button::new("reject-host-key")
-                                    .label(self.text(MessageId::Reject))
+                                    .child(div().text_sm().child(self.text(MessageId::Reject)))
                                     .danger()
                                     .on_click(reject_listener),
                             )
                             .child(
                                 Button::new("accept-host-key")
-                                    .label(self.text(MessageId::AcceptAndStore))
+                                    .child(
+                                        div().text_sm().child(self.text(MessageId::AcceptAndStore)),
+                                    )
                                     .primary()
                                     .on_click(accept_listener),
                             ),
@@ -1603,12 +1605,16 @@ impl DialogPresenter {
                             .gap(px(8.))
                             .child(
                                 Button::new("close-changed-host-key")
-                                    .label(self.text(MessageId::Close))
+                                    .child(div().text_sm().child(self.text(MessageId::Close)))
                                     .on_click(close_listener),
                             )
                             .child(
                                 Button::new("open-trusted-hosts")
-                                    .label(self.text(MessageId::OpenTrustedHosts))
+                                    .child(
+                                        div()
+                                            .text_sm()
+                                            .child(self.text(MessageId::OpenTrustedHosts)),
+                                    )
                                     .primary()
                                     .on_click(hosts_listener),
                             ),
@@ -1639,12 +1645,12 @@ impl DialogPresenter {
                             .gap(px(8.))
                             .child(
                                 Button::new("cancel-tab-close")
-                                    .label(self.text(MessageId::Cancel))
+                                    .child(div().text_sm().child(self.text(MessageId::Cancel)))
                                     .on_click(cancel_listener),
                             )
                             .child(
                                 Button::new("confirm-tab-close")
-                                    .label(self.text(MessageId::Close))
+                                    .child(div().text_sm().child(self.text(MessageId::Close)))
                                     .danger()
                                     .on_click(confirm_listener),
                             ),

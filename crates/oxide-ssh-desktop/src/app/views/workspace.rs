@@ -492,7 +492,7 @@ impl AppView {
                             .child(
                                 h_flex().child(
                                     Button::new("add-connection")
-                                        .label(self.text(MessageId::Add))
+                                        .child(div().text_sm().child(self.text(MessageId::Add)))
                                         .icon(IconName::Plus)
                                         .primary()
                                         .on_click(

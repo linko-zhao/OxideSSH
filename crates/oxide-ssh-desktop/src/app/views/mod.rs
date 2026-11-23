@@ -43,7 +43,11 @@ impl AppView {
                             .gap(px(10.))
                             .child(
                                 Button::new("recovery-open")
-                                    .label(self.text(MessageId::OpenConfigDirectory))
+                                    .child(
+                                        div()
+                                            .text_sm()
+                                            .child(self.text(MessageId::OpenConfigDirectory)),
+                                    )
                                     .on_click(
                                         cx.listener(|this, _, _, cx| {
                                             this.open_config_directory(cx)
@@ -52,7 +56,7 @@ impl AppView {
                             )
                             .child(
                                 Button::new("recovery-retry")
-                                    .label(self.text(MessageId::Retry))
+                                    .child(div().text_sm().child(self.text(MessageId::Retry)))
                                     .primary()
                                     .on_click(cx.listener(|this, _, window, cx| {
                                         this.retry_storage(window, cx)
@@ -179,7 +183,11 @@ impl AppView {
                                         .child(self.text(disconnect_reason_message_id(reason)))
                                         .child(
                                             Button::new("retry-session")
-                                                .label(self.text(MessageId::Retry))
+                                                .child(
+                                                    div()
+                                                        .text_sm()
+                                                        .child(self.text(MessageId::Retry)),
+                                                )
                                                 .primary()
                                                 .on_click(cx.listener(
                                                     move |this, _, window, cx| {

@@ -462,7 +462,7 @@ impl AppView {
                             )
                             .child(
                                 Button::new("change-ansi-palette")
-                                    .label(self.text(MessageId::Change))
+                                    .child(div().text_sm().child(self.text(MessageId::Change)))
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.open_ansi_palette_dialog(cx);
                                     })),
@@ -560,7 +560,11 @@ impl AppView {
                         )
                         .child(
                             Button::new("clear-all-credentials")
-                                .label(self.text(MessageId::ClearAllCredentials))
+                                .child(
+                                    div()
+                                        .text_sm()
+                                        .child(self.text(MessageId::ClearAllCredentials)),
+                                )
                                 .danger()
                                 .on_click(move |_, _, cx| {
                                     view.update(cx, |this, cx| {
@@ -588,7 +592,11 @@ impl AppView {
                         .p(px(16.))
                         .child(
                             Button::new("export-known-hosts")
-                                .label(self.text(MessageId::ExportKnownHosts))
+                                .child(
+                                    div().text_sm().child(
+                                        self.text(MessageId::ExportKnownHosts),
+                                    ),
+                                )
                                 .on_click(cx.listener(|_this, _, _, cx| {
                                     let receiver = cx.prompt_for_new_path(
                                         Path::new("."),
@@ -615,7 +623,11 @@ impl AppView {
                         )
                         .child(
                             Button::new("import-known-hosts-keep")
-                                .label(self.text(MessageId::ImportKeepExisting))
+                                .child(
+                                    div().text_sm().child(
+                                        self.text(MessageId::ImportKeepExisting),
+                                    ),
+                                )
                                 .on_click(cx.listener(|this, _, _, cx| {
                                     this.choose_known_hosts_import(
                                         oxide_ssh_core::storage::KnownHostsConflictPolicy::KeepExisting,
@@ -625,7 +637,11 @@ impl AppView {
                         )
                         .child(
                             Button::new("import-known-hosts-replace")
-                                .label(self.text(MessageId::ImportReplaceExisting))
+                                .child(
+                                    div().text_sm().child(
+                                        self.text(MessageId::ImportReplaceExisting),
+                                    ),
+                                )
                                 .on_click(cx.listener(|this, _, _, cx| {
                                     this.choose_known_hosts_import(
                                         oxide_ssh_core::storage::KnownHostsConflictPolicy::ReplaceExisting,
@@ -654,7 +670,11 @@ impl AppView {
                                     .gap(px(8.))
                                     .child(
                                         Button::new("config-export")
-                                            .label(self.text(MessageId::ConfigExport))
+                                            .child(
+                                                div().text_sm().child(
+                                                    self.text(MessageId::ConfigExport),
+                                                ),
+                                            )
                                             .on_click(cx.listener({
                                                 let store = store.clone();
                                                 move |_this, _, _, cx| {
@@ -685,7 +705,11 @@ impl AppView {
                                     )
                                     .child(
                                         Button::new("config-backup")
-                                            .label(self.text(MessageId::ConfigBackup))
+                                            .child(
+                                                div().text_sm().child(
+                                                    self.text(MessageId::ConfigBackup),
+                                                ),
+                                            )
                                             .on_click(cx.listener({
                                                 let store = store.clone();
                                                 move |_this, _, _, cx| {
@@ -716,7 +740,11 @@ impl AppView {
                                     )
                                     .child(
                                         Button::new("config-import")
-                                            .label(self.text(MessageId::ConfigImport))
+                                            .child(
+                                                div().text_sm().child(
+                                                    self.text(MessageId::ConfigImport),
+                                                ),
+                                            )
                                             .on_click(cx.listener({
                                                 let store = store.clone();
                                                 move |_this, _, window, cx| {
