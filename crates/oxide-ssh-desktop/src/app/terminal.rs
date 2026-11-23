@@ -1,5 +1,6 @@
 use super::messages::local_error_message_id;
 use super::*;
+use gpui::Keystroke;
 
 fn cursor_phase_visible(blinking: bool, focused: bool, blink_phase: bool) -> bool {
     !blinking || !focused || blink_phase
@@ -23,6 +24,14 @@ fn resolve_cursor_shape(
 
 fn cursor_visible(blinking: bool, focused: bool, blink_phase: bool) -> bool {
     cursor_phase_visible(blinking, focused, blink_phase)
+}
+
+fn terminal_text_key(keystroke: &Keystroke) -> Option<&str> {
+    if keystroke.modifiers.control && !keystroke.modifiers.alt && keystroke.key.len() == 1 {
+        Some(keystroke.key.as_str())
+    } else {
+        keystroke.key_char.as_deref()
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -638,7 +647,7 @@ impl AppView {
                 Key::Function(function)
             }
             _ => {
-                let Some(text) = keystroke.key_char.as_deref() else {
+                let Some(text) = terminal_text_key(keystroke) else {
                     return;
                 };
                 Key::Text(text)
@@ -982,6 +991,27 @@ impl AppView {
             tab.terminal_mut().scroll_display(lines);
             cx.notify();
         }
+    }
+}
+
+#[cfg(test)]
+mod keyboard_input_tests {
+    use super::terminal_text_key;
+    use gpui::Keystroke;
+
+    #[test]
+    fn control_z_uses_the_key_when_gpui_omits_key_char() {
+        let keystroke = Keystroke::parse("ctrl-z").unwrap();
+
+        assert_eq!(terminal_text_key(&keystroke), Some("z"));
+    }
+
+    #[test]
+    fn altgr_text_still_uses_key_char() {
+        let mut keystroke = Keystroke::parse("ctrl-alt-q").unwrap();
+        keystroke.key_char = Some("@".into());
+
+        assert_eq!(terminal_text_key(&keystroke), Some("@"));
     }
 }
 

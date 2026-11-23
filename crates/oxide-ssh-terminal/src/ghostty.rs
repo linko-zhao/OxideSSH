@@ -439,6 +439,8 @@ fn control_byte(text: &str) -> Option<u8> {
         [b']'] => Some(0x1d),
         [b'^'] => Some(0x1e),
         [b'_'] => Some(0x1f),
+        [b'@' | b' '] => Some(0x00),
+        [b'?'] => Some(0x7f),
         _ => None,
     }
 }

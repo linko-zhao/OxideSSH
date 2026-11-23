@@ -168,6 +168,9 @@ fn text_control_and_alt_are_encoded_without_loss() {
         ("]", 0x1d),
         ("^", 0x1e),
         ("_", 0x1f),
+        ("@", 0x00),
+        (" ", 0x00),
+        ("?", 0x7f),
     ] {
         assert_eq!(
             engine.encode_key(KeyInput::text(text).control()).as_slice(),
