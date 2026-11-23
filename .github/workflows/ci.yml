@@ -21,6 +21,21 @@ env:
   ZIG_TOOLCHAIN: 0.17.1
 
 jobs:
+  commit-title:
+    name: Pull request commit title
+    if: github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release-plz-')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate Conventional Commit
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          if ! [[ "$TITLE" =~ ^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\([^()]+\))?!?:\ .+ ]]; then
+            echo "PR title must be a Conventional Commit, for example: feat(terminal): add session search" >&2
+            exit 1
+          fi
+        shell: bash
+
   desktop:
     name: Desktop (${{ matrix.name }})
     strategy:
@@ -68,6 +83,10 @@ jobs:
 
       - name: Check formatting
         run: cargo fmt --all --check
+
+      - name: Check package version consistency
+        run: pwsh packaging/sync-version.ps1 -Check
+        shell: pwsh
 
       - name: Run Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings

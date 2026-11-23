@@ -68,6 +68,10 @@ jobs:
           shared-key: package-${{ matrix.target }}
           cache-on-failure: false
 
+      - name: Check package version consistency
+        run: pwsh packaging/sync-version.ps1 -Check
+        shell: pwsh
+
       - name: Build pinned libghostty-vt
         run: bash scripts/build-libghostty-vt.sh "${{ matrix.target }}"
         shell: bash

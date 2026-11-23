@@ -1,0 +1,19 @@
+[workspace]
+git_only = true
+git_release_enable = false
+git_tag_name = "v{{ version }}"
+release_always = false
+release_commits = "^(feat|fix)(\\([^)]+\\))?(!)?:"
+features_always_increment_minor = true
+changelog_path = "CHANGELOG.md"
+semver_check = false
+pr_branch_prefix = "release-plz-"
+pr_labels = ["release"]
+
+[changelog]
+protect_breaking_commits = true
+commit_parsers = [
+  { message = "^feat", group = "Added" },
+  { message = "^fix", group = "Fixed" },
+  { message = "^.*", skip = true },
+]
