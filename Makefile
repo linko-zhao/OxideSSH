@@ -14,9 +14,6 @@
 #   help         Show this help
 
 CARGO      := cargo
-PACKAGER   := $(CARGO) packager
-TARGET_WIN = x86_64-pc-windows-msvc
-TARGET_MAC = aarch64-apple-darwin
 TARGET_IOS = aarch64-apple-ios
 
 # ---------------------------------------------------------------------------
@@ -74,8 +71,7 @@ check-all: lint test audit
 # ---------------------------------------------------------------------------
 
 package-win:
-	$(CARGO) build -p oxide-ssh-desktop --release --target $(TARGET_WIN) --locked
-	$(PACKAGER) --release --target $(TARGET_WIN) --formats wix
+	powershell.exe -NoProfile -ExecutionPolicy Bypass -File packaging/package-windows.ps1
 
 package-mac:
 	sh packaging/package-macos.sh
