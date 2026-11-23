@@ -21,6 +21,8 @@ pub(super) fn editor_save_state(saving: Option<EditorId>, editor_id: EditorId) -
 pub(super) struct ConnectionEditor {
     pub(super) id: EditorId,
     pub(super) form: ConnectionForm,
+    pub(super) advanced_open: bool,
+    pub(super) error: Option<FormError>,
     pub(super) name: Entity<InputState>,
     pub(super) host: Entity<InputState>,
     pub(super) port: Entity<InputState>,
@@ -116,6 +118,8 @@ impl ConnectionEditor {
         Self {
             id: EditorId(Uuid::new_v4()),
             form,
+            advanced_open: false,
+            error: None,
             name,
             host,
             port,
@@ -133,6 +137,7 @@ impl ConnectionEditor {
     }
 
     fn request(&mut self, cx: &App) -> Result<crate::credentials::SaveProfileRequest, FormError> {
+        self.error = None;
         self.form.name = self.name.read(cx).value().to_string();
         self.form.host = self.host.read(cx).value().to_string();
         self.form.port = self.port.read(cx).value().to_string();
@@ -190,7 +195,20 @@ impl AppView {
         let request = match self.editor.as_mut().map(|editor| editor.request(cx)) {
             Some(Ok(request)) => request,
             Some(Err(error)) => {
-                self.status_message = Some(form_error_message_id(error));
+                if let Some(editor) = self.editor.as_mut() {
+                    editor.error = Some(error);
+                    if matches!(
+                        error,
+                        FormError::Keepalive
+                            | FormError::KeepaliveMaxCount
+                            | FormError::TerminalFontSize
+                            | FormError::AnsiPalette
+                            | FormError::EnvironmentVariable
+                    ) {
+                        editor.advanced_open = true;
+                    }
+                }
+                self.status_message = None;
                 cx.notify();
                 return;
             }
@@ -303,6 +321,13 @@ impl AppView {
                 field.set_value("", window, cx);
                 field.set_placeholder(Catalog::text(self.locale, placeholder), window, cx);
             });
+        }
+        cx.notify();
+    }
+
+    pub(super) fn toggle_editor_advanced(&mut self, cx: &mut Context<Self>) {
+        if let Some(editor) = &mut self.editor {
+            editor.advanced_open = !editor.advanced_open;
         }
         cx.notify();
     }

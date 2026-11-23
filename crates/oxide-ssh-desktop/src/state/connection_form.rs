@@ -153,7 +153,8 @@ impl ConnectionForm {
                 AuthMethod::Agent => AuthConfig::Agent,
             };
         let keepalive_interval = parse_override(&self.ssh_keepalive_interval_seconds)?;
-        let keepalive_max_count = parse_override(&self.ssh_keepalive_max_count)?;
+        let keepalive_max_count = parse_override(&self.ssh_keepalive_max_count)
+            .map_err(|_| FormError::KeepaliveMaxCount)?;
         let environment_variables: Vec<EnvironmentVariable> =
             serde_json::from_str(&self.environment_variables_json)
                 .map_err(|_| FormError::EnvironmentVariable)?;
@@ -179,7 +180,7 @@ impl ConnectionForm {
             ssh_keepalive_max_count: keepalive_max_count
                 .map(usize::try_from)
                 .transpose()
-                .map_err(|_| FormError::Keepalive)?,
+                .map_err(|_| FormError::KeepaliveMaxCount)?,
             environment_variables,
             terminal_font_size,
             ansi_palette,
@@ -241,6 +242,7 @@ pub enum FormError {
     Port,
     PrivateKeyPath,
     Keepalive,
+    KeepaliveMaxCount,
     TerminalFontSize,
     AnsiPalette,
     EnvironmentVariable,
@@ -335,7 +337,10 @@ mod tests {
             None
         );
         edit.ssh_keepalive_max_count = "0".into();
-        assert_eq!(edit.save_request().unwrap_err(), FormError::Keepalive);
+        assert_eq!(
+            edit.save_request().unwrap_err(),
+            FormError::KeepaliveMaxCount
+        );
     }
 
     #[test]

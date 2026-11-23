@@ -69,15 +69,15 @@ pub(super) fn tag_storage_error_message_id(error: &StorageError) -> MessageId {
 
 pub(super) fn form_error_message_id(error: FormError) -> MessageId {
     match error {
-        FormError::Name => MessageId::Name,
-        FormError::Host => MessageId::Host,
-        FormError::Username => MessageId::Username,
-        FormError::Port => MessageId::Port,
-        FormError::PrivateKeyPath => MessageId::PrivateKey,
-        FormError::Keepalive => MessageId::InvalidKeepalive,
+        FormError::Name => MessageId::InvalidName,
+        FormError::Host => MessageId::InvalidHost,
+        FormError::Username => MessageId::InvalidUsername,
+        FormError::Port => MessageId::InvalidPort,
+        FormError::PrivateKeyPath => MessageId::InvalidPrivateKeyPath,
+        FormError::Keepalive | FormError::KeepaliveMaxCount => MessageId::InvalidKeepalive,
         FormError::TerminalFontSize => MessageId::InvalidTerminalFontSize,
         FormError::AnsiPalette => MessageId::InvalidAnsiPalette,
-        FormError::EnvironmentVariable => MessageId::EnvironmentVariables,
+        FormError::EnvironmentVariable => MessageId::InvalidEnvironmentVariables,
     }
 }
 

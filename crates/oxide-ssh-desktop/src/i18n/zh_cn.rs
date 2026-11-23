@@ -5,6 +5,9 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::AppName => "OxideSSH",
         MessageId::SearchConnections => "搜索连接",
         MessageId::AddConnection => "添加连接",
+        MessageId::AdvancedOptions => "高级选项",
+        MessageId::ConnectionSettings => "连接",
+        MessageId::TerminalSettings => "终端",
         MessageId::NoConnections => "暂无连接",
         MessageId::NoSearchResults => "没有匹配的连接",
         MessageId::Workspace => "工作区",
@@ -91,6 +94,14 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::ProfileKeepaliveInterval => "主机保活间隔覆盖（秒；留空则继承）",
         MessageId::ProfileKeepaliveMaxCount => "主机保活最大未响应次数（留空则继承）",
         MessageId::InvalidKeepalive => "保活参数必须是正整数。",
+        MessageId::InvalidName => "名称须为 1–64 个字符。",
+        MessageId::InvalidHost => "主机须为不含空白或斜杠的 ASCII 主机名或 IP 地址。",
+        MessageId::InvalidUsername => "用户名须为 1–255 字节，且不能包含 NUL 或换行。",
+        MessageId::InvalidPort => "端口必须是 1–65535 的整数。",
+        MessageId::InvalidPrivateKeyPath => "请选择私钥文件。",
+        MessageId::InvalidEnvironmentVariables => {
+            "请输入有效的 JSON 数组；变量名只能包含字母、数字和下划线，且不能以数字开头。"
+        }
         MessageId::InvalidTerminalFontSize => "终端字号必须是正整数。",
         MessageId::InvalidAnsiPalette => "请输入 16 个逗号分隔的 RGB 十六进制颜色。",
         MessageId::LocalWorkingDirectory => "本地终端工作目录",

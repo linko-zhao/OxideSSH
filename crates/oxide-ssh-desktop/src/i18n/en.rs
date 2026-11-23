@@ -5,6 +5,9 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::AppName => "OxideSSH",
         MessageId::SearchConnections => "Search connections",
         MessageId::AddConnection => "Add connection",
+        MessageId::AdvancedOptions => "Advanced options",
+        MessageId::ConnectionSettings => "Connection",
+        MessageId::TerminalSettings => "Terminal",
         MessageId::NoConnections => "No connections yet",
         MessageId::NoSearchResults => "No matching connections",
         MessageId::Workspace => "Workspace",
@@ -103,6 +106,18 @@ pub(super) fn text(id: MessageId) -> &'static str {
             "Profile keepalive maximum missed replies (blank inherits)"
         }
         MessageId::InvalidKeepalive => "Keepalive values must be positive whole numbers.",
+        MessageId::InvalidName => "Enter a name between 1 and 64 characters.",
+        MessageId::InvalidHost => {
+            "Enter an ASCII hostname or IP address without whitespace or slashes."
+        }
+        MessageId::InvalidUsername => {
+            "Enter a username of 1–255 bytes without NUL or newline characters."
+        }
+        MessageId::InvalidPort => "Enter a whole-number port from 1 to 65535.",
+        MessageId::InvalidPrivateKeyPath => "Select a private key file.",
+        MessageId::InvalidEnvironmentVariables => {
+            "Enter a valid JSON array; variable names must be letters, digits, or underscores and cannot start with a digit."
+        }
         MessageId::InvalidTerminalFontSize => "Terminal font size must be a positive whole number.",
         MessageId::InvalidAnsiPalette => "Enter 16 comma-separated RGB hex colors.",
         MessageId::LocalWorkingDirectory => "Local terminal working directory",

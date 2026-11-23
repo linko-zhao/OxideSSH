@@ -1,3 +1,5 @@
+use std::cell::Cell;
+
 use super::discovery::{
     DiscoveryDialog, DiscoveryKey, LocalRenameDialog, discovered_username, skip_reason_text,
 };
@@ -134,6 +136,8 @@ struct EditorDialogSnapshot {
     is_editing: bool,
     auth_method: AuthMethod,
     remember: bool,
+    advanced_open: bool,
+    error: Option<FormError>,
     save_state: EditorSaveState,
     name: Entity<InputState>,
     host: Entity<InputState>,
@@ -151,6 +155,11 @@ struct EditorDialogSnapshot {
     tags: Vec<Tag>,
     tag_ids: Vec<TagId>,
     tag_name: Entity<InputState>,
+}
+
+struct EditorDialogLayout {
+    rows: Vec<gpui::AnyElement>,
+    footer: gpui::AnyElement,
 }
 
 struct DialogPayload {
@@ -182,6 +191,8 @@ pub(super) struct DialogPresenter {
     owner: WeakEntity<AppView>,
     payload: DialogPayload,
     focus: DialogFocusBoundary,
+    editor_scroll: gpui::ScrollHandle,
+    pending_error_scroll: Cell<bool>,
 }
 
 impl DialogPresenter {
@@ -190,6 +201,8 @@ impl DialogPresenter {
             owner,
             payload,
             focus: DialogFocusBoundary::new(cx),
+            editor_scroll: gpui::ScrollHandle::new(),
+            pending_error_scroll: Cell::new(false),
         }
     }
 
@@ -263,6 +276,44 @@ impl DialogPresenter {
         cx.stop_propagation();
     }
 
+    fn save_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let result = self
+            .owner
+            .update(cx, |app, cx| {
+                app.save_editor(window, cx);
+                app.editor
+                    .as_ref()
+                    .map(|editor| (editor.error, editor.advanced_open))
+            })
+            .ok()
+            .flatten();
+        let Some((error, advanced_open)) = result else {
+            return;
+        };
+        if let DialogSnapshot::Editor(editor) = &mut self.payload.snapshot {
+            editor.error = error;
+            editor.advanced_open = advanced_open;
+            let input = match error {
+                Some(FormError::Name) => Some(&editor.name),
+                Some(FormError::Host) => Some(&editor.host),
+                Some(FormError::Port) => Some(&editor.port),
+                Some(FormError::Username) => Some(&editor.username),
+                Some(FormError::PrivateKeyPath) => Some(&editor.private_key_path),
+                Some(FormError::Keepalive) => Some(&editor.ssh_keepalive_interval),
+                Some(FormError::KeepaliveMaxCount) => Some(&editor.ssh_keepalive_max_count),
+                Some(FormError::TerminalFontSize) => Some(&editor.terminal_font_size),
+                Some(FormError::AnsiPalette) => Some(&editor.ansi_palette),
+                Some(FormError::EnvironmentVariable) => Some(&editor.environment_variables),
+                None => None,
+            };
+            if let Some(input) = input {
+                self.pending_error_scroll.set(true);
+                input.update(cx, |input, cx| input.focus(window, cx));
+            }
+        }
+        cx.notify();
+    }
+
     /// Enter triggers the dialog's primary action; ignored while the action
     /// is in a disabled/in-progress state (e.g. an editor save in flight).
     fn on_submit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -271,9 +322,7 @@ impl DialogPresenter {
                 if editor.save_state != EditorSaveState::Idle {
                     return;
                 }
-                self.owner
-                    .update(cx, |app, cx| app.save_editor(window, cx))
-                    .ok();
+                self.save_editor(window, cx);
             }
             DialogSnapshot::Confirm { .. } => {
                 self.owner
@@ -416,8 +465,11 @@ impl DialogPresenter {
         &self,
         editor: &EditorDialogSnapshot,
         cx: &mut Context<Self>,
-    ) -> gpui::AnyElement {
+    ) -> EditorDialogLayout {
         let text = |id: MessageId| self.text(id).to_owned();
+        let danger = cx.theme().danger;
+        let error =
+            |target| (editor.error == Some(target)).then(|| text(form_error_message_id(target)));
         let name_label = text(MessageId::Name);
         let host_label = text(MessageId::Host);
         let port_label = text(MessageId::Port);
@@ -452,8 +504,6 @@ impl DialogPresenter {
         } else {
             text(MessageId::AddConnection)
         };
-        // The snapshot carries the editor identity; assert the projection
-        // agrees with the dialog identity.
         debug_assert!(matches!(
             &self.payload.identity.kind,
             DialogIdentityKind::Editor { editor_id, .. } if *editor_id == editor.editor_id
@@ -462,15 +512,20 @@ impl DialogPresenter {
         let cancel_listener = cx.listener(|this, _, _, cx| {
             this.owner.update(cx, |app, cx| app.cancel_editor(cx)).ok();
         });
-        let save_listener = cx.listener(|this, _, window, cx| {
-            this.owner
-                .update(cx, |app, cx| app.save_editor(window, cx))
-                .ok();
-        });
+        let save_listener = cx.listener(|this, _, window, cx| this.save_editor(window, cx));
         let browse_listener = cx.listener(|this, _, window, cx| {
             this.owner
                 .update(cx, |app, cx| app.browse_private_key(window, cx))
                 .ok();
+        });
+        let advanced_listener = cx.listener(|this, _, _, cx| {
+            let _ = this
+                .owner
+                .update(cx, |app, cx| app.toggle_editor_advanced(cx));
+            if let DialogSnapshot::Editor(editor) = &mut this.payload.snapshot {
+                editor.advanced_open = !editor.advanced_open;
+            }
+            cx.notify();
         });
         let auth_listener = cx.listener(|this, index, window, cx| {
             let method = match *index {
@@ -570,143 +625,311 @@ impl DialogPresenter {
             }
             cx.notify();
         });
-        v_form()
-            .w(px(560.))
-            .label_width(px(120.))
-            .child(
-                field().child(
-                    div()
-                        .text_size(px(20.))
-                        .font_weight(gpui::FontWeight::BOLD)
-                        .child(heading),
-                ),
-            )
-            .child(field().label(name_label).child(Input::new(&editor.name)))
-            .child(field().label(host_label).child(Input::new(&editor.host)))
-            .child(field().label(port_label).child(Input::new(&editor.port)))
-            .child(
-                field()
-                    .label(username_label)
-                    .child(Input::new(&editor.username)),
-            )
-            .child(
-                field()
-                    .label(keepalive_interval_label)
-                    .child(Input::new(&editor.ssh_keepalive_interval)),
-            )
-            .child(
-                field()
-                    .label(keepalive_max_count_label)
-                    .child(Input::new(&editor.ssh_keepalive_max_count)),
-            )
-            .child(
-                field()
-                    .label(terminal_font_size_label)
-                    .child(Input::new(&editor.terminal_font_size)),
-            )
-            .child(
-                field()
-                    .label(text(MessageId::AnsiPalette))
-                    .child(Input::new(&editor.ansi_palette)),
-            )
-            .child(
-                field().label(auth_label).child(
+
+        let mut rows = Vec::new();
+        let mut error_row = None;
+        let mut push_row = |element: gpui::AnyElement, target: Option<FormError>| {
+            if target.is_some() && editor.error == target {
+                error_row = Some(rows.len());
+            }
+            rows.push(element);
+        };
+        push_row(
+            div()
+                .text_size(px(20.))
+                .font_weight(gpui::FontWeight::BOLD)
+                .child(heading)
+                .into_any_element(),
+            None,
+        );
+        push_row(
+            field()
+                .label(name_label)
+                .child(Input::new(&editor.name))
+                .when_some(error(FormError::Name), |field, description| {
+                    field.description_fn(move |_, _| {
+                        div().text_color(danger).child(description.clone())
+                    })
+                })
+                .into_any_element(),
+            Some(FormError::Name),
+        );
+        let endpoint_error = match editor.error {
+            Some(FormError::Host) => Some(FormError::Host),
+            Some(FormError::Port) => Some(FormError::Port),
+            _ => None,
+        };
+        push_row(
+            h_flex()
+                .gap(px(8.))
+                .child(
+                    field()
+                        .label(host_label)
+                        .child(Input::new(&editor.host))
+                        .when_some(error(FormError::Host), |field, description| {
+                            field.description_fn(move |_, _| {
+                                div().text_color(danger).child(description.clone())
+                            })
+                        }),
+                )
+                .child(
+                    div().w(px(104.)).flex_none().child(
+                        field()
+                            .label(port_label)
+                            .child(Input::new(&editor.port))
+                            .when_some(error(FormError::Port), |field, description| {
+                                field.description_fn(move |_, _| {
+                                    div().text_color(danger).child(description.clone())
+                                })
+                            }),
+                    ),
+                )
+                .into_any_element(),
+            endpoint_error,
+        );
+        push_row(
+            field()
+                .label(username_label)
+                .child(Input::new(&editor.username))
+                .when_some(error(FormError::Username), |field, description| {
+                    field.description_fn(move |_, _| {
+                        div().text_color(danger).child(description.clone())
+                    })
+                })
+                .into_any_element(),
+            Some(FormError::Username),
+        );
+        push_row(
+            field()
+                .label(auth_label)
+                .child(
                     RadioGroup::horizontal("editor-auth")
                         .selected_index(Some(auth_index))
                         .child(Radio::new("auth-password").label(password_label))
                         .child(Radio::new("auth-private-key").label(private_key_label.clone()))
                         .child(Radio::new("auth-agent").label(text(MessageId::Agent)))
                         .on_click(auth_listener),
-                ),
-            )
-            // NOTE: Field::visible is a no-op in gpui-component 0.5.1 (the
-            // flag is stored but never read at render), so conditional
-            // fields must be included with `when`, not `.visible(false)`.
-            .when(editor.auth_method == AuthMethod::PrivateKey, |form| {
-                form.child(
-                    field().label(private_key_label).child(
+                )
+                .into_any_element(),
+            None,
+        );
+        if editor.auth_method == AuthMethod::PrivateKey {
+            push_row(
+                field()
+                    .label(private_key_label)
+                    .child(
                         h_flex()
                             .gap(px(8.))
                             .child(Input::new(&editor.private_key_path))
                             .child(browse_button),
-                    ),
-                )
-            })
-            .child(
-                field().label(text(MessageId::EnvironmentVariables)).child(
-                    div()
-                        .h(px(110.))
-                        .child(Input::new(&editor.environment_variables)),
-                ),
-            )
-            .when(secret_is_visible, |form| {
-                form.child(
-                    field()
-                        .label(secret_label)
-                        .child(Input::new(&editor.secret)),
-                )
-            })
-            .child(
+                    )
+                    .when_some(error(FormError::PrivateKeyPath), |field, description| {
+                        field.description_fn(move |_, _| {
+                            div().text_color(danger).child(description.clone())
+                        })
+                    })
+                    .into_any_element(),
+                Some(FormError::PrivateKeyPath),
+            );
+        }
+        if secret_is_visible {
+            push_row(
                 field()
-                    .label(text(MessageId::StartupCommand))
-                    .child(Input::new(&editor.startup_command)),
-            )
-            .when(secret_is_visible, |form| {
-                form.child(
-                    field().label(remember_label).child(
+                    .label(secret_label)
+                    .child(Input::new(&editor.secret))
+                    .into_any_element(),
+                None,
+            );
+            push_row(
+                field()
+                    .label_indent(false)
+                    .child(
                         Checkbox::new("editor-remember")
+                            .label(remember_label)
                             .checked(editor.remember)
                             .on_click(remember_listener),
-                    ),
-                )
-            })
-            .child(
-                field().label(tags_label).child(
-                    div().flex().flex_col().gap(px(8.)).child(tag_chips).child(
-                        h_flex()
-                            .gap(px(8.))
-                            .child(div().flex_1().child(Input::new(&editor.tag_name)))
-                            .child(
-                                Button::new("create-tag")
-                                    .child(div().text_sm().child(create_label))
-                                    .compact()
-                                    .on_click(create_listener),
-                            ),
-                    ),
-                ),
-            )
-            .child(
-                field().child(
-                    div()
-                        .flex()
-                        .justify_end()
-                        .gap(px(8.))
+                    )
+                    .into_any_element(),
+                None,
+            );
+        }
+        if editor.auth_method == AuthMethod::Agent {
+            push_row(
+                div()
+                    .text_sm()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(agent_description)
+                    .into_any_element(),
+                None,
+            );
+        }
+        push_row(
+            Button::new("toggle-editor-advanced")
+                .ghost()
+                .w_full()
+                .child(
+                    h_flex()
+                        .w_full()
+                        .items_center()
+                        .justify_between()
+                        .child(text(MessageId::AdvancedOptions))
                         .child(
-                            Button::new("cancel-editor")
-                                .child(div().text_sm().child(self.text(MessageId::Cancel)))
-                                .on_click(cancel_listener),
-                        )
-                        .child(
-                            Button::new("save-editor")
-                                .child(div().text_sm().child(self.text(MessageId::Save)))
-                                .primary()
-                                .loading(editor.save_state == EditorSaveState::SavingThis)
-                                .disabled(editor.save_state != EditorSaveState::Idle)
-                                .on_click(save_listener),
+                            Icon::new(if editor.advanced_open {
+                                IconName::ChevronDown
+                            } else {
+                                IconName::ChevronRight
+                            })
+                            .size(px(16.)),
                         ),
-                ),
-            )
-            .when(editor.auth_method == AuthMethod::Agent, |form| {
-                form.child(
-                    field().child(
-                        div()
-                            .text_sm()
-                            .text_color(cx.theme().muted_foreground)
-                            .child(agent_description),
-                    ),
                 )
-            })
-            .into_any_element()
+                .on_click(advanced_listener)
+                .into_any_element(),
+            None,
+        );
+        if editor.advanced_open {
+            push_row(
+                div()
+                    .pt(px(4.))
+                    .text_sm()
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .child(text(MessageId::ConnectionSettings))
+                    .into_any_element(),
+                None,
+            );
+            push_row(
+                field()
+                    .label(text(MessageId::StartupCommand))
+                    .child(Input::new(&editor.startup_command))
+                    .into_any_element(),
+                None,
+            );
+            push_row(
+                field()
+                    .label(keepalive_interval_label)
+                    .child(Input::new(&editor.ssh_keepalive_interval))
+                    .when_some(error(FormError::Keepalive), |field, description| {
+                        field.description_fn(move |_, _| {
+                            div().text_color(danger).child(description.clone())
+                        })
+                    })
+                    .into_any_element(),
+                Some(FormError::Keepalive),
+            );
+            push_row(
+                field()
+                    .label(keepalive_max_count_label)
+                    .child(Input::new(&editor.ssh_keepalive_max_count))
+                    .when_some(error(FormError::KeepaliveMaxCount), |field, description| {
+                        field.description_fn(move |_, _| {
+                            div().text_color(danger).child(description.clone())
+                        })
+                    })
+                    .into_any_element(),
+                Some(FormError::KeepaliveMaxCount),
+            );
+            push_row(
+                field()
+                    .label(text(MessageId::EnvironmentVariables))
+                    .child(Input::new(&editor.environment_variables).h(px(110.)))
+                    .when_some(
+                        error(FormError::EnvironmentVariable),
+                        |field, description| {
+                            field.description_fn(move |_, _| {
+                                div().text_color(danger).child(description.clone())
+                            })
+                        },
+                    )
+                    .into_any_element(),
+                Some(FormError::EnvironmentVariable),
+            );
+            push_row(
+                div()
+                    .pt(px(4.))
+                    .text_sm()
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .child(text(MessageId::TerminalSettings))
+                    .into_any_element(),
+                None,
+            );
+            push_row(
+                field()
+                    .label(terminal_font_size_label)
+                    .child(Input::new(&editor.terminal_font_size))
+                    .when_some(error(FormError::TerminalFontSize), |field, description| {
+                        field.description_fn(move |_, _| {
+                            div().text_color(danger).child(description.clone())
+                        })
+                    })
+                    .into_any_element(),
+                Some(FormError::TerminalFontSize),
+            );
+            push_row(
+                field()
+                    .label(text(MessageId::AnsiPalette))
+                    .child(Input::new(&editor.ansi_palette))
+                    .when_some(error(FormError::AnsiPalette), |field, description| {
+                        field.description_fn(move |_, _| {
+                            div().text_color(danger).child(description.clone())
+                        })
+                    })
+                    .into_any_element(),
+                Some(FormError::AnsiPalette),
+            );
+            let mut tags_content = div().flex().flex_col().gap(px(8.));
+            if !editor.tags.is_empty() {
+                tags_content = tags_content.child(tag_chips);
+            }
+            tags_content = tags_content.child(
+                h_flex()
+                    .gap(px(8.))
+                    .child(div().flex_1().child(Input::new(&editor.tag_name)))
+                    .child(
+                        Button::new("create-tag")
+                            .child(div().text_sm().child(create_label))
+                            .compact()
+                            .on_click(create_listener),
+                    ),
+            );
+            push_row(
+                div()
+                    .pt(px(4.))
+                    .text_sm()
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .child(tags_label)
+                    .into_any_element(),
+                None,
+            );
+            push_row(tags_content.into_any_element(), None);
+        }
+        drop(push_row);
+        if self.pending_error_scroll.replace(false)
+            && let Some(row) = error_row
+        {
+            self.editor_scroll.scroll_to_item(row);
+        }
+        let footer = div()
+            .flex()
+            .justify_end()
+            .gap(px(8.))
+            .pt(px(12.))
+            .mt(px(4.))
+            .border_t_1()
+            .border_color(cx.theme().border)
+            .child(
+                Button::new("cancel-editor")
+                    .child(div().text_sm().child(self.text(MessageId::Cancel)))
+                    .on_click(cancel_listener),
+            )
+            .child(
+                Button::new("save-editor")
+                    .child(div().text_sm().child(self.text(MessageId::Save)))
+                    .primary()
+                    .loading(editor.save_state == EditorSaveState::SavingThis)
+                    .disabled(editor.save_state != EditorSaveState::Idle)
+                    .on_click(save_listener),
+            )
+            .into_any_element();
+        EditorDialogLayout { rows, footer }
     }
 
     fn render_confirm(
@@ -1663,23 +1886,28 @@ impl DialogPresenter {
 
 impl Render for DialogPresenter {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let mut footer = None;
         let content = match &self.payload.snapshot {
-            DialogSnapshot::Editor(editor) => self.render_editor(editor, cx),
+            DialogSnapshot::Editor(editor) => {
+                let layout = self.render_editor(editor, cx);
+                footer = Some(layout.footer);
+                layout.rows
+            }
             DialogSnapshot::Confirm { action, affected } => {
-                self.render_confirm(action, *affected, cx)
+                vec![self.render_confirm(action, *affected, cx)]
             }
             DialogSnapshot::TagManager { entries, new_tag } => {
-                self.render_tag_manager(entries, new_tag, cx)
+                vec![self.render_tag_manager(entries, new_tag, cx)]
             }
             DialogSnapshot::AnsiPalette { palettes, selected } => {
-                self.render_ansi_palette(palettes, *selected, cx)
+                vec![self.render_ansi_palette(palettes, *selected, cx)]
             }
-            DialogSnapshot::Discovery(dialog) => self.render_discovery(dialog, cx),
-            DialogSnapshot::LocalRename(dialog) => self.render_local_rename(dialog, cx),
+            DialogSnapshot::Discovery(dialog) => vec![self.render_discovery(dialog, cx)],
+            DialogSnapshot::LocalRename(dialog) => vec![self.render_local_rename(dialog, cx)],
             DialogSnapshot::Modal {
                 request,
                 secret_input,
-            } => self.render_modal(request, secret_input, cx),
+            } => vec![self.render_modal(request, secret_input, cx)],
         };
         // The dialog panel is capped at 80% of the viewport (see
         // sync_dialog_layer); the library's own scroll region never engages
@@ -1717,9 +1945,14 @@ impl Render for DialogPresenter {
                 div()
                     .id("oxide-ssh-dialog-content")
                     .flex_1()
+                    .flex()
+                    .flex_col()
+                    .gap(px(8.))
                     .overflow_y_scroll()
-                    .child(content),
+                    .track_scroll(&self.editor_scroll)
+                    .children(content),
             )
+            .when_some(footer, |this, footer| this.child(footer))
             .child(div().track_focus(&self.focus.end))
     }
 }
@@ -1762,6 +1995,8 @@ impl AppView {
                     is_editing: editor.form.is_editing(),
                     auth_method: editor.form.auth_method,
                     remember: editor.form.remember,
+                    advanced_open: editor.advanced_open,
+                    error: editor.error,
                     save_state,
                     name: editor.name.clone(),
                     host: editor.host.clone(),
