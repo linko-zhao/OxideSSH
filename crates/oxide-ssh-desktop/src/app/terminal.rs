@@ -905,6 +905,13 @@ impl AppView {
         {
             cx.write_to_clipboard(ClipboardItem::new_string(text));
         }
+        if self.terminal_selecting
+            && !self.terminal_selection_dragged
+            && let Some(tab) = self.tabs.active().and_then(|id| self.tabs.tab_mut(id))
+        {
+            tab.terminal_mut().clear_selection();
+            cx.notify();
+        }
         self.terminal_selecting = false;
         self.terminal_selection_dragged = false;
     }
