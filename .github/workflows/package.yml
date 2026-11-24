@@ -17,11 +17,57 @@ env:
   CARGO_TERM_COLOR: always
   RUST_TOOLCHAIN: 1.97.1
   CARGO_PACKAGER_VERSION: 0.11.8
-  ZIG_TOOLCHAIN: 0.17.1
 
 jobs:
+  gate:
+    name: Require successful CI
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      ci_run_id: ${{ steps.wait-for-ci.outputs.run_id }}
+    steps:
+      - name: Wait for successful CI run
+        id: wait-for-ci
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for _ in $(seq 1 20); do
+            if ! runs=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${GITHUB_SHA}&branch=main&event=push&per_page=100"); then
+              echo "::error::Cannot list CI runs for $GITHUB_SHA; refusing to package."
+              exit 1
+            fi
+            run_id=$(jq -r --arg sha "$GITHUB_SHA" '[.workflow_runs[] | select(.head_sha == $sha and .head_branch == "main" and .event == "push" and .conclusion == "success")] | first | .id // empty' <<<"$runs")
+            if [[ -n "$run_id" ]]; then
+              echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            run_id=$(jq -r --arg sha "$GITHUB_SHA" '[.workflow_runs[] | select(.head_sha == $sha and .head_branch == "main" and .event == "push" and .status != "completed")] | first | .id // empty' <<<"$runs")
+            if [[ -n "$run_id" ]]; then
+              if gh run watch --exit-status "$run_id" --repo "$GITHUB_REPOSITORY"; then
+                echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              echo "::error::CI run $run_id did not succeed; refusing to package."
+              exit 1
+            fi
+
+            failed_count=$(jq -r --arg sha "$GITHUB_SHA" '[.workflow_runs[] | select(.head_sha == $sha and .head_branch == "main" and .event == "push" and .status == "completed")] | length' <<<"$runs")
+            if (( failed_count > 0 )); then
+              echo "::error::CI has completed without a successful run for $GITHUB_SHA; refusing to package."
+              exit 1
+            fi
+            sleep 15
+          done
+          echo "::error::No main-branch CI run appeared for $GITHUB_SHA; refusing to package."
+          exit 1
+
   package:
     name: Package (${{ matrix.name }})
+    needs: gate
     strategy:
       fail-fast: false
       matrix:
@@ -42,19 +88,24 @@ jobs:
               target/package/**/*.app/**
               target/package/**/*.dmg
     runs-on: ${{ matrix.os }}
-    env:
-      LIBGHOSTTY_VT_LIB_DIR: ${{ github.workspace }}/target/libghostty-vt/${{ matrix.target }}/stage/usr/lib
+    permissions:
+      actions: read
+      contents: read
     steps:
       - name: Check out source
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-      - name: Install Zig
-        uses: mlugg/setup-zig@8d6198c65fb0feaa111df26e6b467fea8345e46f # v2.0.5
-        with:
-          version: ${{ env.ZIG_TOOLCHAIN }}
 
-      - name: Install pkg-config
-        if: runner.os == 'Windows'
-        run: choco install pkgconfiglite --yes --no-progress
+      - name: Download CI binary
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: oxide-ssh-${{ matrix.target }}
+          run-id: ${{ needs.gate.outputs.ci_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: target/package
+
+      - name: Mark binary executable
+        if: runner.os == 'macOS'
+        run: chmod +x target/package/oxide-ssh
 
       - name: Install Rust toolchain
         run: rustup toolchain install ${{ env.RUST_TOOLCHAIN }} --profile minimal --target ${{ matrix.target }}
@@ -62,29 +113,19 @@ jobs:
       - name: Select Rust toolchain
         run: rustup default ${{ env.RUST_TOOLCHAIN }}
 
-      - name: Cache Cargo artifacts
+      - name: Cache installed Cargo binaries
         uses: Swatinem/rust-cache@bc2d2e71bd35c5549942babaa51a89c586b981d1 # v2.8.1
         with:
           shared-key: package-${{ matrix.target }}
-          cache-on-failure: false
-
-      - name: Build pinned libghostty-vt
-        run: bash scripts/build-libghostty-vt.sh "${{ matrix.target }}"
-        shell: bash
-
-      - name: Build desktop release
-        run: cargo build -p oxide-ssh-desktop --release --target ${{ matrix.target }} --locked
+          cache-targets: false
 
       - name: Install cargo-packager
         run: cargo install cargo-packager --version ${{ env.CARGO_PACKAGER_VERSION }} --locked
 
       - name: Create unsigned packages
-        run: |
-          rm -rf target/package
-          mkdir -p target/package
-          cp target/${{ matrix.target }}/release/oxide-ssh* target/package/
-          cargo packager --release --target ${{ matrix.target }} --formats ${{ matrix.formats }}
+        run: cargo packager --release --target ${{ matrix.target }} --formats ${{ matrix.formats }}
         shell: bash
+
       - name: Upload unsigned packages
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
