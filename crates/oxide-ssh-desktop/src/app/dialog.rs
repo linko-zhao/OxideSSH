@@ -901,7 +901,6 @@ impl DialogPresenter {
             );
             push_row(tags_content.into_any_element(), None);
         }
-        drop(push_row);
         if self.pending_error_scroll.replace(false)
             && let Some(row) = error_row
         {
