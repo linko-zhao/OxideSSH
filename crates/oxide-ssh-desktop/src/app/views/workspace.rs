@@ -43,7 +43,7 @@ impl AppView {
         let profile_for_delete = profile.clone();
         let view = cx.entity();
         let theme = cx.theme();
-        let border = theme.border;
+        let border = theme.input;
         let card_bg = theme.secondary;
         // Hover lifts the card one step above its resting background.
         let hover_bg = theme.accent;
@@ -188,7 +188,7 @@ impl AppView {
         let connection_for_delete = connection.clone();
         let view = cx.entity();
         let theme = cx.theme();
-        let border = theme.border;
+        let border = theme.input;
         let card_bg = theme.secondary;
         let hover_bg = theme.accent;
         let radius_lg = theme.radius_lg;

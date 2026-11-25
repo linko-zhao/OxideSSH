@@ -1,12 +1,56 @@
 use gpui::{
-    App, Div, ElementId, FontWeight, Hsla, ParentElement as _, SharedString, Styled, div, relative,
-    rems, rgba,
+    App, Div, ElementId, FontWeight, Hsla, InteractiveElement as _, IntoElement,
+    ParentElement as _, RenderOnce, SharedString, Styled, Window, div, prelude::FluentBuilder as _,
+    px, relative, rems, rgba,
 };
 use gpui_component::{
     ActiveTheme as _, Icon, Sizable as _,
     button::{Button, ButtonVariants as _},
+    checkbox::Checkbox,
     theme::Theme,
 };
+
+#[derive(IntoElement)]
+pub(super) struct CheckboxFocusRing {
+    id: ElementId,
+    checkbox: Checkbox,
+}
+
+pub(super) fn checkbox_focus_ring(
+    id: impl Into<ElementId>,
+    checkbox: Checkbox,
+) -> CheckboxFocusRing {
+    CheckboxFocusRing {
+        id: id.into(),
+        checkbox,
+    }
+}
+
+impl RenderOnce for CheckboxFocusRing {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        // gpui-component paints its own ring at 20% opacity; share its keyed
+        // focus handle and add an opaque outline that meets WCAG 1.4.11.
+        let focus_handle = window
+            .use_keyed_state(self.id, cx, |_, cx| cx.focus_handle())
+            .read(cx)
+            .clone();
+        let focused = focus_handle.is_focused(window);
+        div()
+            .relative()
+            .track_focus(&focus_handle)
+            .child(self.checkbox)
+            .when(focused, |this| {
+                this.child(
+                    div()
+                        .absolute()
+                        .inset(px(-3.))
+                        .rounded(px(4.))
+                        .border_2()
+                        .border_color(cx.theme().ring),
+                )
+            })
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum TextRole {

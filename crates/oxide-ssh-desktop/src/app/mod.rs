@@ -103,8 +103,8 @@ mod views;
 mod ui;
 
 use self::ui::{
-    ButtonDesign, ButtonSize, ButtonVariant, TextColor, TextRole, button, custom_button,
-    helper_text, icon_button, text as ui_text,
+    ButtonDesign, ButtonSize, ButtonVariant, TextColor, TextRole, button, checkbox_focus_ring,
+    custom_button, helper_text, icon_button, text as ui_text,
 };
 
 actions!(

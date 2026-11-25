@@ -3,6 +3,7 @@
   "raised": "#171717",
   "hover": "#242424",
   "border": "#2F2F2F",
+  "controlBorder": "#737373",
   "foreground": "#ECECEC",
   "mutedForeground": "#A3A3A3",
   "primary": "#ECECEC",

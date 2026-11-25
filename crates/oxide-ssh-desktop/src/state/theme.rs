@@ -19,6 +19,7 @@ pub struct ThemeOverrides {
     pub raised: Option<Hsla>,
     pub hover: Option<Hsla>,
     pub border: Option<Hsla>,
+    pub control_border: Option<Hsla>,
     pub foreground: Option<Hsla>,
     pub muted_foreground: Option<Hsla>,
     pub primary: Option<Hsla>,
@@ -36,6 +37,7 @@ struct RawThemeOverrides {
     raised: Option<String>,
     hover: Option<String>,
     border: Option<String>,
+    control_border: Option<String>,
     foreground: Option<String>,
     muted_foreground: Option<String>,
     primary: Option<String>,
@@ -73,6 +75,7 @@ impl ThemeOverrides {
             raised: parse_color(raw.raised, "raised")?,
             hover: parse_color(raw.hover, "hover")?,
             border: parse_color(raw.border, "border")?,
+            control_border: parse_color(raw.control_border, "controlBorder")?,
             foreground: parse_color(raw.foreground, "foreground")?,
             muted_foreground: parse_color(raw.muted_foreground, "mutedForeground")?,
             primary: parse_color(raw.primary, "primary")?,
@@ -251,9 +254,11 @@ fn apply_overrides(colors: &mut ThemeColor, theme: ResolvedTheme, overrides: &Th
     }
     if let Some(color) = overrides.border {
         colors.border = color;
-        colors.input = color;
         colors.window_border = color;
         colors.title_bar_border = color;
+    }
+    if let Some(color) = overrides.control_border {
+        colors.input = color;
     }
     if let Some(color) = overrides.foreground {
         colors.foreground = color;
@@ -278,13 +283,7 @@ fn apply_overrides(colors: &mut ThemeColor, theme: ResolvedTheme, overrides: &Th
         colors.list_active_border = color;
         colors.slider_thumb = color;
         colors.sidebar_primary = color;
-        colors.ring = Hsla {
-            a: match theme {
-                ResolvedTheme::Light => 0.45,
-                ResolvedTheme::Dark => 0.55,
-            },
-            ..color
-        };
+        colors.ring = color;
         colors.selection = Hsla {
             a: match theme {
                 ResolvedTheme::Light => 0.28,
@@ -346,7 +345,7 @@ fn apply_dark_palette(colors: &mut ThemeColor) {
     colors.muted = hsl(60., 2.1, 17.);
     colors.muted_foreground = muted_foreground;
     colors.border = border;
-    colors.input = border;
+    colors.input = hsl(45., 3., 52.);
     colors.caret = foreground;
     colors.window_border = border;
 
@@ -354,7 +353,7 @@ fn apply_dark_palette(colors: &mut ThemeColor) {
     colors.primary_hover = primary_hover;
     colors.primary_active = primary_active;
     colors.primary_foreground = primary_foreground;
-    colors.ring = hsla(15. / 360., 0.63, 0.60, 0.55);
+    colors.ring = primary;
     colors.selection = hsla(15. / 360., 0.55, 0.60, 0.35);
     colors.link = primary;
     colors.link_hover = primary_hover;
@@ -425,10 +424,10 @@ fn apply_light_palette(colors: &mut ThemeColor) {
     let border = hsl(52.5, 9.8, 83.9);
     let foreground = hsl(30., 3.3, 11.8);
     let muted_foreground = hsl(50., 2.9, 40.8);
-    let primary = hsl(14.8, 63.1, 59.6);
+    let primary = hsl(14.8, 63.1, 52.4);
     let primary_hover = hsl(15.1, 55.6, 52.4);
     let primary_active = hsl(13.8, 49.8, 46.1);
-    let primary_foreground = hsl(30., 3.3, 11.8);
+    let primary_foreground = hsl(30., 3.3, 0.);
     let strip = hsl(48., 18., 89.);
 
     colors.background = background;
@@ -436,7 +435,7 @@ fn apply_light_palette(colors: &mut ThemeColor) {
     colors.muted = hsl(51.4, 14.3, 90.4);
     colors.muted_foreground = muted_foreground;
     colors.border = border;
-    colors.input = border;
+    colors.input = hsl(50., 5., 48.);
     colors.caret = foreground;
     colors.window_border = border;
 
@@ -444,7 +443,7 @@ fn apply_light_palette(colors: &mut ThemeColor) {
     colors.primary_hover = primary_hover;
     colors.primary_active = primary_active;
     colors.primary_foreground = primary_foreground;
-    colors.ring = hsla(15. / 360., 0.63, 0.60, 0.45);
+    colors.ring = primary;
     colors.selection = hsla(15. / 360., 0.63, 0.60, 0.28);
     colors.link = primary;
     colors.link_hover = primary_hover;
@@ -530,6 +529,83 @@ mod tests {
             assert!(theme.background.is_some());
             assert!(theme.foreground.is_some());
             assert!(theme.primary.is_some());
+        }
+    }
+
+    #[test]
+    fn control_boundaries_and_focus_rings_have_sufficient_contrast() {
+        fn composite(foreground: Hsla, background: Hsla) -> gpui::Rgba {
+            let foreground = gpui::Rgba::from(foreground);
+            let background = gpui::Rgba::from(background);
+            gpui::Rgba {
+                r: foreground.r * foreground.a + background.r * (1. - foreground.a),
+                g: foreground.g * foreground.a + background.g * (1. - foreground.a),
+                b: foreground.b * foreground.a + background.b * (1. - foreground.a),
+                a: 1.,
+            }
+        }
+
+        fn contrast(foreground: Hsla, background: Hsla) -> f32 {
+            fn luminance(color: gpui::Rgba) -> f32 {
+                fn channel(value: f32) -> f32 {
+                    if value <= 0.04045 {
+                        value / 12.92
+                    } else {
+                        ((value + 0.055) / 1.055).powf(2.4)
+                    }
+                }
+                0.2126 * channel(color.r) + 0.7152 * channel(color.g) + 0.0722 * channel(color.b)
+            }
+            let foreground = luminance(composite(foreground, background));
+            let background = luminance(composite(background, background));
+            (foreground.max(background) + 0.05) / (foreground.min(background) + 0.05)
+        }
+
+        for (theme, name) in [
+            (ResolvedTheme::Light, "built-in light"),
+            (ResolvedTheme::Dark, "built-in dark"),
+            (ResolvedTheme::Light, "codex-light"),
+            (ResolvedTheme::Dark, "codex-dark"),
+        ] {
+            let mut colors = ThemeColor::default();
+            match theme {
+                ResolvedTheme::Light => apply_light_palette(&mut colors),
+                ResolvedTheme::Dark => apply_dark_palette(&mut colors),
+            }
+            if name.starts_with("codex") {
+                let json = match name {
+                    "codex-light" => include_str!("../../../../themes/codex-light.json"),
+                    _ => include_str!("../../../../themes/codex-dark.json"),
+                };
+                apply_overrides(&mut colors, theme, &ThemeOverrides::parse(json).unwrap());
+            }
+            assert!(
+                contrast(colors.primary_foreground, colors.primary) >= 4.5,
+                "{name}: primary text is {:.2}:1",
+                contrast(colors.primary_foreground, colors.primary)
+            );
+            for (surface_name, surface) in [
+                ("page", colors.background),
+                ("card", colors.secondary),
+                ("dialog", colors.popover),
+                ("hover", colors.accent),
+            ] {
+                assert!(
+                    contrast(colors.input, surface) >= 3.,
+                    "{name}: input border on {surface_name} is {:.2}:1",
+                    contrast(colors.input, surface)
+                );
+                assert!(
+                    contrast(colors.ring, surface) >= 3.,
+                    "{name}: focus ring on {surface_name} is {:.2}:1",
+                    contrast(colors.ring, surface)
+                );
+                assert!(
+                    contrast(colors.primary, surface) >= 3.,
+                    "{name}: selected border on {surface_name} is {:.2}:1",
+                    contrast(colors.primary, surface)
+                );
+            }
         }
     }
 

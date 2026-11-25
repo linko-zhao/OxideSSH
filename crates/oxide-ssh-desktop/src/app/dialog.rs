@@ -750,12 +750,13 @@ impl DialogPresenter {
             push_row(
                 field()
                     .label_indent(false)
-                    .child(
+                    .child(checkbox_focus_ring(
+                        "editor-remember",
                         Checkbox::new("editor-remember")
                             .label(remember_label)
                             .checked(editor.remember)
                             .on_click(remember_listener),
-                    )
+                    ))
                     .into_any_element(),
                 None,
             );
@@ -1289,7 +1290,7 @@ impl DialogPresenter {
         dialog: &DiscoveryDialog,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
-        let border = cx.theme().border;
+        let border = cx.theme().input;
         let row_bg = cx.theme().secondary;
         let scanning = dialog.scanning;
         let scan_listener = cx.listener(|this, _, _, cx| {
@@ -1333,12 +1334,13 @@ impl DialogPresenter {
             }
             cx.notify();
         });
-        scan_row = scan_row.child(
+        scan_row = scan_row.child(checkbox_focus_ring(
+            "discovery-include-ssh",
             Checkbox::new("discovery-include-ssh")
                 .label(self.text(MessageId::DiscoverySshOption))
                 .checked(ssh_enabled)
                 .on_click(ssh_listener),
-        );
+        ));
         #[cfg(target_os = "windows")]
         {
             let enabled = dialog.include_wsl;
@@ -1352,12 +1354,13 @@ impl DialogPresenter {
                 }
                 cx.notify();
             });
-            scan_row = scan_row.child(
+            scan_row = scan_row.child(checkbox_focus_ring(
+                "discovery-include-wsl",
                 Checkbox::new("discovery-include-wsl")
                     .label(self.text(MessageId::DiscoveryWslOption))
                     .checked(enabled)
                     .on_click(listener),
-            );
+            ));
         }
         let mut content = div()
             .flex()
@@ -1452,6 +1455,8 @@ impl DialogPresenter {
                     }
                     None => self.text(MessageId::Agent).to_owned(),
                 };
+                let checkbox_id =
+                    SharedString::from(format!("discovery-ssh-{}", host.alias.to_lowercase()));
                 let mut row = div()
                     .flex()
                     .items_start()
@@ -1461,14 +1466,12 @@ impl DialogPresenter {
                     .border_1()
                     .border_color(border)
                     .bg(row_bg)
-                    .child(
-                        Checkbox::new(SharedString::from(format!(
-                            "discovery-ssh-{}",
-                            host.alias.to_lowercase()
-                        )))
-                        .checked(selected)
-                        .on_click(listener),
-                    )
+                    .child(checkbox_focus_ring(
+                        checkbox_id.clone(),
+                        Checkbox::new(checkbox_id)
+                            .checked(selected)
+                            .on_click(listener),
+                    ))
                     .child(
                         div()
                             .flex_1()
@@ -1579,6 +1582,7 @@ impl DialogPresenter {
                             cx.notify();
                         })
                     };
+                    let checkbox_id = SharedString::from(format!("discovery-wsl-{}", distribution));
                     content = content.child(
                         div()
                             .flex()
@@ -1589,14 +1593,12 @@ impl DialogPresenter {
                             .border_1()
                             .border_color(border)
                             .bg(row_bg)
-                            .child(
-                                Checkbox::new(SharedString::from(format!(
-                                    "discovery-wsl-{}",
-                                    distribution
-                                )))
-                                .checked(selected)
-                                .on_click(listener),
-                            )
+                            .child(checkbox_focus_ring(
+                                checkbox_id.clone(),
+                                Checkbox::new(checkbox_id)
+                                    .checked(selected)
+                                    .on_click(listener),
+                            ))
                             .child(div().flex_1().min_w(px(0.)).child(ui_text(
                                 TextRole::Label,
                                 TextColor::Primary,

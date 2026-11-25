@@ -228,31 +228,39 @@ impl AppView {
                         self.setting_row(
                             MessageId::CopyOnSelect,
                             MessageId::CopyOnSelectDescription,
-                            Checkbox::new("copy-on-select")
-                                .checked(
-                                    self.state
-                                        .as_ref()
-                                        .is_some_and(|state| state.settings().copy_on_select),
-                                )
-                                .on_click(
-                                    cx.listener(|this, _, _, cx| this.toggle_copy_on_select(cx)),
-                                )
-                                .into_any_element(),
+                            checkbox_focus_ring(
+                                "copy-on-select",
+                                Checkbox::new("copy-on-select")
+                                    .checked(
+                                        self.state
+                                            .as_ref()
+                                            .is_some_and(|state| state.settings().copy_on_select),
+                                    )
+                                    .on_click(
+                                        cx.listener(|this, _, _, cx| {
+                                            this.toggle_copy_on_select(cx)
+                                        }),
+                                    ),
+                            )
+                            .into_any_element(),
                             cx,
                         ),
                         self.setting_row(
                             MessageId::RememberWindowSize,
                             MessageId::RememberWindowSizeDescription,
-                            Checkbox::new("remember-window-size")
-                                .checked(
-                                    self.state
-                                        .as_ref()
-                                        .is_some_and(|state| state.settings().remember_window_size),
-                                )
-                                .on_click(cx.listener(|this, checked, window, cx| {
-                                    this.set_remember_window_size(*checked, window, cx);
-                                }))
-                                .into_any_element(),
+                            checkbox_focus_ring(
+                                "remember-window-size",
+                                Checkbox::new("remember-window-size")
+                                    .checked(
+                                        self.state.as_ref().is_some_and(|state| {
+                                            state.settings().remember_window_size
+                                        }),
+                                    )
+                                    .on_click(cx.listener(|this, checked, window, cx| {
+                                        this.set_remember_window_size(*checked, window, cx);
+                                    })),
+                            )
+                            .into_any_element(),
                             cx,
                         ),
                         self.setting_row(
@@ -267,29 +275,37 @@ impl AppView {
                         self.setting_row(
                             MessageId::SshCompression,
                             MessageId::SshCompressionDescription,
-                            Checkbox::new("ssh-compression")
-                                .checked(
-                                    self.state
-                                        .as_ref()
-                                        .is_some_and(|state| state.settings().ssh_compression),
-                                )
-                                .on_click(cx.listener(|this, checked, _, cx| {
-                                    this.set_ssh_compression(*checked, cx);
-                                }))
-                                .into_any_element(),
+                            checkbox_focus_ring(
+                                "ssh-compression",
+                                Checkbox::new("ssh-compression")
+                                    .checked(
+                                        self.state
+                                            .as_ref()
+                                            .is_some_and(|state| state.settings().ssh_compression),
+                                    )
+                                    .on_click(cx.listener(|this, checked, _, cx| {
+                                        this.set_ssh_compression(*checked, cx);
+                                    })),
+                            )
+                            .into_any_element(),
                             cx,
                         ),
                         self.setting_row(
                             MessageId::ConfirmBeforeCloseWithSessions,
                             MessageId::ConfirmBeforeCloseWithSessionsDescription,
-                            Checkbox::new("confirm-before-close-with-sessions")
-                                .checked(confirm)
-                                .on_click(move |checked, _, cx| {
-                                    view.update(cx, |this, cx| {
-                                        this.set_confirm_before_close_with_sessions(*checked, cx)
-                                    });
-                                })
-                                .into_any_element(),
+                            checkbox_focus_ring(
+                                "confirm-before-close-with-sessions",
+                                Checkbox::new("confirm-before-close-with-sessions")
+                                    .checked(confirm)
+                                    .on_click(move |checked, _, cx| {
+                                        view.update(cx, |this, cx| {
+                                            this.set_confirm_before_close_with_sessions(
+                                                *checked, cx,
+                                            )
+                                        });
+                                    }),
+                            )
+                            .into_any_element(),
                             cx,
                         ),
                         self.setting_row(
@@ -358,16 +374,19 @@ impl AppView {
                     self.setting_row(
                         MessageId::CursorBlink,
                         MessageId::CursorBlinkDescription,
-                        Checkbox::new("cursor-blink")
-                            .checked(
-                                self.state
-                                    .as_ref()
-                                    .is_some_and(|state| state.settings().cursor_blink),
-                            )
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.toggle_cursor_blink(cx);
-                            }))
-                            .into_any_element(),
+                        checkbox_focus_ring(
+                            "cursor-blink",
+                            Checkbox::new("cursor-blink")
+                                .checked(
+                                    self.state
+                                        .as_ref()
+                                        .is_some_and(|state| state.settings().cursor_blink),
+                                )
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.toggle_cursor_blink(cx);
+                                })),
+                        )
+                        .into_any_element(),
                         cx,
                     ),
                     self.setting_row(

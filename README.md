@@ -57,6 +57,7 @@ Put JSON files in the `themes` directory beside the executable (`target/debug/th
   "raised": "#292524",
   "hover": "#3A3735",
   "border": "#44403C",
+  "controlBorder": "#78716C",
   "foreground": "#FAFAF9",
   "mutedForeground": "#A8A29E",
   "primary": "#D97757",
