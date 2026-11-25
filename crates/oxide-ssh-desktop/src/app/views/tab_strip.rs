@@ -6,25 +6,27 @@ impl AppView {
     /// color, so both states read consistently in light and dark mode.
     fn tab_pill(id: impl Into<ElementId>, selected: bool, cx: &App) -> gpui::Stateful<gpui::Div> {
         let theme = cx.theme();
-        let base = h_flex()
-            .id(id)
-            .items_center()
-            .gap(px(8.))
-            .px(px(12.))
-            // py(3) keeps the pill compact; the title bar adds the
-            // client-wide CARD_GAP margin around it.
-            .py(px(3.))
-            .border_1()
-            .border_color(theme.border)
-            .rounded(theme.radius)
-            .text_sm()
-            .cursor_pointer();
+        let base = TextRole::Body.apply(
+            h_flex()
+                .id(id)
+                .items_center()
+                .gap(px(8.))
+                .px(px(12.))
+                // py(3) keeps the pill compact; the title bar adds the
+                // client-wide CARD_GAP margin around it.
+                .py(px(3.))
+                .border_1()
+                .border_color(theme.border)
+                .rounded(theme.radius)
+                .cursor_pointer(),
+        );
         if selected {
-            base.bg(theme.secondary).text_color(theme.foreground)
+            TextColor::Primary.apply(base.bg(theme.secondary), cx)
         } else {
             let hover_bg = theme.secondary.opacity(0.55);
             let hover_fg = theme.foreground;
-            base.text_color(theme.muted_foreground)
+            TextColor::Secondary
+                .apply(base, cx)
                 .hover(move |style| style.bg(hover_bg).text_color(hover_fg))
         }
     }
@@ -76,9 +78,8 @@ impl AppView {
         // Fixed separator between the permanent workspace pill and the
         // session area (connection pills + new-tab button).
         strip = strip.child(
-            div()
-                .text_color(theme.muted_foreground.opacity(0.6))
-                .text_sm()
+            TextRole::Body
+                .apply(div().text_color(theme.muted_foreground.opacity(0.6)))
                 .child("|"),
         );
         for (id, name, state) in &tab_data {
@@ -98,16 +99,17 @@ impl AppView {
                         // xsmall (20px) keeps the pill slim; the default
                         // medium icon button is 32px and would inflate both
                         // the pill and the title bar wrapping it.
-                        Button::new(SharedString::from(format!("close-{tab_id:?}")))
-                            .icon(IconName::Close)
-                            .ghost()
-                            .compact()
-                            .xsmall()
-                            .flex_none()
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                cx.stop_propagation();
-                                this.close_tab(tab_id, cx);
-                            })),
+                        icon_button(
+                            SharedString::from(format!("close-{tab_id:?}")),
+                            IconName::Close,
+                            ButtonVariant::Tertiary,
+                            ButtonSize::SmallIcon,
+                        )
+                        .flex_none()
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            cx.stop_propagation();
+                            this.close_tab(tab_id, cx);
+                        })),
                     )
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.tabs.set_active(tab_id);
@@ -117,21 +119,22 @@ impl AppView {
             );
         }
         let strip = strip.child(
-            Button::new("new-tab")
-                .icon(IconName::Plus)
-                .ghost()
-                .compact()
-                .xsmall()
-                .on_click(cx.listener(|this, _, window, cx| {
-                    let open_local = this.state.as_ref().is_some_and(|state| {
-                        state.settings().new_tab_action == NewTabAction::LocalTerminal
-                    });
-                    if open_local {
-                        this.connect_local(window, cx);
-                    } else {
-                        this.show_add_connection(window, cx);
-                    }
-                })),
+            icon_button(
+                "new-tab",
+                IconName::Plus,
+                ButtonVariant::Tertiary,
+                ButtonSize::SmallIcon,
+            )
+            .on_click(cx.listener(|this, _, window, cx| {
+                let open_local = this.state.as_ref().is_some_and(|state| {
+                    state.settings().new_tab_action == NewTabAction::LocalTerminal
+                });
+                if open_local {
+                    this.connect_local(window, cx);
+                } else {
+                    this.show_add_connection(window, cx);
+                }
+            })),
         );
         // Linux keeps the native title bar, so the strip stays a standalone row.
         #[cfg(target_os = "linux")]

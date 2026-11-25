@@ -25,42 +25,43 @@ impl AppView {
                         Alert::error("recovery-alert", self.text(MessageId::StorageCorrupt))
                             .title("OxideSSH"),
                     )
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(cx.theme().muted_foreground)
-                            .child(self.recovery_error.clone().unwrap_or_default()),
-                    )
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(cx.theme().muted_foreground)
-                            .child(self.root.to_string_lossy().into_owned()),
-                    )
+                    .child(ui_text(
+                        TextRole::Body,
+                        TextColor::Secondary,
+                        self.recovery_error.clone().unwrap_or_default(),
+                        cx,
+                    ))
+                    .child(ui_text(
+                        TextRole::Body,
+                        TextColor::Secondary,
+                        self.root.to_string_lossy().into_owned(),
+                        cx,
+                    ))
                     .child(
                         div()
                             .flex()
                             .gap(px(10.))
                             .child(
-                                Button::new("recovery-open")
-                                    .child(
-                                        div()
-                                            .text_sm()
-                                            .child(self.text(MessageId::OpenConfigDirectory)),
-                                    )
-                                    .on_click(
-                                        cx.listener(|this, _, _, cx| {
-                                            this.open_config_directory(cx)
-                                        }),
-                                    ),
+                                button(
+                                    "recovery-open",
+                                    self.text(MessageId::OpenConfigDirectory),
+                                    ButtonVariant::Secondary,
+                                )
+                                .on_click(
+                                    cx.listener(|this, _, _, cx| this.open_config_directory(cx)),
+                                ),
                             )
                             .child(
-                                Button::new("recovery-retry")
-                                    .child(div().text_sm().child(self.text(MessageId::Retry)))
-                                    .primary()
-                                    .on_click(cx.listener(|this, _, window, cx| {
+                                button(
+                                    "recovery-retry",
+                                    self.text(MessageId::Retry),
+                                    ButtonVariant::Primary,
+                                )
+                                .on_click(
+                                    cx.listener(|this, _, window, cx| {
                                         this.retry_storage(window, cx)
-                                    })),
+                                    }),
+                                ),
                             ),
                     ),
             )
@@ -168,32 +169,34 @@ impl AppView {
                                 .flex()
                                 .justify_center()
                                 .child(
-                                    div()
-                                        .flex()
-                                        .items_center()
-                                        .gap(px(10.))
-                                        .px(px(14.))
-                                        .py(px(8.))
-                                        .rounded(px(6.))
-                                        .border_1()
-                                        .border_color(cx.theme().border)
-                                        .bg(cx.theme().background)
-                                        .text_color(cx.theme().foreground)
-                                        .text_size(px(13.))
+                                    TextColor::Primary
+                                        .apply(
+                                            TextRole::Body.apply(
+                                                div()
+                                                    .flex()
+                                                    .items_center()
+                                                    .gap(px(10.))
+                                                    .px(px(14.))
+                                                    .py(px(8.))
+                                                    .rounded(px(6.))
+                                                    .border_1()
+                                                    .border_color(cx.theme().border)
+                                                    .bg(cx.theme().background),
+                                            ),
+                                            cx,
+                                        )
                                         .child(self.text(disconnect_reason_message_id(reason)))
                                         .child(
-                                            Button::new("retry-session")
-                                                .child(
-                                                    div()
-                                                        .text_sm()
-                                                        .child(self.text(MessageId::Retry)),
-                                                )
-                                                .primary()
-                                                .on_click(cx.listener(
-                                                    move |this, _, window, cx| {
-                                                        this.reconnect(tab_id, window, cx)
-                                                    },
-                                                )),
+                                            button(
+                                                "retry-session",
+                                                self.text(MessageId::Retry),
+                                                ButtonVariant::Primary,
+                                            )
+                                            .on_click(
+                                                cx.listener(move |this, _, window, cx| {
+                                                    this.reconnect(tab_id, window, cx)
+                                                }),
+                                            ),
                                         ),
                                 ),
                         )

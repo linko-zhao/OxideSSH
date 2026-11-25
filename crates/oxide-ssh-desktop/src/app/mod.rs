@@ -12,7 +12,6 @@ use gpui_component::{
     ActiveTheme as _, Disableable as _, Icon, IconName, IndexPath, Root, Selectable as _,
     Sizable as _, WindowExt as _,
     alert::Alert,
-    button::{Button, ButtonVariants as _},
     checkbox::Checkbox,
     form::{field, v_form},
     h_flex,
@@ -100,6 +99,13 @@ mod terminal;
 use self::terminal::{RgbColorExt, TerminalGeometry};
 
 mod views;
+
+mod ui;
+
+use self::ui::{
+    ButtonDesign, ButtonSize, ButtonVariant, TextColor, TextRole, button, custom_button,
+    helper_text, icon_button, text as ui_text,
+};
 
 actions!(
     oxide_ssh,

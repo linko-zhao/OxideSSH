@@ -334,7 +334,7 @@ fn apply_dark_palette(colors: &mut ThemeColor) {
     let hover = hsl(40., 2.7, 22.2);
     let border = hsl(45., 3., 25.9);
     let foreground = hsl(50., 20.7, 88.6);
-    let muted_foreground = hsl(51.4, 3., 54.7);
+    let muted_foreground = hsl(51.4, 3., 59.);
     let primary = hsl(14.8, 63.1, 59.6);
     let primary_hover = hsl(15., 66., 65.);
     let primary_active = hsl(15.1, 55.6, 52.4);
@@ -428,7 +428,7 @@ fn apply_light_palette(colors: &mut ThemeColor) {
     let primary = hsl(14.8, 63.1, 59.6);
     let primary_hover = hsl(15.1, 55.6, 52.4);
     let primary_active = hsl(13.8, 49.8, 46.1);
-    let primary_foreground = hsl(48., 33.3, 97.1);
+    let primary_foreground = hsl(30., 3.3, 11.8);
     let strip = hsl(48., 18., 89.);
 
     colors.background = background;

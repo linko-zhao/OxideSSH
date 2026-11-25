@@ -48,8 +48,6 @@ impl AppView {
         // Hover lifts the card one step above its resting background.
         let hover_bg = theme.accent;
         let radius_lg = theme.radius_lg;
-        let muted_foreground = theme.muted_foreground;
-        let status_color = theme.primary;
         div()
             .id(SharedString::from(format!("host-card-{}", profile.id.0)))
             .group("host-card")
@@ -93,18 +91,17 @@ impl AppView {
                             .flex_col()
                             .gap(px(2.))
                             .child(
-                                div()
-                                    .whitespace_nowrap()
-                                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                                    .text_sm()
-                                    .child(profile.name.clone()),
+                                ui_text(
+                                    TextRole::Label,
+                                    TextColor::Primary,
+                                    profile.name.clone(),
+                                    cx,
+                                )
+                                .whitespace_nowrap(),
                             )
                             .child(
-                                div()
-                                    .whitespace_nowrap()
-                                    .text_xs()
-                                    .text_color(muted_foreground)
-                                    .child(endpoint),
+                                ui_text(TextRole::Caption, TextColor::Secondary, endpoint, cx)
+                                    .whitespace_nowrap(),
                             ),
                     )
                     .child(
@@ -113,41 +110,45 @@ impl AppView {
                             .opacity(0.)
                             .group_hover("host-card", |style| style.opacity(1.))
                             .child(
-                                Button::new(edit_id)
-                                    .icon(IconName::Settings2)
-                                    .ghost()
-                                    .compact()
-                                    .on_click(move |_, window, cx| {
-                                        view.update(cx, |this, cx| {
-                                            cx.stop_propagation();
-                                            this.show_edit_connection(
-                                                profile_for_edit.clone(),
-                                                window,
-                                                cx,
-                                            );
-                                        });
-                                    }),
+                                icon_button(
+                                    edit_id,
+                                    IconName::Settings2,
+                                    ButtonVariant::Tertiary,
+                                    ButtonSize::Icon,
+                                )
+                                .on_click(move |_, window, cx| {
+                                    view.update(cx, |this, cx| {
+                                        cx.stop_propagation();
+                                        this.show_edit_connection(
+                                            profile_for_edit.clone(),
+                                            window,
+                                            cx,
+                                        );
+                                    });
+                                }),
                             )
                             .child({
                                 let view = cx.entity();
-                                Button::new(delete_id)
-                                    .icon(IconName::Delete)
-                                    .ghost()
-                                    .compact()
-                                    .on_click(move |_, _, cx| {
-                                        view.update(cx, |this, cx| {
-                                            cx.stop_propagation();
-                                            this.confirm = Some(ConfirmAction::DeleteProfile(
-                                                profile_for_delete.id,
-                                            ));
-                                            cx.notify();
-                                        });
-                                    })
+                                icon_button(
+                                    delete_id,
+                                    IconName::Delete,
+                                    ButtonVariant::Tertiary,
+                                    ButtonSize::Icon,
+                                )
+                                .on_click(move |_, _, cx| {
+                                    view.update(cx, |this, cx| {
+                                        cx.stop_propagation();
+                                        this.confirm = Some(ConfirmAction::DeleteProfile(
+                                            profile_for_delete.id,
+                                        ));
+                                        cx.notify();
+                                    });
+                                })
                             }),
                     ),
             )
             .when_some(status, |card, status| {
-                card.child(div().text_xs().text_color(status_color).child(status))
+                card.child(ui_text(TextRole::Caption, TextColor::Accent, status, cx))
             })
             .into_any_element()
     }
@@ -191,7 +192,6 @@ impl AppView {
         let card_bg = theme.secondary;
         let hover_bg = theme.accent;
         let radius_lg = theme.radius_lg;
-        let muted_foreground = theme.muted_foreground;
         div()
             .id(SharedString::from(format!(
                 "local-card-{}",
@@ -238,18 +238,12 @@ impl AppView {
                             .flex_col()
                             .gap(px(2.))
                             .child(
-                                div()
-                                    .whitespace_nowrap()
-                                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                                    .text_sm()
-                                    .child(name),
+                                ui_text(TextRole::Label, TextColor::Primary, name, cx)
+                                    .whitespace_nowrap(),
                             )
                             .child(
-                                div()
-                                    .whitespace_nowrap()
-                                    .text_xs()
-                                    .text_color(muted_foreground)
-                                    .child(distribution),
+                                ui_text(TextRole::Caption, TextColor::Secondary, distribution, cx)
+                                    .whitespace_nowrap(),
                             ),
                     )
                     .child(
@@ -258,39 +252,42 @@ impl AppView {
                             .opacity(0.)
                             .group_hover("local-card", |style| style.opacity(1.))
                             .child(
-                                Button::new(rename_id)
-                                    .icon(IconName::Settings2)
-                                    .ghost()
-                                    .compact()
-                                    .tooltip(self.text(MessageId::Rename))
-                                    .on_click(move |_, window, cx| {
-                                        view.update(cx, |this, cx| {
-                                            cx.stop_propagation();
-                                            this.start_local_rename(
-                                                connection_for_rename.clone(),
-                                                window,
-                                                cx,
-                                            );
-                                        });
-                                    }),
+                                icon_button(
+                                    rename_id,
+                                    IconName::Settings2,
+                                    ButtonVariant::Tertiary,
+                                    ButtonSize::Icon,
+                                )
+                                .tooltip(self.text(MessageId::Rename))
+                                .on_click(move |_, window, cx| {
+                                    view.update(cx, |this, cx| {
+                                        cx.stop_propagation();
+                                        this.start_local_rename(
+                                            connection_for_rename.clone(),
+                                            window,
+                                            cx,
+                                        );
+                                    });
+                                }),
                             )
                             .child({
                                 let view = cx.entity();
-                                Button::new(delete_id)
-                                    .icon(IconName::Delete)
-                                    .ghost()
-                                    .compact()
-                                    .tooltip(self.text(MessageId::Delete))
-                                    .on_click(move |_, _, cx| {
-                                        view.update(cx, |this, cx| {
-                                            cx.stop_propagation();
-                                            this.confirm =
-                                                Some(ConfirmAction::DeleteLocalConnection(
-                                                    connection_for_delete.id,
-                                                ));
-                                            cx.notify();
-                                        });
-                                    })
+                                icon_button(
+                                    delete_id,
+                                    IconName::Delete,
+                                    ButtonVariant::Tertiary,
+                                    ButtonSize::Icon,
+                                )
+                                .tooltip(self.text(MessageId::Delete))
+                                .on_click(move |_, _, cx| {
+                                    view.update(cx, |this, cx| {
+                                        cx.stop_propagation();
+                                        this.confirm = Some(ConfirmAction::DeleteLocalConnection(
+                                            connection_for_delete.id,
+                                        ));
+                                        cx.notify();
+                                    });
+                                })
                             }),
                     ),
             )
@@ -342,12 +339,12 @@ impl AppView {
                 grid = grid.child(self.render_host_card(profile, cx));
             }
             groups = groups
-                .child(
-                    div()
-                        .text_sm()
-                        .font_weight(gpui::FontWeight::SEMIBOLD)
-                        .child(self.text(MessageId::SshHosts)),
-                )
+                .child(ui_text(
+                    TextRole::SectionTitle,
+                    TextColor::Primary,
+                    self.text(MessageId::SshHosts),
+                    cx,
+                ))
                 .child(grid);
         }
         if !local_connections.is_empty() {
@@ -356,23 +353,26 @@ impl AppView {
                 grid = grid.child(self.render_local_card(connection, cx));
             }
             groups = groups
-                .child(
-                    div()
-                        .text_sm()
-                        .font_weight(gpui::FontWeight::SEMIBOLD)
-                        .child(self.text(MessageId::LocalConnections)),
-                )
+                .child(ui_text(
+                    TextRole::SectionTitle,
+                    TextColor::Primary,
+                    self.text(MessageId::LocalConnections),
+                    cx,
+                ))
                 .child(grid);
         }
         let content = if is_empty {
-            div()
-                .size_full()
-                .flex()
-                .items_center()
-                .justify_center()
-                .text_color(cx.theme().muted_foreground)
-                .child(self.text(empty_message))
-                .into_any_element()
+            ui_text(
+                TextRole::Body,
+                TextColor::Secondary,
+                self.text(empty_message),
+                cx,
+            )
+            .size_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .into_any_element()
         } else {
             div()
                 .id("workspace-hosts")
@@ -434,43 +434,43 @@ impl AppView {
                 cx.notify();
             })));
         }
-        let sidebar =
-            div()
-                .id("tag-sidebar")
-                .w(px(200.))
-                .h_full()
-                .flex_none()
-                .flex()
-                .flex_col()
-                .gap(px(6.))
-                .pr(px(14.))
-                .border_r_1()
-                .border_color(sidebar_border)
-                .child(
-                    h_flex()
-                        .px(px(10.))
-                        .py(px(4.))
-                        .items_center()
-                        .justify_between()
-                        .child(
-                            div()
-                                .text_sm()
-                                .font_weight(gpui::FontWeight::SEMIBOLD)
-                                .child(tags_label),
+        let sidebar = div()
+            .id("tag-sidebar")
+            .w(px(200.))
+            .h_full()
+            .flex_none()
+            .flex()
+            .flex_col()
+            .gap(px(6.))
+            .pr(px(14.))
+            .border_r_1()
+            .border_color(sidebar_border)
+            .child(
+                h_flex()
+                    .px(px(10.))
+                    .py(px(4.))
+                    .items_center()
+                    .justify_between()
+                    .child(ui_text(
+                        TextRole::SectionTitle,
+                        TextColor::Primary,
+                        tags_label,
+                        cx,
+                    ))
+                    .child(
+                        icon_button(
+                            "manage-tags",
+                            IconName::Settings2,
+                            ButtonVariant::Tertiary,
+                            ButtonSize::SmallIcon,
                         )
-                        .child(
-                            Button::new("manage-tags")
-                                .icon(IconName::Settings2)
-                                .ghost()
-                                .compact()
-                                .xsmall()
-                                .tooltip(manage_label)
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.open_tag_manager(window, cx)
-                                })),
+                        .tooltip(manage_label)
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.open_tag_manager(window, cx)),
                         ),
-                )
-                .child(list);
+                    ),
+            )
+            .child(list);
         div()
             .size_full()
             .flex()
@@ -491,13 +491,15 @@ impl AppView {
                             .justify_between()
                             .child(
                                 h_flex().child(
-                                    Button::new("add-connection")
-                                        .child(div().text_sm().child(self.text(MessageId::Add)))
-                                        .icon(IconName::Plus)
-                                        .primary()
-                                        .on_click(
-                                            cx.listener(|this, _, _, cx| this.open_discovery(cx)),
-                                        ),
+                                    button(
+                                        "add-connection",
+                                        self.text(MessageId::Add),
+                                        ButtonVariant::Primary,
+                                    )
+                                    .icon(IconName::Plus)
+                                    .on_click(
+                                        cx.listener(|this, _, _, cx| this.open_discovery(cx)),
+                                    ),
                                 ),
                             )
                             .child(div().w(px(280.)).child(
@@ -530,14 +532,16 @@ impl AppView {
         } else {
             muted_foreground
         };
-        let row = h_flex()
-            .id(row_id)
-            .items_center()
-            .gap(px(8.))
-            .px(px(10.))
-            .py(px(6.))
-            .rounded(px(8.))
-            .text_sm()
+        let row = TextRole::Body
+            .apply(
+                h_flex()
+                    .id(row_id)
+                    .items_center()
+                    .gap(px(8.))
+                    .px(px(10.))
+                    .py(px(6.))
+                    .rounded(px(8.)),
+            )
             .cursor_pointer()
             .child(match dot {
                 Some(color) => div()
@@ -556,8 +560,8 @@ impl AppView {
                     .child(label),
             )
             .child(
-                div()
-                    .text_xs()
+                TextRole::Caption
+                    .apply(div())
                     .text_color(count_color)
                     .child(format!("{count}")),
             );

@@ -10,21 +10,23 @@ impl AppView {
         cx: &App,
     ) -> gpui::Stateful<gpui::Div> {
         let theme = cx.theme();
-        let item = h_flex()
-            .id(id)
-            .items_center()
-            .gap(px(10.))
-            .px(px(10.))
-            .py(px(8.))
-            .rounded(px(8.))
-            .text_sm()
-            .child(Icon::new(icon).size(px(16.)))
-            .child(label);
+        let item = TextRole::Body.apply(
+            h_flex()
+                .id(id)
+                .items_center()
+                .gap(px(10.))
+                .px(px(10.))
+                .py(px(8.))
+                .rounded(px(8.))
+                .child(Icon::new(icon).size(px(16.)))
+                .child(label),
+        );
         if active {
-            item.bg(theme.accent).text_color(theme.accent_foreground)
+            TextColor::OnSelection.apply(item.bg(theme.accent), cx)
         } else {
             let hover_bg = theme.list_hover;
-            item.text_color(theme.muted_foreground)
+            TextColor::Secondary
+                .apply(item, cx)
                 .hover(move |style| style.bg(hover_bg))
         }
     }
@@ -64,7 +66,8 @@ impl AppView {
         );
         for (id, icon, label) in placeholder_items {
             nav = nav.child(
-                self.nav_item(id, icon, self.text(label), false, cx)
+                TextColor::Weak
+                    .apply(self.nav_item(id, icon, self.text(label), false, cx), cx)
                     .opacity(0.45),
             );
         }
@@ -80,11 +83,8 @@ impl AppView {
             .border_color(cx.theme().border)
             .bg(cx.theme().secondary)
             .child(
-                div()
-                    .px(px(10.))
-                    .py(px(8.))
-                    .text_size(px(18.))
-                    .font_weight(gpui::FontWeight::BOLD)
+                TextRole::PanelTitle
+                    .apply(div().px(px(10.)).py(px(8.)))
                     .child(self.text(MessageId::AppName)),
             )
             .child(nav)

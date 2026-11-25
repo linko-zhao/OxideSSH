@@ -467,7 +467,6 @@ impl DialogPresenter {
         cx: &mut Context<Self>,
     ) -> EditorDialogLayout {
         let text = |id: MessageId| self.text(id).to_owned();
-        let danger = cx.theme().danger;
         let error =
             |target| (editor.error == Some(target)).then(|| text(form_error_message_id(target)));
         let name_label = text(MessageId::Name);
@@ -488,7 +487,6 @@ impl DialogPresenter {
         let tag_border = cx.theme().border;
         let tag_secondary = cx.theme().secondary;
         let tag_selected_bg = cx.theme().primary;
-        let tag_selected_fg = cx.theme().primary_foreground;
         let auth_index = match editor.auth_method {
             AuthMethod::Password => 0,
             AuthMethod::PrivateKey => 1,
@@ -558,9 +556,12 @@ impl DialogPresenter {
             }
             cx.notify();
         });
-        let browse_button = Button::new("browse-private-key")
-            .child(div().text_sm().child(text(MessageId::Browse)))
-            .on_click(browse_listener);
+        let browse_button = button(
+            "browse-private-key",
+            text(MessageId::Browse),
+            ButtonVariant::Secondary,
+        )
+        .on_click(browse_listener);
         let mut tag_chips = h_flex().gap(px(6.)).flex_wrap();
         for tag in &editor.tags {
             let selected = editor.tag_ids.contains(&tag.id);
@@ -579,29 +580,29 @@ impl DialogPresenter {
                 }
                 cx.notify();
             });
-            let chip = h_flex()
-                .id(SharedString::from(format!("editor-tag-{}", tag.id.0)))
-                .items_center()
-                .gap(px(6.))
-                .px(px(8.))
-                .py(px(3.))
-                .rounded_full()
-                .border_1()
-                .text_xs()
-                .cursor_pointer()
-                .child(
-                    div()
-                        .size(px(8.))
-                        .flex_none()
-                        .rounded_full()
-                        .bg(rgb(tag_color_rgb(tag.color.unwrap_or(TagColor::Gray)))),
-                )
-                .child(tag.name.clone())
-                .on_click(toggle_listener);
+            let chip = TextRole::Caption.apply(
+                h_flex()
+                    .id(SharedString::from(format!("editor-tag-{}", tag.id.0)))
+                    .items_center()
+                    .gap(px(6.))
+                    .px(px(8.))
+                    .py(px(3.))
+                    .rounded_full()
+                    .border_1()
+                    .cursor_pointer()
+                    .child(
+                        div()
+                            .size(px(8.))
+                            .flex_none()
+                            .rounded_full()
+                            .bg(rgb(tag_color_rgb(tag.color.unwrap_or(TagColor::Gray)))),
+                    )
+                    .child(tag.name.clone())
+                    .on_click(toggle_listener),
+            );
             tag_chips = tag_chips.child(if selected {
-                chip.bg(tag_selected_bg)
-                    .border_color(tag_selected_bg)
-                    .text_color(tag_selected_fg)
+                TextColor::OnAccent
+                    .apply(chip.bg(tag_selected_bg).border_color(tag_selected_bg), cx)
             } else {
                 chip.bg(tag_secondary).border_color(tag_border)
             });
@@ -635,11 +636,7 @@ impl DialogPresenter {
             rows.push(element);
         };
         push_row(
-            div()
-                .text_size(px(20.))
-                .font_weight(gpui::FontWeight::BOLD)
-                .child(heading)
-                .into_any_element(),
+            ui_text(TextRole::DialogTitle, TextColor::Primary, heading, cx).into_any_element(),
             None,
         );
         push_row(
@@ -647,8 +644,8 @@ impl DialogPresenter {
                 .label(name_label)
                 .child(Input::new(&editor.name))
                 .when_some(error(FormError::Name), |field, description| {
-                    field.description_fn(move |_, _| {
-                        div().text_color(danger).child(description.clone())
+                    field.description_fn(move |_, cx| {
+                        ui_text(TextRole::Helper, TextColor::Danger, description.clone(), cx)
                     })
                 })
                 .into_any_element(),
@@ -667,8 +664,13 @@ impl DialogPresenter {
                         .label(host_label)
                         .child(Input::new(&editor.host))
                         .when_some(error(FormError::Host), |field, description| {
-                            field.description_fn(move |_, _| {
-                                div().text_color(danger).child(description.clone())
+                            field.description_fn(move |_, cx| {
+                                ui_text(
+                                    TextRole::Helper,
+                                    TextColor::Danger,
+                                    description.clone(),
+                                    cx,
+                                )
                             })
                         }),
                 )
@@ -678,8 +680,13 @@ impl DialogPresenter {
                             .label(port_label)
                             .child(Input::new(&editor.port))
                             .when_some(error(FormError::Port), |field, description| {
-                                field.description_fn(move |_, _| {
-                                    div().text_color(danger).child(description.clone())
+                                field.description_fn(move |_, cx| {
+                                    ui_text(
+                                        TextRole::Helper,
+                                        TextColor::Danger,
+                                        description.clone(),
+                                        cx,
+                                    )
                                 })
                             }),
                     ),
@@ -692,8 +699,8 @@ impl DialogPresenter {
                 .label(username_label)
                 .child(Input::new(&editor.username))
                 .when_some(error(FormError::Username), |field, description| {
-                    field.description_fn(move |_, _| {
-                        div().text_color(danger).child(description.clone())
+                    field.description_fn(move |_, cx| {
+                        ui_text(TextRole::Helper, TextColor::Danger, description.clone(), cx)
                     })
                 })
                 .into_any_element(),
@@ -724,8 +731,8 @@ impl DialogPresenter {
                             .child(browse_button),
                     )
                     .when_some(error(FormError::PrivateKeyPath), |field, description| {
-                        field.description_fn(move |_, _| {
-                            div().text_color(danger).child(description.clone())
+                        field.description_fn(move |_, cx| {
+                            ui_text(TextRole::Helper, TextColor::Danger, description.clone(), cx)
                         })
                     })
                     .into_any_element(),
@@ -754,25 +761,21 @@ impl DialogPresenter {
             );
         }
         if editor.auth_method == AuthMethod::Agent {
-            push_row(
-                div()
-                    .text_sm()
-                    .text_color(cx.theme().muted_foreground)
-                    .child(agent_description)
-                    .into_any_element(),
-                None,
-            );
+            push_row(helper_text(agent_description, cx).into_any_element(), None);
         }
         push_row(
-            Button::new("toggle-editor-advanced")
-                .ghost()
+            custom_button("toggle-editor-advanced", ButtonVariant::Tertiary)
                 .w_full()
                 .child(
                     h_flex()
                         .w_full()
                         .items_center()
                         .justify_between()
-                        .child(text(MessageId::AdvancedOptions))
+                        .child(
+                            TextRole::Button
+                                .apply(div())
+                                .child(text(MessageId::AdvancedOptions)),
+                        )
                         .child(
                             Icon::new(if editor.advanced_open {
                                 IconName::ChevronDown
@@ -788,12 +791,14 @@ impl DialogPresenter {
         );
         if editor.advanced_open {
             push_row(
-                div()
-                    .pt(px(4.))
-                    .text_sm()
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .child(text(MessageId::ConnectionSettings))
-                    .into_any_element(),
+                ui_text(
+                    TextRole::SectionTitle,
+                    TextColor::Primary,
+                    text(MessageId::ConnectionSettings),
+                    cx,
+                )
+                .pt(px(4.))
+                .into_any_element(),
                 None,
             );
             push_row(
@@ -808,8 +813,8 @@ impl DialogPresenter {
                     .label(keepalive_interval_label)
                     .child(Input::new(&editor.ssh_keepalive_interval))
                     .when_some(error(FormError::Keepalive), |field, description| {
-                        field.description_fn(move |_, _| {
-                            div().text_color(danger).child(description.clone())
+                        field.description_fn(move |_, cx| {
+                            ui_text(TextRole::Helper, TextColor::Danger, description.clone(), cx)
                         })
                     })
                     .into_any_element(),
@@ -820,8 +825,8 @@ impl DialogPresenter {
                     .label(keepalive_max_count_label)
                     .child(Input::new(&editor.ssh_keepalive_max_count))
                     .when_some(error(FormError::KeepaliveMaxCount), |field, description| {
-                        field.description_fn(move |_, _| {
-                            div().text_color(danger).child(description.clone())
+                        field.description_fn(move |_, cx| {
+                            ui_text(TextRole::Helper, TextColor::Danger, description.clone(), cx)
                         })
                     })
                     .into_any_element(),
@@ -834,8 +839,13 @@ impl DialogPresenter {
                     .when_some(
                         error(FormError::EnvironmentVariable),
                         |field, description| {
-                            field.description_fn(move |_, _| {
-                                div().text_color(danger).child(description.clone())
+                            field.description_fn(move |_, cx| {
+                                ui_text(
+                                    TextRole::Helper,
+                                    TextColor::Danger,
+                                    description.clone(),
+                                    cx,
+                                )
                             })
                         },
                     )
@@ -843,12 +853,14 @@ impl DialogPresenter {
                 Some(FormError::EnvironmentVariable),
             );
             push_row(
-                div()
-                    .pt(px(4.))
-                    .text_sm()
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .child(text(MessageId::TerminalSettings))
-                    .into_any_element(),
+                ui_text(
+                    TextRole::SectionTitle,
+                    TextColor::Primary,
+                    text(MessageId::TerminalSettings),
+                    cx,
+                )
+                .pt(px(4.))
+                .into_any_element(),
                 None,
             );
             push_row(
@@ -856,8 +868,8 @@ impl DialogPresenter {
                     .label(terminal_font_size_label)
                     .child(Input::new(&editor.terminal_font_size))
                     .when_some(error(FormError::TerminalFontSize), |field, description| {
-                        field.description_fn(move |_, _| {
-                            div().text_color(danger).child(description.clone())
+                        field.description_fn(move |_, cx| {
+                            ui_text(TextRole::Helper, TextColor::Danger, description.clone(), cx)
                         })
                     })
                     .into_any_element(),
@@ -868,8 +880,8 @@ impl DialogPresenter {
                     .label(text(MessageId::AnsiPalette))
                     .child(Input::new(&editor.ansi_palette))
                     .when_some(error(FormError::AnsiPalette), |field, description| {
-                        field.description_fn(move |_, _| {
-                            div().text_color(danger).child(description.clone())
+                        field.description_fn(move |_, cx| {
+                            ui_text(TextRole::Helper, TextColor::Danger, description.clone(), cx)
                         })
                     })
                     .into_any_element(),
@@ -884,18 +896,14 @@ impl DialogPresenter {
                     .gap(px(8.))
                     .child(div().flex_1().child(Input::new(&editor.tag_name)))
                     .child(
-                        Button::new("create-tag")
-                            .child(div().text_sm().child(create_label))
-                            .compact()
+                        button("create-tag", create_label, ButtonVariant::Secondary)
+                            .button_size(ButtonSize::Compact)
                             .on_click(create_listener),
                     ),
             );
             push_row(
-                div()
+                ui_text(TextRole::SectionTitle, TextColor::Primary, tags_label, cx)
                     .pt(px(4.))
-                    .text_sm()
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .child(tags_label)
                     .into_any_element(),
                 None,
             );
@@ -915,17 +923,22 @@ impl DialogPresenter {
             .border_t_1()
             .border_color(cx.theme().border)
             .child(
-                Button::new("cancel-editor")
-                    .child(div().text_sm().child(self.text(MessageId::Cancel)))
-                    .on_click(cancel_listener),
+                button(
+                    "cancel-editor",
+                    self.text(MessageId::Cancel),
+                    ButtonVariant::Secondary,
+                )
+                .on_click(cancel_listener),
             )
             .child(
-                Button::new("save-editor")
-                    .child(div().text_sm().child(self.text(MessageId::Save)))
-                    .primary()
-                    .loading(editor.save_state == EditorSaveState::SavingThis)
-                    .disabled(editor.save_state != EditorSaveState::Idle)
-                    .on_click(save_listener),
+                button(
+                    "save-editor",
+                    self.text(MessageId::Save),
+                    ButtonVariant::Primary,
+                )
+                .loading(editor.save_state == EditorSaveState::SavingThis)
+                .disabled(editor.save_state != EditorSaveState::Idle)
+                .on_click(save_listener),
             )
             .into_any_element();
         EditorDialogLayout { rows, footer }
@@ -956,7 +969,6 @@ impl DialogPresenter {
                 (MessageId::ConfirmQuit, MessageId::Quit)
             }
         };
-        let affected_color = cx.theme().muted_foreground;
         let cancel_listener = cx.listener(|this, _, _, cx| {
             this.owner.update(cx, |app, cx| app.cancel_confirm(cx)).ok();
         });
@@ -965,14 +977,14 @@ impl DialogPresenter {
                 .update(cx, |app, cx| app.perform_confirm(window, cx))
                 .ok();
         });
-        let mut body = div().w_full().text_sm().child(self.text(message));
+        let mut body = ui_text(TextRole::Body, TextColor::Primary, self.text(message), cx).w_full();
         if matches!(action, ConfirmAction::DeleteTag(_)) {
-            body = body.child(
-                div()
-                    .text_sm()
-                    .text_color(affected_color)
-                    .child(format!("{affected}")),
-            );
+            body = body.child(ui_text(
+                TextRole::Caption,
+                TextColor::Secondary,
+                format!("{affected}"),
+                cx,
+            ));
         }
         div()
             .flex()
@@ -985,15 +997,20 @@ impl DialogPresenter {
                     .justify_end()
                     .gap(px(8.))
                     .child(
-                        Button::new("cancel-confirm")
-                            .child(div().text_sm().child(self.text(MessageId::Cancel)))
-                            .on_click(cancel_listener),
+                        button(
+                            "cancel-confirm",
+                            self.text(MessageId::Cancel),
+                            ButtonVariant::Secondary,
+                        )
+                        .on_click(cancel_listener),
                     )
                     .child(
-                        Button::new("accept-confirm")
-                            .child(div().text_sm().child(self.text(action_label)))
-                            .danger()
-                            .on_click(accept_listener),
+                        button(
+                            "accept-confirm",
+                            self.text(action_label),
+                            ButtonVariant::Danger,
+                        )
+                        .on_click(accept_listener),
                     ),
             )
             .into_any_element()
@@ -1134,12 +1151,14 @@ impl DialogPresenter {
                             )
                             .child(div().flex_1().child(Input::new(&entry.name)))
                             .child(
-                                Button::new(SharedString::from(format!("delete-tag-{}", id.0)))
-                                    .child(div().text_sm().child(delete_label.clone()))
-                                    .icon(IconName::Delete)
-                                    .ghost()
-                                    .compact()
-                                    .on_click(delete_listener),
+                                button(
+                                    SharedString::from(format!("delete-tag-{}", id.0)),
+                                    delete_label.clone(),
+                                    ButtonVariant::Tertiary,
+                                )
+                                .icon(IconName::Delete)
+                                .button_size(ButtonSize::Compact)
+                                .on_click(delete_listener),
                             ),
                     )
                     .when(expanded, |row| row.child(swatches)),
@@ -1149,23 +1168,30 @@ impl DialogPresenter {
             .flex()
             .flex_col()
             .gap(px(12.))
-            .child(div().font_weight(gpui::FontWeight::BOLD).child(heading))
+            .child(ui_text(
+                TextRole::DialogTitle,
+                TextColor::Primary,
+                heading,
+                cx,
+            ))
             .child(
                 h_flex()
                     .gap(px(8.))
                     .child(div().flex_1().child(Input::new(new_tag)))
                     .child(
-                        Button::new("create-tag-from-manager")
-                            .child(div().text_sm().child(create_label))
-                            .compact()
-                            .on_click(create_listener),
+                        button(
+                            "create-tag-from-manager",
+                            create_label,
+                            ButtonVariant::Secondary,
+                        )
+                        .button_size(ButtonSize::Compact)
+                        .on_click(create_listener),
                     ),
             )
             .child(rows)
             .child(
                 div().flex().justify_end().child(
-                    Button::new("close-tag-manager")
-                        .child(div().text_sm().child(close_label))
+                    button("close-tag-manager", close_label, ButtonVariant::Secondary)
                         .on_click(close_listener),
                 ),
             )
@@ -1212,19 +1238,25 @@ impl DialogPresenter {
                     .ok();
             });
             rows = rows.child(
-                Button::new(SharedString::from(format!("ansi-palette-{index}")))
-                    .w_full()
-                    .h(px(64.))
-                    .ghost()
-                    .selected(index == selected)
-                    .child(
-                        h_flex()
-                            .items_center()
-                            .gap(px(12.))
-                            .child(ansi_palette_preview(&palette.colors, px(16.), cx))
-                            .child(div().text_sm().child(SharedString::from(label.to_owned()))),
-                    )
-                    .on_click(listener),
+                custom_button(
+                    SharedString::from(format!("ansi-palette-{index}")),
+                    ButtonVariant::Tertiary,
+                )
+                .w_full()
+                .h(px(64.))
+                .selected(index == selected)
+                .child(
+                    h_flex()
+                        .items_center()
+                        .gap(px(12.))
+                        .child(ansi_palette_preview(&palette.colors, px(16.), cx))
+                        .child(
+                            TextRole::Button
+                                .apply(div())
+                                .child(SharedString::from(label.to_owned())),
+                        ),
+                )
+                .on_click(listener),
             );
         }
         let cancel_listener = cx.listener(|this, _, window, cx| this.on_cancel(window, cx));
@@ -1232,17 +1264,21 @@ impl DialogPresenter {
             .flex()
             .flex_col()
             .gap(px(16.))
-            .child(
-                div()
-                    .font_weight(gpui::FontWeight::BOLD)
-                    .child(self.text(MessageId::SelectAnsiPalette)),
-            )
+            .child(ui_text(
+                TextRole::DialogTitle,
+                TextColor::Primary,
+                self.text(MessageId::SelectAnsiPalette),
+                cx,
+            ))
             .child(rows)
             .child(
                 div().flex().justify_end().child(
-                    Button::new("cancel-ansi-palette")
-                        .child(div().text_sm().child(self.text(MessageId::Cancel)))
-                        .on_click(cancel_listener),
+                    button(
+                        "cancel-ansi-palette",
+                        self.text(MessageId::Cancel),
+                        ButtonVariant::Secondary,
+                    )
+                    .on_click(cancel_listener),
                 ),
             )
             .into_any_element()
@@ -1253,8 +1289,6 @@ impl DialogPresenter {
         dialog: &DiscoveryDialog,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
-        let muted = cx.theme().muted_foreground;
-        let warning = cx.theme().warning;
         let border = cx.theme().border;
         let row_bg = cx.theme().secondary;
         let scanning = dialog.scanning;
@@ -1278,8 +1312,7 @@ impl DialogPresenter {
             }
         };
         let mut scan_row = h_flex().items_center().gap(px(8.)).child(
-            Button::new("discovery-scan")
-                .child(div().text_sm().child(scan_label))
+            button("discovery-scan", scan_label, ButtonVariant::Secondary)
                 .icon(IconName::Search)
                 .loading(scanning)
                 .disabled(scanning)
@@ -1330,62 +1363,60 @@ impl DialogPresenter {
             .flex()
             .flex_col()
             .gap(px(10.))
-            .child(
-                div()
-                    .text_size(px(20.))
-                    .font_weight(gpui::FontWeight::BOLD)
-                    .child(self.text(MessageId::DiscoveryTitle)),
-            )
-            .child(
-                div()
-                    .text_sm()
-                    .text_color(muted)
-                    .child(self.text(MessageId::DiscoveryDescription)),
-            )
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(muted)
-                    .child(self.text(MessageId::DiscoveryExistingExcluded)),
-            )
+            .child(ui_text(
+                TextRole::DialogTitle,
+                TextColor::Primary,
+                self.text(MessageId::DiscoveryTitle),
+                cx,
+            ))
+            .child(helper_text(self.text(MessageId::DiscoveryDescription), cx))
+            .child(helper_text(
+                self.text(MessageId::DiscoveryExistingExcluded),
+                cx,
+            ))
             .child(scan_row);
         if dialog.include_ssh
             && let Some(path) = &dialog.ssh_path
         {
-            content = content.child(div().text_xs().text_color(muted).child(format!(
-                "{} {}",
-                self.text(MessageId::DiscoverySshConfigPath),
-                path.display()
-            )));
+            content = content.child(ui_text(
+                TextRole::Caption,
+                TextColor::Secondary,
+                format!(
+                    "{} {}",
+                    self.text(MessageId::DiscoverySshConfigPath),
+                    path.display()
+                ),
+                cx,
+            ));
         }
         if dialog.include_ssh
             && let Some(error) = &dialog.ssh_error
         {
-            content = content.child(div().text_sm().text_color(warning).child(format!(
-                "{} {error}",
-                self.text(MessageId::DiscoverySshConfigReadFailed)
-            )));
+            content = content.child(ui_text(
+                TextRole::Helper,
+                TextColor::Warning,
+                format!(
+                    "{} {error}",
+                    self.text(MessageId::DiscoverySshConfigReadFailed)
+                ),
+                cx,
+            ));
         }
         if dialog.include_ssh
             && let Some(ssh) = &dialog.ssh
         {
-            content = content.child(
-                div()
-                    .text_sm()
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .child(format!(
-                        "{} ({})",
-                        self.text(MessageId::DiscoverySshSection),
-                        ssh.hosts.len()
-                    )),
-            );
+            content = content.child(ui_text(
+                TextRole::SectionTitle,
+                TextColor::Primary,
+                format!(
+                    "{} ({})",
+                    self.text(MessageId::DiscoverySshSection),
+                    ssh.hosts.len()
+                ),
+                cx,
+            ));
             if ssh.hosts.is_empty() {
-                content = content.child(
-                    div()
-                        .text_sm()
-                        .text_color(muted)
-                        .child(self.text(MessageId::DiscoveryNoSshHosts)),
-                );
+                content = content.child(helper_text(self.text(MessageId::DiscoveryNoSshHosts), cx));
             }
             for host in &ssh.hosts {
                 let key = DiscoveryKey::Ssh(host.alias.to_lowercase());
@@ -1445,70 +1476,86 @@ impl DialogPresenter {
                             .flex()
                             .flex_col()
                             .gap(px(2.))
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                                    .child(host.alias.clone()),
-                            )
-                            .child(div().text_xs().text_color(muted).child(endpoint))
-                            .child(div().text_xs().text_color(muted).child(auth)),
+                            .child(ui_text(
+                                TextRole::Label,
+                                TextColor::Primary,
+                                host.alias.clone(),
+                                cx,
+                            ))
+                            .child(ui_text(
+                                TextRole::Caption,
+                                TextColor::Secondary,
+                                endpoint,
+                                cx,
+                            ))
+                            .child(ui_text(TextRole::Caption, TextColor::Secondary, auth, cx)),
                     );
                 if host.identity_file_missing
                     && let Some(path) = &host.identity_file
                 {
-                    row = row.child(div().text_xs().text_color(warning).child(format!(
-                        "{} {}",
-                        self.text(MessageId::DiscoveryIdentityMissing),
-                        path.display()
-                    )));
+                    row = row.child(ui_text(
+                        TextRole::Caption,
+                        TextColor::Warning,
+                        format!(
+                            "{} {}",
+                            self.text(MessageId::DiscoveryIdentityMissing),
+                            path.display()
+                        ),
+                        cx,
+                    ));
                 }
                 content = content.child(row);
             }
             if !ssh.skipped.is_empty() {
-                content = content.child(
-                    div()
-                        .text_sm()
-                        .font_weight(gpui::FontWeight::SEMIBOLD)
-                        .child(self.text(MessageId::DiscoverySkipped)),
-                );
+                content = content.child(ui_text(
+                    TextRole::SectionTitle,
+                    TextColor::Primary,
+                    self.text(MessageId::DiscoverySkipped),
+                    cx,
+                ));
                 for skipped in &ssh.skipped {
                     content = content.child(
                         div()
                             .flex()
                             .gap(px(6.))
-                            .text_xs()
-                            .child(skipped.alias.clone())
-                            .child(div().text_color(muted).child(skip_reason_text(
-                                self.payload.identity.locale,
-                                &skipped.reason,
-                            ))),
+                            .child(ui_text(
+                                TextRole::Caption,
+                                TextColor::Primary,
+                                skipped.alias.clone(),
+                                cx,
+                            ))
+                            .child(ui_text(
+                                TextRole::Caption,
+                                TextColor::Secondary,
+                                skip_reason_text(self.payload.identity.locale, &skipped.reason),
+                                cx,
+                            )),
                     );
                 }
             }
         }
         #[cfg(target_os = "windows")]
         if dialog.include_wsl {
-            content = content.child(
-                div()
-                    .text_sm()
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .child(self.text(MessageId::DiscoveryWslSection)),
-            );
+            content = content.child(ui_text(
+                TextRole::SectionTitle,
+                TextColor::Primary,
+                self.text(MessageId::DiscoveryWslSection),
+                cx,
+            ));
             if let Some(error) = &dialog.wsl_error {
-                content = content.child(div().text_sm().text_color(warning).child(format!(
-                    "{} {error}",
-                    self.text(MessageId::DiscoveryWslReadFailed)
-                )));
+                content = content.child(ui_text(
+                    TextRole::Helper,
+                    TextColor::Warning,
+                    format!("{} {error}", self.text(MessageId::DiscoveryWslReadFailed)),
+                    cx,
+                ));
             }
             if let Some(distributions) = &dialog.wsl {
                 if distributions.is_empty() {
-                    content = content.child(
-                        div()
-                            .text_sm()
-                            .text_color(muted)
-                            .child(self.text(MessageId::DiscoveryNoWslDistributions)),
-                    );
+                    content = content.child(helper_text(
+                        self.text(MessageId::DiscoveryNoWslDistributions),
+                        cx,
+                    ));
                 }
                 for distribution in distributions {
                     let key = DiscoveryKey::Wsl(distribution.to_lowercase());
@@ -1550,14 +1597,12 @@ impl DialogPresenter {
                                 .checked(selected)
                                 .on_click(listener),
                             )
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .min_w(px(0.))
-                                    .text_sm()
-                                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                                    .child(distribution.clone()),
-                            ),
+                            .child(div().flex_1().min_w(px(0.)).child(ui_text(
+                                TextRole::Label,
+                                TextColor::Primary,
+                                distribution.clone(),
+                                cx,
+                            ))),
                     );
                 }
             }
@@ -1590,19 +1635,23 @@ impl DialogPresenter {
                     .justify_end()
                     .gap(px(8.))
                     .child(
-                        Button::new("manual-add-connection")
-                            .child(div().text_sm().child(self.text(MessageId::ManualAdd)))
-                            .on_click(manual_add_listener),
+                        button(
+                            "manual-add-connection",
+                            self.text(MessageId::ManualAdd),
+                            ButtonVariant::Secondary,
+                        )
+                        .on_click(manual_add_listener),
                     )
                     .child(
-                        Button::new("close-discovery")
-                            .child(div().text_sm().child(self.text(MessageId::Close)))
-                            .on_click(close_listener),
+                        button(
+                            "close-discovery",
+                            self.text(MessageId::Close),
+                            ButtonVariant::Secondary,
+                        )
+                        .on_click(close_listener),
                     )
                     .child(
-                        Button::new("import-discovery")
-                            .child(div().text_sm().child(import_label))
-                            .primary()
+                        button("import-discovery", import_label, ButtonVariant::Primary)
                             .disabled(scanning || import_count == 0)
                             .on_click(import_listener),
                     ),
@@ -1628,18 +1677,21 @@ impl DialogPresenter {
         v_form()
             .w(px(420.))
             .label_width(px(130.))
-            .child(
-                field().child(
-                    div()
-                        .text_size(px(20.))
-                        .font_weight(gpui::FontWeight::BOLD)
-                        .child(self.text(MessageId::RenameLocalConnection)),
-                ),
-            )
+            .child(field().child(ui_text(
+                TextRole::DialogTitle,
+                TextColor::Primary,
+                self.text(MessageId::RenameLocalConnection),
+                cx,
+            )))
             .child(
                 field()
                     .label(self.text(MessageId::Distribution))
-                    .child(div().text_sm().child(dialog.distribution.clone())),
+                    .child(ui_text(
+                        TextRole::Body,
+                        TextColor::Primary,
+                        dialog.distribution.clone(),
+                        cx,
+                    )),
             )
             .child(
                 field()
@@ -1653,15 +1705,20 @@ impl DialogPresenter {
                         .justify_end()
                         .gap(px(8.))
                         .child(
-                            Button::new("cancel-local-rename")
-                                .child(div().text_sm().child(self.text(MessageId::Cancel)))
-                                .on_click(cancel_listener),
+                            button(
+                                "cancel-local-rename",
+                                self.text(MessageId::Cancel),
+                                ButtonVariant::Secondary,
+                            )
+                            .on_click(cancel_listener),
                         )
                         .child(
-                            Button::new("save-local-rename")
-                                .child(div().text_sm().child(self.text(MessageId::Rename)))
-                                .primary()
-                                .on_click(save_listener),
+                            button(
+                                "save-local-rename",
+                                self.text(MessageId::Rename),
+                                ButtonVariant::Primary,
+                            )
+                            .on_click(save_listener),
                         ),
                 ),
             )
@@ -1692,11 +1749,12 @@ impl DialogPresenter {
                     .flex()
                     .flex_col()
                     .gap(px(12.))
-                    .child(
-                        div()
-                            .font_weight(gpui::FontWeight::BOLD)
-                            .child(self.text(MessageId::CredentialRequired)),
-                    )
+                    .child(ui_text(
+                        TextRole::DialogTitle,
+                        TextColor::Primary,
+                        self.text(MessageId::CredentialRequired),
+                        cx,
+                    ))
                     .child(Input::new(&secret_input))
                     .child(
                         div()
@@ -1704,15 +1762,20 @@ impl DialogPresenter {
                             .justify_end()
                             .gap(px(8.))
                             .child(
-                                Button::new("cancel-secret")
-                                    .child(div().text_sm().child(self.text(MessageId::Cancel)))
-                                    .on_click(cancel_listener),
+                                button(
+                                    "cancel-secret",
+                                    self.text(MessageId::Cancel),
+                                    ButtonVariant::Secondary,
+                                )
+                                .on_click(cancel_listener),
                             )
                             .child(
-                                Button::new("connect-once")
-                                    .child(div().text_sm().child(self.text(MessageId::ConnectOnce)))
-                                    .primary()
-                                    .on_click(submit_listener),
+                                button(
+                                    "connect-once",
+                                    self.text(MessageId::ConnectOnce),
+                                    ButtonVariant::Primary,
+                                )
+                                .on_click(submit_listener),
                             ),
                     )
                     .into_any_element()
@@ -1749,11 +1812,12 @@ impl DialogPresenter {
                     .flex()
                     .flex_col()
                     .gap(px(10.))
-                    .child(
-                        div()
-                            .font_weight(gpui::FontWeight::BOLD)
-                            .child(self.text(MessageId::UnknownHostKey)),
-                    )
+                    .child(ui_text(
+                        TextRole::DialogTitle,
+                        TextColor::Primary,
+                        self.text(MessageId::UnknownHostKey),
+                        cx,
+                    ))
                     .child(format!("{}:{}", endpoint.host, endpoint.port))
                     .child(algorithm.clone())
                     .child(fingerprint_sha256.clone())
@@ -1763,18 +1827,20 @@ impl DialogPresenter {
                             .justify_end()
                             .gap(px(8.))
                             .child(
-                                Button::new("reject-host-key")
-                                    .child(div().text_sm().child(self.text(MessageId::Reject)))
-                                    .danger()
-                                    .on_click(reject_listener),
+                                button(
+                                    "reject-host-key",
+                                    self.text(MessageId::Reject),
+                                    ButtonVariant::Danger,
+                                )
+                                .on_click(reject_listener),
                             )
                             .child(
-                                Button::new("accept-host-key")
-                                    .child(
-                                        div().text_sm().child(self.text(MessageId::AcceptAndStore)),
-                                    )
-                                    .primary()
-                                    .on_click(accept_listener),
+                                button(
+                                    "accept-host-key",
+                                    self.text(MessageId::AcceptAndStore),
+                                    ButtonVariant::Primary,
+                                )
+                                .on_click(accept_listener),
                             ),
                     )
                     .into_any_element()
@@ -1804,11 +1870,12 @@ impl DialogPresenter {
                     .flex()
                     .flex_col()
                     .gap(px(10.))
-                    .child(
-                        div()
-                            .font_weight(gpui::FontWeight::BOLD)
-                            .child(self.text(MessageId::ChangedHostKey)),
-                    )
+                    .child(ui_text(
+                        TextRole::DialogTitle,
+                        TextColor::Primary,
+                        self.text(MessageId::ChangedHostKey),
+                        cx,
+                    ))
                     .child(format!("{}:{}", endpoint.host, endpoint.port))
                     .child(format!(
                         "{}: {}",
@@ -1826,19 +1893,20 @@ impl DialogPresenter {
                             .justify_end()
                             .gap(px(8.))
                             .child(
-                                Button::new("close-changed-host-key")
-                                    .child(div().text_sm().child(self.text(MessageId::Close)))
-                                    .on_click(close_listener),
+                                button(
+                                    "close-changed-host-key",
+                                    self.text(MessageId::Close),
+                                    ButtonVariant::Secondary,
+                                )
+                                .on_click(close_listener),
                             )
                             .child(
-                                Button::new("open-trusted-hosts")
-                                    .child(
-                                        div()
-                                            .text_sm()
-                                            .child(self.text(MessageId::OpenTrustedHosts)),
-                                    )
-                                    .primary()
-                                    .on_click(hosts_listener),
+                                button(
+                                    "open-trusted-hosts",
+                                    self.text(MessageId::OpenTrustedHosts),
+                                    ButtonVariant::Primary,
+                                )
+                                .on_click(hosts_listener),
                             ),
                     )
                     .into_any_element()
@@ -1866,15 +1934,20 @@ impl DialogPresenter {
                             .justify_end()
                             .gap(px(8.))
                             .child(
-                                Button::new("cancel-tab-close")
-                                    .child(div().text_sm().child(self.text(MessageId::Cancel)))
-                                    .on_click(cancel_listener),
+                                button(
+                                    "cancel-tab-close",
+                                    self.text(MessageId::Cancel),
+                                    ButtonVariant::Secondary,
+                                )
+                                .on_click(cancel_listener),
                             )
                             .child(
-                                Button::new("confirm-tab-close")
-                                    .child(div().text_sm().child(self.text(MessageId::Close)))
-                                    .danger()
-                                    .on_click(confirm_listener),
+                                button(
+                                    "confirm-tab-close",
+                                    self.text(MessageId::Close),
+                                    ButtonVariant::Danger,
+                                )
+                                .on_click(confirm_listener),
                             ),
                     )
                     .into_any_element()

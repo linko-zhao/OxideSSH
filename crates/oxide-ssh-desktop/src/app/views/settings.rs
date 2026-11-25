@@ -31,12 +31,7 @@ fn settings_page(title: &'static str, rows: Vec<AnyElement>, cx: &Context<AppVie
         .flex()
         .flex_col()
         .gap(px(24.))
-        .child(
-            div()
-                .text_size(px(30.))
-                .font_weight(gpui::FontWeight::BOLD)
-                .child(title),
-        )
+        .child(ui_text(TextRole::PageTitle, TextColor::Primary, title, cx))
         .child(settings_card(rows, cx))
         .into_any_element()
 }
@@ -74,25 +69,20 @@ impl AppView {
             .flex()
             .flex_col()
             .gap(px(4.))
-            .child(
-                div()
-                    .text_sm()
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .child(self.text(title)),
-            )
-            .child(
-                div()
-                    .text_sm()
-                    .text_color(cx.theme().muted_foreground)
-                    .child(self.text(description)),
-            );
+            .child(ui_text(
+                TextRole::Label,
+                TextColor::Primary,
+                self.text(title),
+                cx,
+            ))
+            .child(helper_text(self.text(description), cx));
         if let Some(error) = error {
-            labels = labels.child(
-                div()
-                    .text_sm()
-                    .text_color(cx.theme().danger)
-                    .child(format!("{} {error}", self.text(error_label))),
-            );
+            labels = labels.child(ui_text(
+                TextRole::Helper,
+                TextColor::Danger,
+                format!("{} {error}", self.text(error_label)),
+                cx,
+            ));
         }
         h_flex()
             .w_full()
@@ -445,27 +435,33 @@ impl AppView {
                                         px(12.),
                                         cx,
                                     ))
-                                    .child(
-                                        div().text_sm().child(SharedString::from(
-                                            match self.ansi_palette_name() {
-                                                BUILT_IN_PALETTE => {
-                                                    self.text(MessageId::BuiltInAnsiPalette)
-                                                }
-                                                CUSTOM_PALETTE => {
-                                                    self.text(MessageId::CustomAnsiPalette)
-                                                }
-                                                name => name,
+                                    .child(ui_text(
+                                        TextRole::Body,
+                                        TextColor::Primary,
+                                        match self.ansi_palette_name() {
+                                            BUILT_IN_PALETTE => {
+                                                self.text(MessageId::BuiltInAnsiPalette)
                                             }
-                                            .to_owned(),
-                                        )),
-                                    ),
+                                            CUSTOM_PALETTE => {
+                                                self.text(MessageId::CustomAnsiPalette)
+                                            }
+                                            name => name,
+                                        }
+                                        .to_owned(),
+                                        cx,
+                                    )),
                             )
                             .child(
-                                Button::new("change-ansi-palette")
-                                    .child(div().text_sm().child(self.text(MessageId::Change)))
-                                    .on_click(cx.listener(|this, _, _, cx| {
+                                button(
+                                    "change-ansi-palette",
+                                    self.text(MessageId::Change),
+                                    ButtonVariant::Secondary,
+                                )
+                                .on_click(cx.listener(
+                                    |this, _, _, cx| {
                                         this.open_ansi_palette_dialog(cx);
-                                    })),
+                                    },
+                                )),
                             )
                             .into_any_element(),
                         self.ansi_palette_error(),
@@ -484,12 +480,14 @@ impl AppView {
                 let mut rows = Vec::with_capacity(known_hosts.len().max(1));
                 if known_hosts.is_empty() {
                     rows.push(
-                        div()
-                            .p(px(20.))
-                            .text_sm()
-                            .text_color(cx.theme().muted_foreground)
-                            .child(self.text(MessageId::NoTrustedHosts))
-                            .into_any_element(),
+                        ui_text(
+                            TextRole::Body,
+                            TextColor::Secondary,
+                            self.text(MessageId::NoTrustedHosts),
+                            cx,
+                        )
+                        .p(px(20.))
+                        .into_any_element(),
                     );
                 }
                 for host in known_hosts {
@@ -510,30 +508,22 @@ impl AppView {
                                     .flex()
                                     .flex_col()
                                     .gap(px(4.))
-                                    .child(
-                                        div()
-                                            .text_sm()
-                                            .font_weight(gpui::FontWeight::SEMIBOLD)
-                                            .child(title),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_sm()
-                                            .text_color(cx.theme().muted_foreground)
-                                            .child(format!(
-                                                "{}\n{}",
-                                                algorithm, host.fingerprint_sha256
-                                            )),
-                                    ),
+                                    .child(ui_text(TextRole::Label, TextColor::Primary, title, cx))
+                                    .child(helper_text(
+                                        format!("{}\n{}", algorithm, host.fingerprint_sha256),
+                                        cx,
+                                    )),
                             )
                             .child(
-                                Button::new(SharedString::from(format!(
-                                    "delete-host-{}-{}",
-                                    endpoint.host, endpoint.port
-                                )))
-                                .icon(gpui_component::Icon::empty().path("icons/trash-2.svg"))
-                                .danger()
-                                .compact()
+                                icon_button(
+                                    SharedString::from(format!(
+                                        "delete-host-{}-{}",
+                                        endpoint.host, endpoint.port
+                                    )),
+                                    gpui_component::Icon::empty().path("icons/trash-2.svg"),
+                                    ButtonVariant::Danger,
+                                    ButtonSize::Icon,
+                                )
                                 .on_click(move |_, _, cx| {
                                     view.update(cx, |this, cx| {
                                         this.confirm =
@@ -553,36 +543,38 @@ impl AppView {
                         .justify_between()
                         .gap(px(16.))
                         .p(px(20.))
+                        .child(ui_text(
+                            TextRole::Body,
+                            TextColor::Primary,
+                            self.text(MessageId::ClearAllCredentials),
+                            cx,
+                        ))
                         .child(
-                            div()
-                                .text_sm()
-                                .child(self.text(MessageId::ClearAllCredentials)),
-                        )
-                        .child(
-                            Button::new("clear-all-credentials")
-                                .child(
-                                    div()
-                                        .text_sm()
-                                        .child(self.text(MessageId::ClearAllCredentials)),
-                                )
-                                .danger()
-                                .on_click(move |_, _, cx| {
-                                    view.update(cx, |this, cx| {
-                                        this.confirm = Some(ConfirmAction::ClearAllCredentials);
-                                        cx.notify();
-                                    });
-                                }),
+                            button(
+                                "clear-all-credentials",
+                                self.text(MessageId::ClearAllCredentials),
+                                ButtonVariant::Danger,
+                            )
+                            .on_click(move |_, _, cx| {
+                                view.update(cx, |this, cx| {
+                                    this.confirm = Some(ConfirmAction::ClearAllCredentials);
+                                    cx.notify();
+                                });
+                            }),
                         )
                         .into_any_element(),
                 );
                 if !self.credential_clear_failures.is_empty() {
                     rows.push(
-                        div()
-                            .p(px(20.))
-                            .text_sm()
-                            .child(self.text(MessageId::ClearCredentialsFailures))
-                            .child(self.credential_clear_failures.join("\n"))
-                            .into_any_element(),
+                        ui_text(
+                            TextRole::Body,
+                            TextColor::Primary,
+                            self.text(MessageId::ClearCredentialsFailures),
+                            cx,
+                        )
+                        .p(px(20.))
+                        .child(self.credential_clear_failures.join("\n"))
+                        .into_any_element(),
                     );
                 }
                 rows.push(
@@ -591,12 +583,11 @@ impl AppView {
                         .gap(px(8.))
                         .p(px(16.))
                         .child(
-                            Button::new("export-known-hosts")
-                                .child(
-                                    div().text_sm().child(
-                                        self.text(MessageId::ExportKnownHosts),
-                                    ),
-                                )
+                            button(
+                                "export-known-hosts",
+                                self.text(MessageId::ExportKnownHosts),
+                                ButtonVariant::Secondary,
+                            )
                                 .on_click(cx.listener(|_this, _, _, cx| {
                                     let receiver = cx.prompt_for_new_path(
                                         Path::new("."),
@@ -622,32 +613,30 @@ impl AppView {
                                 })),
                         )
                         .child(
-                            Button::new("import-known-hosts-keep")
-                                .child(
-                                    div().text_sm().child(
-                                        self.text(MessageId::ImportKeepExisting),
-                                    ),
-                                )
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    this.choose_known_hosts_import(
-                                        oxide_ssh_core::storage::KnownHostsConflictPolicy::KeepExisting,
-                                        cx,
-                                    );
-                                })),
+                            button(
+                                "import-known-hosts-keep",
+                                self.text(MessageId::ImportKeepExisting),
+                                ButtonVariant::Secondary,
+                            )
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.choose_known_hosts_import(
+                                    oxide_ssh_core::storage::KnownHostsConflictPolicy::KeepExisting,
+                                    cx,
+                                );
+                            })),
                         )
                         .child(
-                            Button::new("import-known-hosts-replace")
-                                .child(
-                                    div().text_sm().child(
-                                        self.text(MessageId::ImportReplaceExisting),
-                                    ),
-                                )
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    this.choose_known_hosts_import(
-                                        oxide_ssh_core::storage::KnownHostsConflictPolicy::ReplaceExisting,
-                                        cx,
-                                    );
-                                })),
+                            button(
+                                "import-known-hosts-replace",
+                                self.text(MessageId::ImportReplaceExisting),
+                                ButtonVariant::Secondary,
+                            )
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.choose_known_hosts_import(
+                                    oxide_ssh_core::storage::KnownHostsConflictPolicy::ReplaceExisting,
+                                    cx,
+                                );
+                            })),
                         )
                         .into_any_element(),
                 );
@@ -658,23 +647,20 @@ impl AppView {
                             .flex_col()
                             .gap(px(12.))
                             .p(px(20.))
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .text_color(cx.theme().muted_foreground)
-                                    .child(self.text(MessageId::ConfigSecretsNote)),
-                            )
+                            .child(helper_text(
+                                self.text(MessageId::ConfigSecretsNote),
+                                cx,
+                            ))
                             .child(
                                 h_flex()
                                     .flex_wrap()
                                     .gap(px(8.))
                                     .child(
-                                        Button::new("config-export")
-                                            .child(
-                                                div().text_sm().child(
-                                                    self.text(MessageId::ConfigExport),
-                                                ),
-                                            )
+                                        button(
+                                            "config-export",
+                                            self.text(MessageId::ConfigExport),
+                                            ButtonVariant::Secondary,
+                                        )
                                             .on_click(cx.listener({
                                                 let store = store.clone();
                                                 move |_this, _, _, cx| {
@@ -704,12 +690,11 @@ impl AppView {
                                             })),
                                     )
                                     .child(
-                                        Button::new("config-backup")
-                                            .child(
-                                                div().text_sm().child(
-                                                    self.text(MessageId::ConfigBackup),
-                                                ),
-                                            )
+                                        button(
+                                            "config-backup",
+                                            self.text(MessageId::ConfigBackup),
+                                            ButtonVariant::Secondary,
+                                        )
                                             .on_click(cx.listener({
                                                 let store = store.clone();
                                                 move |_this, _, _, cx| {
@@ -739,12 +724,11 @@ impl AppView {
                                             })),
                                     )
                                     .child(
-                                        Button::new("config-import")
-                                            .child(
-                                                div().text_sm().child(
-                                                    self.text(MessageId::ConfigImport),
-                                                ),
-                                            )
+                                        button(
+                                            "config-import",
+                                            self.text(MessageId::ConfigImport),
+                                            ButtonVariant::Secondary,
+                                        )
                                             .on_click(cx.listener({
                                                 let store = store.clone();
                                                 move |_this, _, window, cx| {
@@ -812,22 +796,28 @@ impl AppView {
                                     .items_center()
                                     .gap(px(4.))
                                     .child(
-                                        Button::new("back-to-workspace")
-                                            .icon(IconName::ArrowLeft)
-                                            .ghost()
-                                            .compact()
-                                            .on_click(cx.listener(|this, _, _, cx| {
+                                        icon_button(
+                                            "back-to-workspace",
+                                            IconName::ArrowLeft,
+                                            ButtonVariant::Tertiary,
+                                            ButtonSize::Icon,
+                                        )
+                                        .on_click(
+                                            cx.listener(|this, _, _, cx| {
                                                 this.main_view = MainView::Workspace;
                                                 cx.notify();
-                                            })),
+                                            }),
+                                        ),
                                     )
                                     .child(
-                                        div()
-                                            .px(px(10.))
-                                            .py(px(8.))
-                                            .text_size(px(18.))
-                                            .font_weight(gpui::FontWeight::BOLD)
-                                            .child(self.text(MessageId::Settings)),
+                                        ui_text(
+                                            TextRole::PanelTitle,
+                                            TextColor::Primary,
+                                            self.text(MessageId::Settings),
+                                            cx,
+                                        )
+                                        .px(px(10.))
+                                        .py(px(8.)),
                                     ),
                             )
                             .child(side_nav),
