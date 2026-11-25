@@ -50,7 +50,6 @@ impl AppView {
         let radius_lg = theme.radius_lg;
         div()
             .id(SharedString::from(format!("host-card-{}", profile.id.0)))
-            .group("host-card")
             .w(px(300.))
             .p(px(14.))
             .flex()
@@ -86,6 +85,7 @@ impl AppView {
                     .child(
                         div()
                             .flex_1()
+                            .min_w_0()
                             .overflow_hidden()
                             .flex()
                             .flex_col()
@@ -106,9 +106,8 @@ impl AppView {
                     )
                     .child(
                         h_flex()
+                            .flex_none()
                             .gap(px(2.))
-                            .opacity(0.)
-                            .group_hover("host-card", |style| style.opacity(1.))
                             .child(
                                 icon_button(
                                     edit_id,
@@ -197,7 +196,6 @@ impl AppView {
                 "local-card-{}",
                 connection.id.0
             )))
-            .group("local-card")
             .w(px(300.))
             .p(px(14.))
             .flex()
@@ -233,6 +231,7 @@ impl AppView {
                     .child(
                         div()
                             .flex_1()
+                            .min_w_0()
                             .overflow_hidden()
                             .flex()
                             .flex_col()
@@ -248,9 +247,8 @@ impl AppView {
                     )
                     .child(
                         h_flex()
+                            .flex_none()
                             .gap(px(2.))
-                            .opacity(0.)
-                            .group_hover("local-card", |style| style.opacity(1.))
                             .child(
                                 icon_button(
                                     rename_id,
