@@ -598,6 +598,10 @@ impl DialogPresenter {
                             .bg(rgb(tag_color_rgb(tag.color.unwrap_or(TagColor::Gray)))),
                     )
                     .child(tag.name.clone())
+                    .when(selected, |chip| {
+                        chip.child(Icon::new(IconName::Check).size(px(12.)).flex_none())
+                            .child(self.text(MessageId::Selected))
+                    })
                     .on_click(toggle_listener),
             );
             tag_chips = tag_chips.child(if selected {
@@ -1078,8 +1082,18 @@ impl DialogPresenter {
                         swatch_rest
                     })
                     .cursor_pointer()
+                    .when(none_selected, |swatch| {
+                        swatch.child(
+                            Icon::new(IconName::Check)
+                                .size(px(12.))
+                                .text_color(cx.theme().foreground),
+                        )
+                    })
                     .on_click(none_listener),
             );
+            if none_selected {
+                swatches = swatches.child(self.text(MessageId::Selected));
+            }
             for color in TagColor::ALL {
                 let selected = entry.color == Some(color);
                 let listener = cx.listener(move |this, _, window, cx| {
@@ -1102,8 +1116,18 @@ impl DialogPresenter {
                             swatch_rest
                         })
                         .cursor_pointer()
+                        .when(selected, |swatch| {
+                            swatch.child(
+                                Icon::new(IconName::Check)
+                                    .size(px(12.))
+                                    .text_color(rgb(0x0021_1f1d)),
+                            )
+                        })
                         .on_click(listener),
                 );
+                if selected {
+                    swatches = swatches.child(self.text(MessageId::Selected));
+                }
             }
             let delete_listener = cx.listener(move |this, _, _, cx| {
                 this.owner

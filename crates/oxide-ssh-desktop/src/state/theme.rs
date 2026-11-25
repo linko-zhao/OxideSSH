@@ -26,8 +26,18 @@ pub struct ThemeOverrides {
     pub primary_hover: Option<Hsla>,
     pub primary_active: Option<Hsla>,
     pub primary_foreground: Option<Hsla>,
+    pub primary_text: Option<Hsla>,
     pub strip: Option<Hsla>,
     pub danger: Option<Hsla>,
+    pub danger_hover: Option<Hsla>,
+    pub danger_active: Option<Hsla>,
+    pub danger_foreground: Option<Hsla>,
+    pub danger_text: Option<Hsla>,
+    pub warning: Option<Hsla>,
+    pub warning_hover: Option<Hsla>,
+    pub warning_active: Option<Hsla>,
+    pub warning_foreground: Option<Hsla>,
+    pub warning_text: Option<Hsla>,
 }
 
 #[derive(Deserialize)]
@@ -44,8 +54,18 @@ struct RawThemeOverrides {
     primary_hover: Option<String>,
     primary_active: Option<String>,
     primary_foreground: Option<String>,
+    primary_text: Option<String>,
     strip: Option<String>,
     danger: Option<String>,
+    danger_hover: Option<String>,
+    danger_active: Option<String>,
+    danger_foreground: Option<String>,
+    danger_text: Option<String>,
+    warning: Option<String>,
+    warning_hover: Option<String>,
+    warning_active: Option<String>,
+    warning_foreground: Option<String>,
+    warning_text: Option<String>,
 }
 
 fn parse_color(value: Option<String>, field: &str) -> Result<Option<Hsla>, String> {
@@ -82,8 +102,18 @@ impl ThemeOverrides {
             primary_hover: parse_color(raw.primary_hover, "primaryHover")?,
             primary_active: parse_color(raw.primary_active, "primaryActive")?,
             primary_foreground: parse_color(raw.primary_foreground, "primaryForeground")?,
+            primary_text: parse_color(raw.primary_text, "primaryText")?,
             strip: parse_color(raw.strip, "strip")?,
             danger: parse_color(raw.danger, "danger")?,
+            danger_hover: parse_color(raw.danger_hover, "dangerHover")?,
+            danger_active: parse_color(raw.danger_active, "dangerActive")?,
+            danger_foreground: parse_color(raw.danger_foreground, "dangerForeground")?,
+            danger_text: parse_color(raw.danger_text, "dangerText")?,
+            warning: parse_color(raw.warning, "warning")?,
+            warning_hover: parse_color(raw.warning_hover, "warningHover")?,
+            warning_active: parse_color(raw.warning_active, "warningActive")?,
+            warning_foreground: parse_color(raw.warning_foreground, "warningForeground")?,
+            warning_text: parse_color(raw.warning_text, "warningText")?,
         })
     }
 }
@@ -196,6 +226,25 @@ impl ResolvedTheme {
     }
 }
 
+#[derive(Clone, Copy)]
+pub struct SemanticColors {
+    pub primary: Hsla,
+    pub warning: Hsla,
+    pub danger: Hsla,
+}
+
+impl SemanticColors {
+    fn resolve(colors: &ThemeColor) -> Self {
+        Self {
+            primary: colors.link,
+            warning: colors.yellow,
+            danger: colors.red,
+        }
+    }
+}
+
+impl gpui::Global for SemanticColors {}
+
 /// Switch gpui-component to the resolved mode, then lay the OxideSSH palette
 /// over its default tokens. Warm Claude-style neutrals (cream light, umber
 /// dark) with the Claude terracotta-orange accent #D97757.
@@ -222,13 +271,16 @@ pub fn apply_theme(
         ResolvedTheme::Dark => apply_dark_palette(&mut global.colors),
         ResolvedTheme::Light => apply_light_palette(&mut global.colors),
     }
-    match overrides {
+    let result = match overrides {
         Ok(overrides) => {
             apply_overrides(&mut global.colors, theme, &overrides);
             Ok(())
         }
         Err(error) => Err(error),
-    }
+    };
+    let semantic = SemanticColors::resolve(&global.colors);
+    cx.set_global(semantic);
+    result
 }
 
 fn apply_overrides(colors: &mut ThemeColor, theme: ResolvedTheme, overrides: &ThemeOverrides) {
@@ -277,7 +329,6 @@ fn apply_overrides(colors: &mut ThemeColor, theme: ResolvedTheme, overrides: &Th
     }
     if let Some(color) = overrides.primary {
         colors.primary = color;
-        colors.link = color;
         colors.progress_bar = color;
         colors.drag_border = color;
         colors.list_active_border = color;
@@ -312,6 +363,9 @@ fn apply_overrides(colors: &mut ThemeColor, theme: ResolvedTheme, overrides: &Th
         colors.primary_foreground = color;
         colors.sidebar_primary_foreground = color;
     }
+    if let Some(color) = overrides.primary_text {
+        colors.link = color;
+    }
     if let Some(color) = overrides.strip {
         colors.sidebar = color;
         colors.tab_bar = color;
@@ -320,6 +374,33 @@ fn apply_overrides(colors: &mut ThemeColor, theme: ResolvedTheme, overrides: &Th
     }
     if let Some(color) = overrides.danger {
         colors.danger = color;
+    }
+    if let Some(color) = overrides.danger_hover {
+        colors.danger_hover = color;
+    }
+    if let Some(color) = overrides.danger_active {
+        colors.danger_active = color;
+    }
+    if let Some(color) = overrides.danger_foreground {
+        colors.danger_foreground = color;
+    }
+    if let Some(color) = overrides.danger_text {
+        colors.red = color;
+    }
+    if let Some(color) = overrides.warning {
+        colors.warning = color;
+    }
+    if let Some(color) = overrides.warning_hover {
+        colors.warning_hover = color;
+    }
+    if let Some(color) = overrides.warning_active {
+        colors.warning_active = color;
+    }
+    if let Some(color) = overrides.warning_foreground {
+        colors.warning_foreground = color;
+    }
+    if let Some(color) = overrides.warning_text {
+        colors.yellow = color;
     }
 }
 
@@ -355,7 +436,7 @@ fn apply_dark_palette(colors: &mut ThemeColor) {
     colors.primary_foreground = primary_foreground;
     colors.ring = primary;
     colors.selection = hsla(15. / 360., 0.55, 0.60, 0.35);
-    colors.link = primary;
+    colors.link = hsl(15., 66., 68.);
     colors.link_hover = primary_hover;
     colors.link_active = primary_active;
     colors.progress_bar = primary;
@@ -415,6 +496,9 @@ fn apply_dark_palette(colors: &mut ThemeColor) {
     colors.danger_hover = hsl(3., 52., 56.);
     colors.danger_active = hsl(3., 45., 44.);
     colors.danger_foreground = hsl(0., 30., 96.);
+    colors.red = hsl(3., 72., 73.);
+    colors.yellow = hsl(48., 96., 53.);
+    colors.warning = colors.yellow;
 }
 
 fn apply_light_palette(colors: &mut ThemeColor) {
@@ -445,7 +529,7 @@ fn apply_light_palette(colors: &mut ThemeColor) {
     colors.primary_foreground = primary_foreground;
     colors.ring = primary;
     colors.selection = hsla(15. / 360., 0.63, 0.60, 0.28);
-    colors.link = primary;
+    colors.link = hsl(13.8, 49.8, 42.5);
     colors.link_hover = primary_hover;
     colors.link_active = primary_active;
     colors.progress_bar = primary;
@@ -505,6 +589,9 @@ fn apply_light_palette(colors: &mut ThemeColor) {
     colors.danger_hover = hsl(3., 56., 57.);
     colors.danger_active = hsl(3., 48., 46.);
     colors.danger_foreground = hsl(0., 40., 97.);
+    colors.red = colors.danger_active;
+    colors.yellow = hsl(36., 100., 20.);
+    colors.warning = hsl(48., 96., 53.);
 }
 
 const fn rgb_color(hex: u32) -> RgbColor {
@@ -518,6 +605,33 @@ const fn rgb_color(hex: u32) -> RgbColor {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn composite(foreground: Hsla, background: Hsla) -> gpui::Rgba {
+        let foreground = gpui::Rgba::from(foreground);
+        let background = gpui::Rgba::from(background);
+        gpui::Rgba {
+            r: foreground.r * foreground.a + background.r * (1. - foreground.a),
+            g: foreground.g * foreground.a + background.g * (1. - foreground.a),
+            b: foreground.b * foreground.a + background.b * (1. - foreground.a),
+            a: 1.,
+        }
+    }
+
+    fn contrast(foreground: Hsla, background: Hsla) -> f32 {
+        fn luminance(color: gpui::Rgba) -> f32 {
+            fn channel(value: f32) -> f32 {
+                if value <= 0.04045 {
+                    value / 12.92
+                } else {
+                    ((value + 0.055) / 1.055).powf(2.4)
+                }
+            }
+            0.2126 * channel(color.r) + 0.7152 * channel(color.g) + 0.0722 * channel(color.b)
+        }
+        let foreground = luminance(composite(foreground, background));
+        let background = luminance(composite(background, background));
+        (foreground.max(background) + 0.05) / (foreground.min(background) + 0.05)
+    }
 
     #[test]
     fn bundled_codex_themes_are_valid() {
@@ -534,33 +648,6 @@ mod tests {
 
     #[test]
     fn control_boundaries_and_focus_rings_have_sufficient_contrast() {
-        fn composite(foreground: Hsla, background: Hsla) -> gpui::Rgba {
-            let foreground = gpui::Rgba::from(foreground);
-            let background = gpui::Rgba::from(background);
-            gpui::Rgba {
-                r: foreground.r * foreground.a + background.r * (1. - foreground.a),
-                g: foreground.g * foreground.a + background.g * (1. - foreground.a),
-                b: foreground.b * foreground.a + background.b * (1. - foreground.a),
-                a: 1.,
-            }
-        }
-
-        fn contrast(foreground: Hsla, background: Hsla) -> f32 {
-            fn luminance(color: gpui::Rgba) -> f32 {
-                fn channel(value: f32) -> f32 {
-                    if value <= 0.04045 {
-                        value / 12.92
-                    } else {
-                        ((value + 0.055) / 1.055).powf(2.4)
-                    }
-                }
-                0.2126 * channel(color.r) + 0.7152 * channel(color.g) + 0.0722 * channel(color.b)
-            }
-            let foreground = luminance(composite(foreground, background));
-            let background = luminance(composite(background, background));
-            (foreground.max(background) + 0.05) / (foreground.min(background) + 0.05)
-        }
-
         for (theme, name) in [
             (ResolvedTheme::Light, "built-in light"),
             (ResolvedTheme::Dark, "built-in dark"),
@@ -581,9 +668,29 @@ mod tests {
             }
             assert!(
                 contrast(colors.primary_foreground, colors.primary) >= 4.5,
-                "{name}: primary text is {:.2}:1",
+                "{name}: primary button text is {:.2}:1",
                 contrast(colors.primary_foreground, colors.primary)
             );
+            let semantic = SemanticColors::resolve(&colors);
+            for (surface_name, surface) in [
+                ("page", colors.background),
+                ("card", colors.secondary),
+                ("dialog", colors.popover),
+                ("title bar", colors.title_bar),
+                ("hover", colors.accent),
+            ] {
+                for (role_name, foreground) in [
+                    ("primary", semantic.primary),
+                    ("warning", semantic.warning),
+                    ("danger", semantic.danger),
+                ] {
+                    assert!(
+                        contrast(foreground, surface) >= 4.5,
+                        "{name}: {role_name} text/indicator on {surface_name} is {:.2}:1",
+                        contrast(foreground, surface)
+                    );
+                }
+            }
             for (surface_name, surface) in [
                 ("page", colors.background),
                 ("card", colors.secondary),
@@ -612,13 +719,52 @@ mod tests {
     #[test]
     fn theme_file_supports_partial_colors_and_rejects_invalid_values() {
         let theme = ThemeOverrides::parse(
-            r##"{"background":"#112233","primary":"#44556677","mutedForeground":"#AABBCC"}"##,
+            r##"{"background":"#F7F7F7","primary":"#44556677","mutedForeground":"#AABBCC","primaryText":"#123456","dangerHover":"#234567","dangerActive":"#345678","dangerForeground":"#F5F6F8","dangerText":"#A61B1B","warning":"#FACC15","warningHover":"#EAB308","warningActive":"#CA8A04","warningForeground":"#211F1D","warningText":"#854D0E"}"##,
         )
         .unwrap();
-        assert_eq!(theme.background, Some(gpui::rgb(0x112233).into()));
+        assert_eq!(theme.background, Some(gpui::rgb(0xF7F7F7).into()));
         assert_eq!(theme.primary, Some(gpui::rgba(0x44556677).into()));
         assert_eq!(theme.muted_foreground, Some(gpui::rgb(0xAABBCC).into()));
         assert_eq!(theme.raised, None);
+        let mut colors = ThemeColor::default();
+        apply_light_palette(&mut colors);
+        apply_overrides(&mut colors, ResolvedTheme::Light, &theme);
+        let semantic = SemanticColors::resolve(&colors);
+        assert_eq!(semantic.primary, gpui::rgb(0x123456).into());
+        assert_eq!(semantic.danger, gpui::rgb(0xA61B1B).into());
+        assert_eq!(semantic.warning, gpui::rgb(0x854D0E).into());
+        assert_eq!(colors.danger_hover, gpui::rgb(0x234567).into());
+        assert_eq!(colors.danger_active, gpui::rgb(0x345678).into());
+        assert_eq!(colors.danger_foreground, gpui::rgb(0xF5F6F8).into());
+        assert_eq!(colors.warning, gpui::rgb(0xFACC15).into());
+        assert_eq!(colors.warning_hover, gpui::rgb(0xEAB308).into());
+        assert_eq!(colors.warning_active, gpui::rgb(0xCA8A04).into());
+        assert_eq!(colors.warning_foreground, gpui::rgb(0x211F1D).into());
+        for surface in [
+            colors.background,
+            colors.secondary,
+            colors.popover,
+            colors.accent,
+        ] {
+            for foreground in [semantic.primary, semantic.warning, semantic.danger] {
+                assert!(contrast(foreground, surface) >= 4.5);
+            }
+        }
+        let mut surface_only = ThemeColor::default();
+        apply_light_palette(&mut surface_only);
+        let expected_primary_text = SemanticColors::resolve(&surface_only).primary;
+        apply_overrides(
+            &mut surface_only,
+            ResolvedTheme::Light,
+            &ThemeOverrides {
+                primary: Some(gpui::rgb(0xFFFFFF).into()),
+                ..ThemeOverrides::default()
+            },
+        );
+        assert_eq!(
+            SemanticColors::resolve(&surface_only).primary,
+            expected_primary_text
+        );
         assert!(ThemeOverrides::parse(r##"{"background":"red"}"##).is_err());
     }
 

@@ -1,13 +1,13 @@
+use crate::state::theme::SemanticColors;
 use gpui::{
     App, Div, ElementId, FontWeight, Hsla, InteractiveElement as _, IntoElement,
-    ParentElement as _, RenderOnce, SharedString, Styled, Window, div, prelude::FluentBuilder as _,
-    px, relative, rems, rgba,
+    ParentElement as _, ReadGlobal as _, RenderOnce, SharedString, Styled, Window, div,
+    prelude::FluentBuilder as _, px, relative, rems,
 };
 use gpui_component::{
     ActiveTheme as _, Icon, Sizable as _,
     button::{Button, ButtonVariants as _},
     checkbox::Checkbox,
-    theme::Theme,
 };
 
 #[derive(IntoElement)]
@@ -101,25 +101,22 @@ pub(super) enum TextColor {
 }
 
 impl TextColor {
-    pub(super) fn resolve(self, theme: &Theme) -> Hsla {
+    pub(super) fn resolve(self, cx: &App) -> Hsla {
+        let theme = cx.theme();
+        let semantic = SemanticColors::global(cx);
         match self {
             Self::Primary => theme.foreground,
             Self::Secondary | Self::Weak | Self::Placeholder => theme.muted_foreground,
-            Self::Danger => theme.danger,
-            Self::Warning => rgba(if theme.is_dark() {
-                0xfacc15ff
-            } else {
-                0x854d0eff
-            })
-            .into(),
-            Self::Accent => theme.primary,
+            Self::Danger => semantic.danger,
+            Self::Warning => semantic.warning,
+            Self::Accent => semantic.primary,
             Self::OnAccent => theme.primary_foreground,
             Self::OnSelection => theme.accent_foreground,
         }
     }
 
     pub(super) fn apply<T: Styled>(self, element: T, cx: &App) -> T {
-        element.text_color(self.resolve(cx.theme()))
+        element.text_color(self.resolve(cx))
     }
 }
 

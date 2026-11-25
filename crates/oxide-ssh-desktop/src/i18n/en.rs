@@ -197,6 +197,7 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::Browse => "Browse",
         MessageId::Cancel => "Cancel",
         MessageId::Save => "Save",
+        MessageId::Selected => "Selected",
         MessageId::AgentDescription => "Use identities from the system SSH agent.",
         MessageId::CredentialRequired => "Enter the credential for this connection.",
         MessageId::Connect => "Connect",

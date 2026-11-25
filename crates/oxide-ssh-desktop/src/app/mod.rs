@@ -4,7 +4,7 @@ use gpui::{
     AnyElement, App, Bounds, ClipboardItem, Context, Element, ElementId, ElementInputHandler,
     Entity, EntityInputHandler, FocusHandle, Focusable, GlobalElementId, InspectorElementId,
     KeyBinding, KeyDownEvent, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    PaintQuad, Pixels, Point, Render, ScrollWheelEvent, ShapedLine, SharedString,
+    PaintQuad, Pixels, Point, ReadGlobal as _, Render, ScrollWheelEvent, ShapedLine, SharedString,
     StrikethroughStyle, Style, TextRun, UnderlineStyle, WeakEntity, Window, WindowAppearance,
     actions, div, fill, point, prelude::*, px, relative, rgb, size,
 };
@@ -59,8 +59,8 @@ use crate::{
             AnsiPalette, AnsiPaletteCatalog, BUILT_IN_PALETTE, CUSTOM_PALETTE, palettes_directory,
         },
         theme::{
-            BUILT_IN_THEME, CARD_GAP, CARD_PADDING, ResolvedTheme, apply_theme, available_themes,
-            load_theme,
+            BUILT_IN_THEME, CARD_GAP, CARD_PADDING, ResolvedTheme, SemanticColors, apply_theme,
+            available_themes, load_theme,
         },
     },
 };

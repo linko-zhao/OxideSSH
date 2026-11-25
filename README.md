@@ -64,8 +64,18 @@ Put JSON files in the `themes` directory beside the executable (`target/debug/th
   "primaryHover": "#E88C70",
   "primaryActive": "#C76648",
   "primaryForeground": "#1C1917",
+  "primaryText": "#E88C70",
   "strip": "#211E1C",
-  "danger": "#D64545"
+  "danger": "#D64545",
+  "dangerHover": "#E05A5A",
+  "dangerActive": "#B93838",
+  "dangerForeground": "#FAFAF9",
+  "dangerText": "#ED6A5E",
+  "warning": "#FACC15",
+  "warningHover": "#FDE047",
+  "warningActive": "#EAB308",
+  "warningForeground": "#211F1D",
+  "warningText": "#FACC15"
 }
 ```
 

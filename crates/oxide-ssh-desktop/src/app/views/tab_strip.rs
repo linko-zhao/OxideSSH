@@ -53,11 +53,12 @@ impl AppView {
             })
             .collect();
         let theme = cx.theme();
+        let semantic = SemanticColors::global(cx);
         let dot = |state: &TabState| match state {
-            TabState::Connected => theme.primary,
-            TabState::Disconnected { .. } => theme.danger,
+            TabState::Connected => semantic.primary,
+            TabState::Disconnected { .. } => semantic.danger,
             TabState::AwaitingHostKey | TabState::AwaitingSecret | TabState::Connecting => {
-                theme.muted
+                semantic.warning
             }
         };
         let workspace_selected = match self.main_view {
@@ -94,6 +95,21 @@ impl AppView {
                             .whitespace_nowrap()
                             .max_w(px(180.))
                             .child(SharedString::from(name.clone())),
+                    )
+                    .child(
+                        ui_text(
+                            TextRole::Caption,
+                            match state {
+                                TabState::Connected => TextColor::Accent,
+                                TabState::Disconnected { .. } => TextColor::Danger,
+                                TabState::AwaitingHostKey
+                                | TabState::AwaitingSecret
+                                | TabState::Connecting => TextColor::Warning,
+                            },
+                            self.text(tab_state_message_id(state)),
+                            cx,
+                        )
+                        .whitespace_nowrap(),
                     )
                     .child(
                         // xsmall (20px) keeps the pill slim; the default

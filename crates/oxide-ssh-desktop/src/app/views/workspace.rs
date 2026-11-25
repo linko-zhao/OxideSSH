@@ -1,27 +1,34 @@
 use super::*;
 
+const AVATAR_PALETTE: [u32; 8] = [
+    0x006b_8cae,
+    0x007b_a389,
+    0x00b5_936b,
+    0x009a_7bb5,
+    0x005f_9ea8,
+    0x00b5_7e7e,
+    0x007e_93b8,
+    0x00a8_927c,
+];
+const AVATAR_FOREGROUND: u32 = 0x0021_1f1d;
+
+fn avatar_colors(id: &Uuid) -> (gpui::Rgba, gpui::Rgba) {
+    let hash = id.as_bytes().iter().fold(0usize, |hash, byte| {
+        hash.wrapping_mul(31).wrapping_add(*byte as usize)
+    });
+    (
+        rgb(AVATAR_PALETTE[hash % AVATAR_PALETTE.len()]),
+        rgb(AVATAR_FOREGROUND),
+    )
+}
+
 impl AppView {
     fn render_host_card(
         &mut self,
         profile: ConnectionProfile,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
-        // Muted avatar hues that sit comfortably on both light and dark
-        // cards; keyed by profile id so a host keeps its color.
-        const PALETTE: [u32; 8] = [
-            0x006b_8cae,
-            0x007b_a389,
-            0x00b5_936b,
-            0x009a_7bb5,
-            0x005f_9ea8,
-            0x00b5_7e7e,
-            0x007e_93b8,
-            0x00a8_927c,
-        ];
-        let hash: usize = profile.id.0.as_bytes().iter().fold(0usize, |acc, byte| {
-            acc.wrapping_mul(31).wrapping_add(*byte as usize)
-        });
-        let tile_color = rgb(PALETTE[hash % PALETTE.len()]);
+        let (tile_color, initial_color) = avatar_colors(&profile.id.0);
         let initial: String = profile
             .name
             .trim()
@@ -33,9 +40,7 @@ impl AppView {
             "{}@{}:{}",
             profile.username, profile.endpoint.host, profile.endpoint.port
         );
-        let status = self
-            .profile_status(profile.id)
-            .map(|status| status.to_owned());
+        let status = self.profile_status(profile.id);
         let edit_id = SharedString::from(format!("edit-{}", profile.id.0));
         let delete_id = SharedString::from(format!("delete-{}", profile.id.0));
         let profile_for_connect = profile.clone();
@@ -78,7 +83,7 @@ impl AppView {
                             .flex()
                             .items_center()
                             .justify_center()
-                            .text_color(rgb(0x00f5_f6f8))
+                            .text_color(initial_color)
                             .font_weight(gpui::FontWeight::BOLD)
                             .child(initial),
                     )
@@ -146,8 +151,8 @@ impl AppView {
                             }),
                     ),
             )
-            .when_some(status, |card, status| {
-                card.child(ui_text(TextRole::Caption, TextColor::Accent, status, cx))
+            .when_some(status, |card, (color, status)| {
+                card.child(ui_text(TextRole::Caption, color, status, cx))
             })
             .into_any_element()
     }
@@ -157,20 +162,7 @@ impl AppView {
         connection: LocalConnection,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
-        const PALETTE: [u32; 8] = [
-            0x006b_8cae,
-            0x007b_a389,
-            0x00b5_936b,
-            0x009a_7bb5,
-            0x005f_9ea8,
-            0x00b5_7e7e,
-            0x007e_93b8,
-            0x00a8_927c,
-        ];
-        let hash: usize = connection.id.0.as_bytes().iter().fold(0usize, |acc, byte| {
-            acc.wrapping_mul(31).wrapping_add(*byte as usize)
-        });
-        let tile_color = rgb(PALETTE[hash % PALETTE.len()]);
+        let (tile_color, initial_color) = avatar_colors(&connection.id.0);
         let initial: String = connection
             .name
             .trim()
@@ -224,7 +216,7 @@ impl AppView {
                             .flex()
                             .items_center()
                             .justify_center()
-                            .text_color(rgb(0x00f5_f6f8))
+                            .text_color(initial_color)
                             .font_weight(gpui::FontWeight::BOLD)
                             .child(initial),
                     )
@@ -597,6 +589,10 @@ impl AppView {
                     .whitespace_nowrap()
                     .child(label),
             )
+            .when(selected, |row| {
+                row.child(Icon::new(IconName::Check).size(px(14.)).flex_none())
+                    .child(self.text(MessageId::Selected))
+            })
             .child(
                 TextRole::Caption
                     .apply(div())
@@ -610,11 +606,46 @@ impl AppView {
         }
     }
 
-    fn profile_status(&self, profile_id: ProfileId) -> Option<&'static str> {
+    fn profile_status(&self, profile_id: ProfileId) -> Option<(TextColor, &'static str)> {
         let tab = self.tabs.tabs().iter().rev().find(|tab| {
             tab.profile()
                 .is_some_and(|profile| profile.id == profile_id)
         })?;
-        Some(self.text(tab_state_message_id(tab.state())))
+        let color = match tab.state() {
+            TabState::Connected => TextColor::Accent,
+            TabState::Disconnected { .. } => TextColor::Danger,
+            TabState::AwaitingHostKey | TabState::AwaitingSecret | TabState::Connecting => {
+                TextColor::Warning
+            }
+        };
+        Some((color, self.text(tab_state_message_id(tab.state()))))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn avatar_initials_have_sufficient_contrast() {
+        fn luminance(color: u32) -> f32 {
+            fn channel(value: f32) -> f32 {
+                if value <= 0.04045 {
+                    value / 12.92
+                } else {
+                    ((value + 0.055) / 1.055).powf(2.4)
+                }
+            }
+            let channel = |shift: u32| channel(((color >> shift) & 0xff) as f32 / 255.);
+            0.2126 * channel(16) + 0.7152 * channel(8) + 0.0722 * channel(0)
+        }
+
+        for background in AVATAR_PALETTE {
+            let foreground = luminance(AVATAR_FOREGROUND);
+            let background = luminance(background);
+            let contrast =
+                (foreground.max(background) + 0.05) / (foreground.min(background) + 0.05);
+            assert!(contrast >= 4.5, "avatar contrast is {contrast:.2}:1");
+        }
     }
 }

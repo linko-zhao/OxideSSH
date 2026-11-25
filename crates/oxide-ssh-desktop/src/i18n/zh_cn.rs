@@ -169,6 +169,7 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::Browse => "浏览",
         MessageId::Cancel => "取消",
         MessageId::Save => "保存",
+        MessageId::Selected => "已选择",
         MessageId::AgentDescription => "使用系统 SSH 代理中的身份。",
         MessageId::CredentialRequired => "输入此连接所需的凭据。",
         MessageId::ClearAllCredentials => "清空所有已保存凭据",
