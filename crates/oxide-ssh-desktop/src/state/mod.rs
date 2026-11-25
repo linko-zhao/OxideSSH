@@ -29,6 +29,14 @@ pub struct RecoveryState {
     pub error: String,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WorkspaceEmptyState {
+    NoConnections,
+    Search,
+    TagFilter,
+    SearchAndTagFilter,
+}
+
 pub struct AppState {
     store: Arc<AppStore>,
     config: AppConfig,
@@ -175,6 +183,33 @@ impl AppState {
 
     pub fn set_search_query(&mut self, query: impl Into<String>) {
         self.search_query = query.into();
+    }
+
+    pub fn workspace_empty_state(&self) -> Option<WorkspaceEmptyState> {
+        let has_results =
+            !self.filtered_profiles().is_empty() || !self.filtered_local_connections().is_empty();
+        self.workspace_empty_state_for_results(has_results)
+    }
+
+    pub(crate) fn workspace_empty_state_for_results(
+        &self,
+        has_results: bool,
+    ) -> Option<WorkspaceEmptyState> {
+        if has_results {
+            return None;
+        }
+        if self.config.profiles.is_empty() && self.config.local_connections.is_empty() {
+            return Some(WorkspaceEmptyState::NoConnections);
+        }
+        match (
+            !self.search_query.trim().is_empty(),
+            self.tag_filter.is_active(),
+        ) {
+            (true, true) => Some(WorkspaceEmptyState::SearchAndTagFilter),
+            (true, false) => Some(WorkspaceEmptyState::Search),
+            (false, true) => Some(WorkspaceEmptyState::TagFilter),
+            (false, false) => None,
+        }
     }
 
     pub fn filtered_profiles(&self) -> Vec<&ConnectionProfile> {
@@ -612,6 +647,86 @@ mod tests {
         assert_eq!(state.settings().terminal_scrollback_lines, 250);
         assert_eq!(state.store().load_config().unwrap().schema_version(), 1);
     }
+    #[test]
+    fn empty_registry_is_not_a_filtered_empty_state() {
+        let directory = tempdir().unwrap();
+        let AppLoadOutcome::Ready(mut state) = AppState::load(directory.path().to_path_buf())
+        else {
+            panic!("expected ready state");
+        };
+
+        state.set_search_query("missing");
+        assert_eq!(
+            state.workspace_empty_state(),
+            Some(WorkspaceEmptyState::NoConnections)
+        );
+    }
+
+    #[test]
+    fn filtered_empty_state_identifies_active_conditions() {
+        let directory = tempdir().unwrap();
+        let store = AppStore::open(directory.path().to_path_buf()).unwrap();
+        let mut config = store.load_config().unwrap();
+        let tag = Tag::new("Production");
+        let mut web = profile("Web", "web.example", "oxide");
+        web.tag_ids = vec![tag.id];
+        config.tags = vec![tag.clone()];
+        config.profiles = vec![web];
+        store.save_config(&config).unwrap();
+        let AppLoadOutcome::Ready(mut state) = AppState::load(directory.path().to_path_buf())
+        else {
+            panic!("expected ready state");
+        };
+
+        assert_eq!(state.workspace_empty_state(), None);
+        state.set_search_query("missing");
+        assert_eq!(
+            state.workspace_empty_state(),
+            Some(WorkspaceEmptyState::Search)
+        );
+        state.set_search_query("");
+        state.toggle_tag_filter(TagId::new());
+        assert_eq!(
+            state.workspace_empty_state(),
+            Some(WorkspaceEmptyState::TagFilter)
+        );
+        state.set_search_query("missing");
+        assert_eq!(
+            state.workspace_empty_state(),
+            Some(WorkspaceEmptyState::SearchAndTagFilter)
+        );
+        state.clear_tag_filter();
+        state.set_search_query("web");
+        assert_eq!(state.workspace_empty_state(), None);
+    }
+
+    #[test]
+    fn clearing_empty_results_restores_entries_without_mutating_saved_data() {
+        let directory = tempdir().unwrap();
+        let store = AppStore::open(directory.path().to_path_buf()).unwrap();
+        let mut config = store.load_config().unwrap();
+        let tag = Tag::new("Production");
+        config.profiles = vec![profile("Web", "web.example", "oxide")];
+        config.local_connections = vec![LocalConnection::new("Shell", "Ubuntu")];
+        config.tags = vec![tag.clone()];
+        store.save_config(&config).unwrap();
+        let AppLoadOutcome::Ready(mut state) = AppState::load(directory.path().to_path_buf())
+        else {
+            panic!("expected ready state");
+        };
+        state.set_search_query("missing");
+        state.toggle_tag_filter(tag.id);
+        assert!(state.workspace_empty_state().is_some());
+
+        state.set_search_query("");
+        state.clear_tag_filter();
+
+        assert_eq!(state.workspace_empty_state(), None);
+        assert_eq!(state.filtered_profiles().len(), 1);
+        assert_eq!(state.filtered_local_connections().len(), 1);
+        assert_eq!(store.load_config().unwrap(), config);
+    }
+
     #[test]
     fn untagged_filter_is_exclusive_with_tag_selection() {
         let directory = tempdir().unwrap();

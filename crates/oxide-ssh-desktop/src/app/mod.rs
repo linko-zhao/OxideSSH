@@ -53,7 +53,7 @@ use crate::{
     },
     i18n::{Catalog, MessageId, ResolvedLocale},
     state::{
-        AppLoadOutcome, AppState,
+        AppLoadOutcome, AppState, WorkspaceEmptyState,
         connection_form::{AuthMethod, ConnectionForm, FormError},
         palette::{
             AnsiPalette, AnsiPaletteCatalog, BUILT_IN_PALETTE, CUSTOM_PALETTE, palettes_directory,

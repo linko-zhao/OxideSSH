@@ -292,6 +292,18 @@ impl AppView {
             .into_any_element()
     }
 
+    fn reset_workspace_filters(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(state) = &mut self.state {
+            state.set_search_query("");
+            state.clear_tag_filter();
+        }
+        self.search.update(cx, |search, cx| {
+            search.set_value("", window, cx);
+            search.focus(window, cx);
+        });
+        cx.notify();
+    }
+
     pub(in crate::app) fn render_workspace(&mut self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let query = self.search.read(cx).value().to_string();
         let Some(state) = &mut self.state else {
@@ -305,7 +317,6 @@ impl AppView {
             .cloned()
             .collect();
         let total_profiles = state.profiles().len();
-        let total_local_connections = state.local_connections().len();
         let filter = state.tag_filter().clone();
         let untagged_count = state
             .profiles()
@@ -324,12 +335,8 @@ impl AppView {
                 (tag.id, tag.name.clone(), tag.color, count)
             })
             .collect();
-        let empty_message = if total_profiles == 0 && total_local_connections == 0 {
-            MessageId::NoConnections
-        } else {
-            MessageId::NoSearchResults
-        };
-        let is_empty = profiles.is_empty() && local_connections.is_empty();
+        let has_results = !profiles.is_empty() || !local_connections.is_empty();
+        let empty_state = state.workspace_empty_state_for_results(has_results);
         let mut groups = div().flex().flex_col().gap(px(18.));
         if !profiles.is_empty() {
             let mut grid = div().flex().flex_wrap().gap(px(12.));
@@ -359,18 +366,51 @@ impl AppView {
                 ))
                 .child(grid);
         }
-        let content = if is_empty {
-            ui_text(
-                TextRole::Body,
-                TextColor::Secondary,
-                self.text(empty_message),
-                cx,
-            )
-            .size_full()
-            .flex()
-            .items_center()
-            .justify_center()
-            .into_any_element()
+        let content = if let Some(empty_state) = empty_state {
+            let (message, action) = match empty_state {
+                WorkspaceEmptyState::NoConnections => (MessageId::NoConnections, None),
+                WorkspaceEmptyState::Search => {
+                    (MessageId::NoSearchResults, Some(MessageId::ClearSearch))
+                }
+                WorkspaceEmptyState::TagFilter => (
+                    MessageId::NoTagFilterResults,
+                    Some(MessageId::ClearTagFilters),
+                ),
+                WorkspaceEmptyState::SearchAndTagFilter => (
+                    MessageId::NoSearchAndTagResults,
+                    Some(MessageId::ClearSearchAndFilters),
+                ),
+            };
+            let empty = div()
+                .id("workspace-empty-state")
+                .size_full()
+                .flex()
+                .flex_col()
+                .items_center()
+                .justify_center()
+                .gap(px(12.))
+                .child(ui_text(
+                    TextRole::Body,
+                    TextColor::Secondary,
+                    self.text(message),
+                    cx,
+                ));
+            if let Some(action) = action {
+                empty
+                    .child(
+                        button(
+                            "clear-empty-results",
+                            self.text(action),
+                            ButtonVariant::Secondary,
+                        )
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.reset_workspace_filters(window, cx);
+                        })),
+                    )
+                    .into_any_element()
+            } else {
+                empty.into_any_element()
+            }
         } else {
             div()
                 .id("workspace-hosts")

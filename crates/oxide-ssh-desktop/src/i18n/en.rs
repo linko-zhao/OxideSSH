@@ -8,8 +8,15 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::AdvancedOptions => "Advanced options",
         MessageId::ConnectionSettings => "Connection",
         MessageId::TerminalSettings => "Terminal",
-        MessageId::NoConnections => "No connections yet",
-        MessageId::NoSearchResults => "No matching connections",
+        MessageId::NoConnections => "No connections yet. Add a connection to get started.",
+        MessageId::NoSearchResults => "No connections match your search.",
+        MessageId::NoTagFilterResults => "No connections match the current filters.",
+        MessageId::NoSearchAndTagResults => {
+            "No connections match your search and the current filters."
+        }
+        MessageId::ClearSearch => "Clear search",
+        MessageId::ClearTagFilters => "Clear filters",
+        MessageId::ClearSearchAndFilters => "Clear search and filters",
         MessageId::Workspace => "Workspace",
         MessageId::AllHosts => "All hosts",
         MessageId::Tags => "Tags",
