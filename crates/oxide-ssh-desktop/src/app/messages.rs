@@ -4,6 +4,28 @@ pub(super) fn system_locale() -> Option<String> {
     sys_locale::get_locale()
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum StatusSeverity {
+    Success,
+    Warning,
+    Error,
+}
+
+pub(super) fn status_severity(message: MessageId) -> StatusSeverity {
+    match message {
+        MessageId::ClearCredentialsSuccess
+        | MessageId::ConfigExportSuccess
+        | MessageId::ConfigImportSuccess
+        | MessageId::DiscoveryImportSuccess
+        | MessageId::KnownHostsExported
+        | MessageId::KnownHostsImported => StatusSeverity::Success,
+        MessageId::ClearCredentialsFailures | MessageId::ConfigImportReloadFailure => {
+            StatusSeverity::Warning
+        }
+        _ => StatusSeverity::Error,
+    }
+}
+
 pub(super) fn is_dark(appearance: WindowAppearance) -> bool {
     matches!(
         appearance,
@@ -104,5 +126,39 @@ pub(super) fn disconnect_reason_message_id(reason: DisconnectReason) -> MessageI
     match reason {
         DisconnectReason::Session(error) => session_error_message_id(error),
         DisconnectReason::Exit(_) | DisconnectReason::Closed => MessageId::Disconnected,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn transfer_statuses_have_matching_severity() {
+        for message in [
+            MessageId::ConfigImportSuccess,
+            MessageId::ConfigExportSuccess,
+            MessageId::KnownHostsImported,
+            MessageId::KnownHostsExported,
+            MessageId::DiscoveryImportSuccess,
+            MessageId::ClearCredentialsSuccess,
+        ] {
+            assert_eq!(status_severity(message), StatusSeverity::Success);
+        }
+        for message in [
+            MessageId::ConfigImportReloadFailure,
+            MessageId::ClearCredentialsFailures,
+        ] {
+            assert_eq!(status_severity(message), StatusSeverity::Warning);
+        }
+        for message in [
+            MessageId::ConfigImportFailure,
+            MessageId::ConfigExportFailure,
+            MessageId::KnownHostsTransferFailed,
+            MessageId::DiscoveryImportFailed,
+            MessageId::StorageCorrupt,
+        ] {
+            assert_eq!(status_severity(message), StatusSeverity::Error);
+        }
     }
 }

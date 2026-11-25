@@ -508,9 +508,26 @@ impl AppState {
         })
     }
 
+    /// Returns false when storage changed but reloading this window failed.
+    pub fn import_config(&mut self, path: &std::path::Path) -> Result<bool, StorageError> {
+        self.store.import_config(path)?;
+        Ok(self.reload_config().is_ok())
+    }
+
     pub fn reload_config(&mut self) -> Result<(), StorageError> {
         self.config = self.store.load_config()?;
         Ok(())
+    }
+
+    pub fn import_known_hosts_replace(
+        &mut self,
+        path: &std::path::Path,
+    ) -> Result<(), StorageError> {
+        self.store.import_known_hosts(
+            path,
+            oxide_ssh_core::storage::KnownHostsConflictPolicy::ReplaceExisting,
+        )?;
+        self.reload_known_hosts()
     }
 
     pub fn reload_known_hosts(&mut self) -> Result<(), StorageError> {
@@ -587,6 +604,105 @@ mod tests {
         };
         assert_eq!(reloaded.settings().paste_confirm_threshold, 8192);
     }
+    #[test]
+    fn confirmed_configuration_import_replaces_memory_and_storage() {
+        let source_dir = tempdir().unwrap();
+        let source = AppStore::open(source_dir.path().to_path_buf()).unwrap();
+        let mut imported = source.load_config().unwrap();
+        imported.profiles = vec![profile("Imported", "imported.example", "backup")];
+        imported.settings.terminal_font_size = 18;
+        source.save_config(&imported).unwrap();
+        source.save_settings(&imported.settings).unwrap();
+        let backup = source_dir.path().join("backup.json");
+        source.export_config(&backup).unwrap();
+
+        let target_dir = tempdir().unwrap();
+        let target = AppStore::open(target_dir.path().to_path_buf()).unwrap();
+        let mut current = target.load_config().unwrap();
+        current.profiles = vec![profile("Current", "current.example", "local")];
+        target.save_config(&current).unwrap();
+        let AppLoadOutcome::Ready(mut state) = AppState::load(target_dir.path().to_path_buf())
+        else {
+            panic!("expected ready state");
+        };
+
+        // Selecting a backup only stages it; confirmation invokes this state seam.
+        assert_eq!(state.profiles()[0].name, "Current");
+        assert_eq!(target.load_config().unwrap(), current);
+
+        state.import_config(&backup).unwrap();
+
+        assert_eq!(state.profiles()[0].name, "Imported");
+        assert_eq!(state.settings().terminal_font_size, 18);
+        assert_eq!(target.load_config().unwrap(), imported);
+    }
+
+    #[test]
+    fn confirmed_known_host_import_replaces_only_conflicts() {
+        let target_dir = tempdir().unwrap();
+        let target = AppStore::open(target_dir.path().to_path_buf()).unwrap();
+        let existing = KnownHostEntry {
+            host: "existing.example".into(),
+            port: 22,
+            algorithm: "ssh-ed25519".into(),
+            public_key:
+                "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILagOJFgwaMNhBWQINinKOXmqS4Gh5NgxgriXwdOoINJ"
+                    .into(),
+            fingerprint_sha256: "SHA256:ldyiXa1JQakitNU5tErauu8DvWQ1dZ7aXu+rm7KQuog".into(),
+            accepted_at_unix: 0,
+        };
+        let untouched = KnownHostEntry {
+            host: "untouched.example".into(),
+            ..existing.clone()
+        };
+        target.accept_host_key(existing.clone()).unwrap();
+        target.accept_host_key(untouched.clone()).unwrap();
+        let incoming = KnownHostEntry {
+            host: "EXISTING.EXAMPLE".into(),
+            public_key:
+                "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBJJ1YTZOJKczfSjkCqsiGYm/rx//5Qlf5h77EhjqEnL"
+                    .into(),
+            fingerprint_sha256: "SHA256:2IT0bxYpFn1tl6wHZcK7fsb4T18rUGggIJUaq3ld4X8".into(),
+            ..existing.clone()
+        };
+        let backup = target_dir.path().join("known-hosts.json");
+        let mut imported = KnownHosts::default();
+        imported.hosts = vec![incoming.clone()];
+        fs::write(&backup, serde_json::to_vec(&imported).unwrap()).unwrap();
+        let AppLoadOutcome::Ready(mut state) = AppState::load(target_dir.path().to_path_buf())
+        else {
+            panic!("expected ready state");
+        };
+        assert_eq!(state.known_hosts(), [existing.clone(), untouched.clone()]);
+        assert_eq!(
+            target.load_known_hosts().unwrap().hosts,
+            state.known_hosts()
+        );
+
+        state.import_known_hosts_replace(&backup).unwrap();
+        let replacement = KnownHostEntry {
+            host: "existing.example".into(),
+            ..incoming.clone()
+        };
+        assert_eq!(
+            state.known_hosts(),
+            [replacement.clone(), untouched.clone()]
+        );
+        assert_eq!(
+            target.load_known_hosts().unwrap().hosts,
+            state.known_hosts()
+        );
+
+        let invalid = KnownHostEntry {
+            fingerprint_sha256: "SHA256:invalid".into(),
+            ..incoming
+        };
+        imported.hosts = vec![invalid];
+        fs::write(&backup, serde_json::to_vec(&imported).unwrap()).unwrap();
+        assert!(state.import_known_hosts_replace(&backup).is_err());
+        assert_eq!(state.known_hosts(), [replacement, untouched]);
+    }
+
     #[test]
     fn local_working_directory_setting_persists() {
         let directory = tempdir().unwrap();

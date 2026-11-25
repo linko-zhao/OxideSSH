@@ -666,10 +666,7 @@ impl AppView {
                             .flex_col()
                             .gap(px(12.))
                             .p(px(20.))
-                            .child(helper_text(
-                                self.text(MessageId::ConfigSecretsNote),
-                                cx,
-                            ))
+                            .child(helper_text(self.text(MessageId::ConfigSecretsNote), cx))
                             .child(
                                 h_flex()
                                     .flex_wrap()
@@ -680,33 +677,41 @@ impl AppView {
                                             self.text(MessageId::ConfigExport),
                                             ButtonVariant::Secondary,
                                         )
-                                            .on_click(cx.listener({
+                                        .on_click(
+                                            cx.listener({
                                                 let store = store.clone();
                                                 move |_this, _, _, cx| {
                                                     let store = store.clone();
                                                     cx.spawn(async move |weak, cx| {
-                                                        if let Some(file) = rfd::AsyncFileDialog::new()
-                                                            .add_filter("JSON", &["json"])
-                                                            .save_file()
-                                                            .await
+                                                        if let Some(file) =
+                                                            rfd::AsyncFileDialog::new()
+                                                                .add_filter("JSON", &["json"])
+                                                                .save_file()
+                                                                .await
                                                         {
                                                             let path = file.path().to_path_buf();
                                                             let result = cx
                                                                 .background_executor()
-                                                                .spawn(async move { store.export_config(&path) })
+                                                                .spawn(async move {
+                                                                    store.export_config(&path)
+                                                                })
                                                                 .await;
                                                             weak.update(cx, |this, cx| {
-                                                                this.status_message = Some(if result.is_ok() {
+                                                            this.status_message =
+                                                                Some(if result.is_ok() {
                                                                     MessageId::ConfigExportSuccess
                                                                 } else {
                                                                     MessageId::ConfigExportFailure
                                                                 });
-                                                                cx.notify();
-                                                            }).ok();
+                                                            cx.notify();
+                                                        })
+                                                        .ok();
                                                         }
-                                                    }).detach();
+                                                    })
+                                                    .detach();
                                                 }
-                                            })),
+                                            }),
+                                        ),
                                     )
                                     .child(
                                         button(
@@ -714,33 +719,41 @@ impl AppView {
                                             self.text(MessageId::ConfigBackup),
                                             ButtonVariant::Secondary,
                                         )
-                                            .on_click(cx.listener({
+                                        .on_click(
+                                            cx.listener({
                                                 let store = store.clone();
                                                 move |_this, _, _, cx| {
                                                     let store = store.clone();
                                                     cx.spawn(async move |weak, cx| {
-                                                        if let Some(file) = rfd::AsyncFileDialog::new()
-                                                            .add_filter("JSON", &["json"])
-                                                            .save_file()
-                                                            .await
+                                                        if let Some(file) =
+                                                            rfd::AsyncFileDialog::new()
+                                                                .add_filter("JSON", &["json"])
+                                                                .save_file()
+                                                                .await
                                                         {
                                                             let path = file.path().to_path_buf();
                                                             let result = cx
                                                                 .background_executor()
-                                                                .spawn(async move { store.backup_config(&path) })
+                                                                .spawn(async move {
+                                                                    store.backup_config(&path)
+                                                                })
                                                                 .await;
                                                             weak.update(cx, |this, cx| {
-                                                                this.status_message = Some(if result.is_ok() {
+                                                            this.status_message =
+                                                                Some(if result.is_ok() {
                                                                     MessageId::ConfigExportSuccess
                                                                 } else {
                                                                     MessageId::ConfigExportFailure
                                                                 });
-                                                                cx.notify();
-                                                            }).ok();
+                                                            cx.notify();
+                                                        })
+                                                        .ok();
                                                         }
-                                                    }).detach();
+                                                    })
+                                                    .detach();
                                                 }
-                                            })),
+                                            }),
+                                        ),
                                     )
                                     .child(
                                         button(
@@ -748,38 +761,27 @@ impl AppView {
                                             self.text(MessageId::ConfigImport),
                                             ButtonVariant::Secondary,
                                         )
-                                            .on_click(cx.listener({
-                                                let store = store.clone();
-                                                move |_this, _, window, cx| {
-                                                    let store = store.clone();
-                                                    cx.spawn_in(window, async move |weak, cx| {
-                                                        if let Some(file) = rfd::AsyncFileDialog::new()
-                                                            .add_filter("JSON", &["json"])
-                                                            .pick_file()
-                                                            .await
-                                                        {
-                                                            let path = file.path().to_path_buf();
-                                                            let result = cx
-                                                                .background_executor()
-                                                                .spawn(async move { store.import_config(&path) })
-                                                                .await;
-                                                            weak.update_in(cx, |this, window, cx| {
-                                                                this.status_message = match result {
-                                                                    Err(_) => Some(MessageId::ConfigImportFailure),
-                                                                    Ok(()) if this.state.as_mut().is_some_and(|state| state.reload_config().is_ok()) => {
-                                                                        this.refresh_preferences(window, cx);
-                                                                        this.sync_settings_inputs(window, cx);
-                                                                        this.tabs.set_terminal_colors(this.terminal_colors());
-                                                                        Some(MessageId::ConfigImportSuccess)
-                                                                    }
-                                                                    Ok(()) => Some(MessageId::ConfigImportReloadFailure),
-                                                                };
-                                                                cx.notify();
-                                                            }).ok();
-                                                        }
-                                                    }).detach();
-                                                }
-                                            })),
+                                        .on_click(
+                                            cx.listener(|_this, _, window, cx| {
+                                                cx.spawn_in(window, async move |weak, cx| {
+                                                    if let Some(file) = rfd::AsyncFileDialog::new()
+                                                        .add_filter("JSON", &["json"])
+                                                        .pick_file()
+                                                        .await
+                                                    {
+                                                        weak.update(cx, |this, cx| {
+                                                            this.confirm =
+                                                                Some(ConfirmAction::ImportConfig(
+                                                                    file.path().to_path_buf(),
+                                                                ));
+                                                            cx.notify();
+                                                        })
+                                                        .ok();
+                                                    }
+                                                })
+                                                .detach();
+                                            }),
+                                        ),
                                     ),
                             )
                             .into_any_element(),
@@ -870,17 +872,22 @@ impl AppView {
                 && let Some(path) = paths.into_iter().next()
             {
                 weak.update(cx, |this, cx| {
-                    let result = this.state.as_mut().map(|state| {
-                        let store = state.store().clone();
-                        store
-                            .import_known_hosts(&path, policy)
-                            .and_then(|()| state.reload_known_hosts())
-                    });
-                    this.status_message = Some(if matches!(result, Some(Ok(()))) {
-                        MessageId::KnownHostsImported
+                    if policy == oxide_ssh_core::storage::KnownHostsConflictPolicy::ReplaceExisting
+                    {
+                        this.confirm = Some(ConfirmAction::ImportKnownHostsReplace(path));
                     } else {
-                        MessageId::KnownHostsTransferFailed
-                    });
+                        let result = this.state.as_mut().map(|state| {
+                            let store = state.store().clone();
+                            store
+                                .import_known_hosts(&path, policy)
+                                .and_then(|()| state.reload_known_hosts())
+                        });
+                        this.status_message = Some(if matches!(result, Some(Ok(()))) {
+                            MessageId::KnownHostsImported
+                        } else {
+                            MessageId::KnownHostsTransferFailed
+                        });
+                    }
                     cx.notify();
                 })
                 .ok();

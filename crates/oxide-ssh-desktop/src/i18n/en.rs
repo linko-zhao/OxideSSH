@@ -170,6 +170,12 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::ConfigImportReloadFailure => {
             "Configuration was restored, but this window couldn't reload it; restart the app to apply changes."
         }
+        MessageId::ConfirmConfigImport => {
+            "Import this configuration backup and replace all current application settings, connections, local connections, and tags? The current configuration will be overwritten."
+        }
+        MessageId::ConfirmKnownHostsReplace => {
+            "Import these trusted hosts and replace every conflicting saved host key? Only proceed if you trust the replacement keys; conflicting keys will be overwritten."
+        }
         MessageId::ExportKnownHosts => "Export trusted hosts",
         MessageId::ImportKnownHosts => "Import trusted hosts",
         MessageId::ImportKeepExisting => "Import (keep existing keys)",

@@ -657,6 +657,30 @@ impl AppView {
             return;
         };
         match action {
+            ConfirmAction::ImportConfig(path) => {
+                self.status_message =
+                    match self.state.as_mut().map(|state| state.import_config(&path)) {
+                        None | Some(Err(_)) => Some(MessageId::ConfigImportFailure),
+                        Some(Ok(false)) => Some(MessageId::ConfigImportReloadFailure),
+                        Some(Ok(true)) => {
+                            self.refresh_preferences(window, cx);
+                            self.sync_settings_inputs(window, cx);
+                            self.tabs.set_terminal_colors(self.terminal_colors());
+                            Some(MessageId::ConfigImportSuccess)
+                        }
+                    };
+            }
+            ConfirmAction::ImportKnownHostsReplace(path) => {
+                let result = self
+                    .state
+                    .as_mut()
+                    .map(|state| state.import_known_hosts_replace(&path));
+                self.status_message = Some(if matches!(result, Some(Ok(()))) {
+                    MessageId::KnownHostsImported
+                } else {
+                    MessageId::KnownHostsTransferFailed
+                });
+            }
             ConfirmAction::DeleteProfile(id) => {
                 let profile = self
                     .state

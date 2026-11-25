@@ -72,8 +72,9 @@ use oxide_ssh_app::tabs::{
 mod messages;
 
 use self::messages::{
-    form_error_message_id, is_dark, local_error_message_id, session_error_message_id,
-    system_locale, tag_storage_error_message_id, transaction_error_message_id,
+    StatusSeverity, form_error_message_id, is_dark, local_error_message_id,
+    session_error_message_id, status_severity, system_locale, tag_storage_error_message_id,
+    transaction_error_message_id,
 };
 
 mod discovery;
@@ -2272,8 +2273,16 @@ impl Render for AppView {
                 .bottom(px(14.))
                 .max_w(px(620.))
                 .child(
-                    Alert::error("status-alert", self.text(message))
-                        .on_close(cx.listener(|this, _, _, cx| this.dismiss_status(cx))),
+                    match status_severity(message) {
+                        StatusSeverity::Success => {
+                            Alert::success("status-alert", self.text(message))
+                        }
+                        StatusSeverity::Warning => {
+                            Alert::warning("status-alert", self.text(message))
+                        }
+                        StatusSeverity::Error => Alert::error("status-alert", self.text(message)),
+                    }
+                    .on_close(cx.listener(|this, _, _, cx| this.dismiss_status(cx))),
                 )
         });
         let bell = self.bell.then(|| {

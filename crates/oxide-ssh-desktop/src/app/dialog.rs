@@ -9,6 +9,8 @@ use super::*;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum ConfirmAction {
+    ImportConfig(PathBuf),
+    ImportKnownHostsReplace(PathBuf),
     DeleteProfile(ProfileId),
     DeleteHost(Endpoint),
     DeleteTag(TagId),
@@ -27,6 +29,19 @@ pub(super) enum ConfirmAction {
     Quit,
     /// Cmd+Q / dock Quit: disconnects, then terminates the process.
     QuitApp,
+}
+
+impl ConfirmAction {
+    fn accept_variant(&self) -> ButtonVariant {
+        match self {
+            Self::Paste { .. } | Self::Osc52Clipboard { .. } => ButtonVariant::Primary,
+            _ => ButtonVariant::Danger,
+        }
+    }
+
+    fn cancel_on_submit(&self) -> bool {
+        self.accept_variant() == ButtonVariant::Danger
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -324,9 +339,15 @@ impl DialogPresenter {
                 }
                 self.save_editor(window, cx);
             }
-            DialogSnapshot::Confirm { .. } => {
+            DialogSnapshot::Confirm { action, .. } => {
                 self.owner
-                    .update(cx, |app, cx| app.perform_confirm(window, cx))
+                    .update(cx, |app, cx| {
+                        if action.cancel_on_submit() {
+                            app.cancel_confirm(cx);
+                        } else {
+                            app.perform_confirm(window, cx);
+                        }
+                    })
                     .ok();
             }
             DialogSnapshot::TagManager { .. } => {
@@ -384,7 +405,7 @@ impl DialogPresenter {
                 ModalRequest::ConfirmClose { tab_id } => {
                     let tab_id = *tab_id;
                     self.owner
-                        .update(cx, |app, cx| app.confirm_tab_close(tab_id, cx))
+                        .update(cx, |app, cx| app.cancel_tab_close(tab_id, cx))
                         .ok();
                 }
             },
@@ -956,6 +977,13 @@ impl DialogPresenter {
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let (message, action_label) = match action {
+            ConfirmAction::ImportConfig(_) => {
+                (MessageId::ConfirmConfigImport, MessageId::ConfigImport)
+            }
+            ConfirmAction::ImportKnownHostsReplace(_) => (
+                MessageId::ConfirmKnownHostsReplace,
+                MessageId::ImportReplaceExisting,
+            ),
             ConfirmAction::DeleteProfile(_) => (MessageId::ConfirmDeleteProfile, MessageId::Delete),
             ConfirmAction::DeleteHost(_) => (MessageId::ConfirmDeleteHost, MessageId::Delete),
             ConfirmAction::DeleteTag(_) => (MessageId::ConfirmDeleteTag, MessageId::Delete),
@@ -1013,7 +1041,7 @@ impl DialogPresenter {
                         button(
                             "accept-confirm",
                             self.text(action_label),
-                            ButtonVariant::Danger,
+                            action.accept_variant(),
                         )
                         .on_click(accept_listener),
                     ),
@@ -1856,7 +1884,7 @@ impl DialogPresenter {
                                 button(
                                     "reject-host-key",
                                     self.text(MessageId::Reject),
-                                    ButtonVariant::Danger,
+                                    ButtonVariant::Secondary,
                                 )
                                 .on_click(reject_listener),
                             )
@@ -2295,6 +2323,178 @@ impl AppView {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn confirmation_variant_matches_action_risk() {
+        let path = PathBuf::from("backup.json");
+        for action in [
+            ConfirmAction::DeleteProfile(ProfileId::new()),
+            ConfirmAction::DeleteHost(Endpoint {
+                host: "example.com".into(),
+                port: 22,
+            }),
+            ConfirmAction::DeleteTag(TagId::new()),
+            ConfirmAction::DeleteLocalConnection(LocalConnectionId::new()),
+            ConfirmAction::ClearAllCredentials,
+            ConfirmAction::Quit,
+            ConfirmAction::QuitApp,
+            ConfirmAction::ImportConfig(path.clone()),
+            ConfirmAction::ImportKnownHostsReplace(path),
+        ] {
+            assert_eq!(action.accept_variant(), ButtonVariant::Danger);
+            assert!(action.cancel_on_submit());
+        }
+        for action in [
+            ConfirmAction::Paste {
+                tab_id: TabId::new(),
+                text: "paste".into(),
+            },
+            ConfirmAction::Osc52Clipboard {
+                tab_id: TabId::new(),
+                session_id: SessionId::new(),
+                text: "clipboard".into(),
+            },
+        ] {
+            assert_eq!(action.accept_variant(), ButtonVariant::Primary);
+            assert!(!action.cancel_on_submit());
+        }
+    }
+
+    #[gpui::test]
+    async fn configuration_import_cancel_enter_and_confirm(cx: &mut gpui::TestAppContext) {
+        use tempfile::tempdir;
+
+        cx.update(gpui_component::init);
+        let source_dir = tempdir().unwrap();
+        let source =
+            oxide_ssh_core::storage::AppStore::open(source_dir.path().to_path_buf()).unwrap();
+        source
+            .update_settings(|settings| settings.terminal_font_size = 18)
+            .unwrap();
+        let backup = source_dir.path().join("backup.json");
+        source.export_config(&backup).unwrap();
+
+        let target_dir = tempdir().unwrap();
+        let target =
+            oxide_ssh_core::storage::AppStore::open(target_dir.path().to_path_buf()).unwrap();
+        let before = target.load_config().unwrap();
+        let root = target_dir.path().to_path_buf();
+        let (view, cx) = cx.add_window_view(|window, cx| {
+            AppView::new(root.clone(), AppState::load(root), window, cx)
+        });
+
+        view.update(cx, |app, _cx| {
+            app.confirm = Some(ConfirmAction::ImportConfig(backup.clone()));
+        });
+        cx.update(|window, app_cx| {
+            let payload = view.read(app_cx).requested_dialog().unwrap();
+            let presenter = app_cx.new(|cx| DialogPresenter::new(view.downgrade(), payload, cx));
+            presenter.update(app_cx, |presenter, cx| presenter.on_submit(window, cx));
+        });
+
+        assert!(cx.read(|app| view.read(app).confirm.is_none()));
+        assert_eq!(
+            cx.read(|app| view.read(app).state.as_ref().unwrap().settings().clone()),
+            before.settings
+        );
+        assert_eq!(target.load_config().unwrap(), before);
+
+        view.update(cx, |app, _cx| {
+            app.confirm = Some(ConfirmAction::ImportConfig(backup.clone()));
+        });
+        cx.update(|window, app_cx| {
+            view.update(app_cx, |app, cx| app.perform_confirm(window, cx));
+        });
+
+        assert_eq!(
+            cx.read(|app| {
+                view.read(app)
+                    .state
+                    .as_ref()
+                    .unwrap()
+                    .settings()
+                    .terminal_font_size
+            }),
+            18
+        );
+        assert_eq!(
+            target.load_config().unwrap().settings.terminal_font_size,
+            18
+        );
+    }
+
+    #[gpui::test]
+    async fn known_host_replacement_cancel_and_confirm(cx: &mut gpui::TestAppContext) {
+        use oxide_ssh_core::storage::{KnownHostEntry, KnownHosts};
+        use tempfile::tempdir;
+
+        cx.update(gpui_component::init);
+        let target_dir = tempdir().unwrap();
+        let target =
+            oxide_ssh_core::storage::AppStore::open(target_dir.path().to_path_buf()).unwrap();
+        let existing = KnownHostEntry {
+            host: "existing.example".into(),
+            port: 22,
+            algorithm: "ssh-ed25519".into(),
+            public_key:
+                "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILagOJFgwaMNhBWQINinKOXmqS4Gh5NgxgriXwdOoINJ"
+                    .into(),
+            fingerprint_sha256: "SHA256:ldyiXa1JQakitNU5tErauu8DvWQ1dZ7aXu+rm7KQuog".into(),
+            accepted_at_unix: 0,
+        };
+        target.accept_host_key(existing.clone()).unwrap();
+        let replacement = KnownHostEntry {
+            public_key:
+                "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBJJ1YTZOJKczfSjkCqsiGYm/rx//5Qlf5h77EhjqEnL"
+                    .into(),
+            fingerprint_sha256: "SHA256:2IT0bxYpFn1tl6wHZcK7fsb4T18rUGggIJUaq3ld4X8".into(),
+            ..existing.clone()
+        };
+        let backup = target_dir.path().join("known-hosts.json");
+        let mut imported = KnownHosts::default();
+        imported.hosts = vec![replacement.clone()];
+        std::fs::write(&backup, serde_json::to_vec(&imported).unwrap()).unwrap();
+
+        let root = target_dir.path().to_path_buf();
+        let (view, cx) = cx.add_window_view(|window, cx| {
+            AppView::new(root.clone(), AppState::load(root), window, cx)
+        });
+        view.update(cx, |app, cx| {
+            app.confirm = Some(ConfirmAction::ImportKnownHostsReplace(backup.clone()));
+            app.cancel_confirm(cx);
+        });
+        assert_eq!(
+            cx.read(|app| {
+                view.read(app)
+                    .state
+                    .as_ref()
+                    .unwrap()
+                    .known_hosts()
+                    .to_vec()
+            }),
+            std::slice::from_ref(&existing)
+        );
+        assert_eq!(target.load_known_hosts().unwrap().hosts, [existing]);
+
+        view.update(cx, |app, _cx| {
+            app.confirm = Some(ConfirmAction::ImportKnownHostsReplace(backup.clone()));
+        });
+        cx.update(|window, app_cx| {
+            view.update(app_cx, |app, cx| app.perform_confirm(window, cx));
+        });
+        assert_eq!(
+            cx.read(|app| {
+                view.read(app)
+                    .state
+                    .as_ref()
+                    .unwrap()
+                    .known_hosts()
+                    .to_vec()
+            }),
+            std::slice::from_ref(&replacement)
+        );
+        assert_eq!(target.load_known_hosts().unwrap().hosts, [replacement]);
+    }
 
     #[test]
     fn editor_focus_identity_survives_payload_updates() {

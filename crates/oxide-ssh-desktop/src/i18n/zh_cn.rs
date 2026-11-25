@@ -144,6 +144,12 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::ConfigImportReloadFailure => {
             "配置已恢复，但当前窗口无法重新加载；请重启应用以应用更改。"
         }
+        MessageId::ConfirmConfigImport => {
+            "导入此配置备份并替换当前所有应用设置、SSH 连接、本地连接和标签吗？当前配置将被覆盖。"
+        }
+        MessageId::ConfirmKnownHostsReplace => {
+            "导入这些受信任主机并替换所有冲突的已保存主机密钥吗？仅在信任替换密钥时继续；冲突密钥将被覆盖。"
+        }
         MessageId::ExportKnownHosts => "导出受信任主机",
         MessageId::ImportKnownHosts => "导入受信任主机",
         MessageId::ImportKeepExisting => "导入（保留现有密钥）",
