@@ -93,6 +93,18 @@ pub enum MessageId {
     SshKeepaliveMaxCount,
     ProfileKeepaliveInterval,
     ProfileKeepaliveMaxCount,
+    KeepaliveIntervalExample,
+    KeepaliveMaxCountExample,
+    ProfileKeepaliveDescription,
+    EnvironmentVariablesDescription,
+    EnvironmentVariablesExample,
+    TerminalFontSizeDescription,
+    ProfileTerminalFontSizeDescription,
+    TerminalFontSizeExample,
+    TerminalLineHeightDescription,
+    TerminalLineHeightExample,
+    ProfileAnsiPaletteDescription,
+    TerminalColorExample,
     InvalidKeepalive,
     InvalidName,
     InvalidHost,
@@ -362,6 +374,18 @@ impl MessageId {
         Self::SshKeepaliveMaxCount,
         Self::ProfileKeepaliveInterval,
         Self::ProfileKeepaliveMaxCount,
+        Self::KeepaliveIntervalExample,
+        Self::KeepaliveMaxCountExample,
+        Self::ProfileKeepaliveDescription,
+        Self::EnvironmentVariablesDescription,
+        Self::EnvironmentVariablesExample,
+        Self::TerminalFontSizeDescription,
+        Self::ProfileTerminalFontSizeDescription,
+        Self::TerminalFontSizeExample,
+        Self::TerminalLineHeightDescription,
+        Self::TerminalLineHeightExample,
+        Self::ProfileAnsiPaletteDescription,
+        Self::TerminalColorExample,
         Self::InvalidKeepalive,
         Self::InvalidName,
         Self::InvalidHost,
@@ -586,6 +610,36 @@ mod tests {
         for id in MessageId::ALL {
             assert!(!Catalog::text(ResolvedLocale::EnUs, *id).is_empty());
             assert!(!Catalog::text(ResolvedLocale::ZhCn, *id).is_empty());
+        }
+    }
+
+    #[test]
+    fn field_examples_are_short_and_localized() {
+        for locale in [ResolvedLocale::EnUs, ResolvedLocale::ZhCn] {
+            assert_eq!(
+                Catalog::text(locale, MessageId::KeepaliveIntervalExample),
+                "30"
+            );
+            assert_eq!(
+                Catalog::text(locale, MessageId::KeepaliveMaxCountExample),
+                "3"
+            );
+            assert_eq!(
+                Catalog::text(locale, MessageId::TerminalFontSizeExample),
+                "14"
+            );
+            assert_eq!(
+                Catalog::text(locale, MessageId::TerminalLineHeightExample),
+                "20"
+            );
+            assert_eq!(
+                Catalog::text(locale, MessageId::TerminalColorExample),
+                "#1E1E1E"
+            );
+            assert_eq!(
+                Catalog::text(locale, MessageId::EnvironmentVariablesExample),
+                r#"[{"name":"LANG","value":"C"}]"#
+            );
         }
     }
 

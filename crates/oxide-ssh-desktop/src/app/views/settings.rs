@@ -40,7 +40,7 @@ impl AppView {
     fn setting_row(
         &self,
         title: MessageId,
-        description: MessageId,
+        description: impl Into<Option<MessageId>>,
         control: AnyElement,
         cx: &Context<Self>,
     ) -> AnyElement {
@@ -57,7 +57,7 @@ impl AppView {
     fn setting_row_with_error(
         &self,
         title: MessageId,
-        description: MessageId,
+        description: impl Into<Option<MessageId>>,
         control: AnyElement,
         error: Option<&str>,
         error_label: MessageId,
@@ -75,7 +75,9 @@ impl AppView {
                 self.text(title),
                 cx,
             ))
-            .child(helper_text(self.text(description), cx));
+            .when_some(description.into(), |labels, description| {
+                labels.child(helper_text(self.text(description), cx))
+            });
         if let Some(error) = error {
             labels = labels.child(ui_text(
                 TextRole::Helper,
@@ -175,16 +177,16 @@ impl AppView {
                             cx,
                         ),
                         self.setting_row(
-                            MessageId::SshKeepaliveInterval,
-                            MessageId::SshKeepaliveInterval,
+                            FieldCopy::SSH_KEEPALIVE_INTERVAL.label,
+                            None,
                             Input::new(&self.ssh_keepalive_interval)
                                 .w(px(180.))
                                 .into_any_element(),
                             cx,
                         ),
                         self.setting_row(
-                            MessageId::SshKeepaliveMaxCount,
-                            MessageId::SshKeepaliveMaxCount,
+                            FieldCopy::SSH_KEEPALIVE_MAX_COUNT.label,
+                            None,
                             Input::new(&self.ssh_keepalive_max_count)
                                 .w(px(180.))
                                 .into_any_element(),
@@ -390,48 +392,48 @@ impl AppView {
                         cx,
                     ),
                     self.setting_row(
-                        MessageId::TerminalFontFamily,
-                        MessageId::TerminalFontFamily,
+                        FieldCopy::TERMINAL_FONT_FAMILY.label,
+                        FieldCopy::TERMINAL_FONT_FAMILY.helper,
                         Input::new(&self.terminal_font_family)
                             .w(px(200.))
                             .into_any_element(),
                         cx,
                     ),
                     self.setting_row(
-                        MessageId::TerminalFontSize,
-                        MessageId::TerminalFontSize,
+                        FieldCopy::TERMINAL_FONT_SIZE.label,
+                        FieldCopy::TERMINAL_FONT_SIZE.helper,
                         Input::new(&self.terminal_font_size)
                             .w(px(200.))
                             .into_any_element(),
                         cx,
                     ),
                     self.setting_row(
-                        MessageId::TerminalLineHeight,
-                        MessageId::TerminalLineHeight,
+                        FieldCopy::TERMINAL_LINE_HEIGHT.label,
+                        FieldCopy::TERMINAL_LINE_HEIGHT.helper,
                         Input::new(&self.terminal_line_height)
                             .w(px(200.))
                             .into_any_element(),
                         cx,
                     ),
                     self.setting_row(
-                        MessageId::TerminalForeground,
-                        MessageId::TerminalColorDescription,
+                        FieldCopy::TERMINAL_FOREGROUND.label,
+                        FieldCopy::TERMINAL_FOREGROUND.helper,
                         Input::new(&self.terminal_foreground)
                             .w(px(200.))
                             .into_any_element(),
                         cx,
                     ),
                     self.setting_row(
-                        MessageId::TerminalBackground,
-                        MessageId::TerminalColorDescription,
+                        FieldCopy::TERMINAL_BACKGROUND.label,
+                        FieldCopy::TERMINAL_BACKGROUND.helper,
                         Input::new(&self.terminal_background)
                             .w(px(200.))
                             .into_any_element(),
                         cx,
                     ),
                     self.setting_row(
-                        MessageId::TerminalCursor,
-                        MessageId::TerminalColorDescription,
+                        FieldCopy::TERMINAL_CURSOR.label,
+                        FieldCopy::TERMINAL_CURSOR.helper,
                         Input::new(&self.terminal_cursor)
                             .w(px(200.))
                             .into_any_element(),

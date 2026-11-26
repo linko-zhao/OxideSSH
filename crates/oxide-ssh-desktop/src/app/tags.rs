@@ -33,11 +33,25 @@ impl AppView {
             None => return,
         };
         let locale = self.locale;
-        let new_tag = new_input(window, cx, MessageId::NewTag, "", false, locale);
+        let new_tag = new_input(
+            window,
+            cx,
+            FieldCopy::placeholder_only(MessageId::NewTag),
+            "",
+            false,
+            locale,
+        );
         let mut entries = Vec::with_capacity(tags.len());
         let mut subscriptions = Vec::with_capacity(tags.len());
         for tag in tags {
-            let name = new_input(window, cx, MessageId::Name, &tag.name, false, locale);
+            let name = new_input(
+                window,
+                cx,
+                FieldCopy::placeholder_only(MessageId::Name),
+                &tag.name,
+                false,
+                locale,
+            );
             let id = tag.id;
             subscriptions.push(cx.subscribe_in(
                 &name,
@@ -153,7 +167,14 @@ impl AppView {
             None => return None,
         };
         let id = tag.id;
-        let input = new_input(window, cx, MessageId::Name, &tag.name, false, self.locale);
+        let input = new_input(
+            window,
+            cx,
+            FieldCopy::placeholder_only(MessageId::Name),
+            &tag.name,
+            false,
+            self.locale,
+        );
         let subscription = cx.subscribe_in(
             &input,
             window,

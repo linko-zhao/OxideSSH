@@ -431,7 +431,7 @@ impl AppView {
         let name = new_input(
             window,
             cx,
-            MessageId::Name,
+            FieldCopy::NAME,
             &connection.name,
             false,
             self.locale,

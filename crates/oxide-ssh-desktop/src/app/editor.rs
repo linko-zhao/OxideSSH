@@ -46,13 +46,13 @@ impl ConnectionEditor {
         window: &mut Window,
         cx: &mut Context<AppView>,
     ) -> Self {
-        let name = new_input(window, cx, MessageId::Name, &form.name, false, locale);
-        let host = new_input(window, cx, MessageId::Host, &form.host, false, locale);
-        let port = new_input(window, cx, MessageId::Port, &form.port, false, locale);
+        let name = new_input(window, cx, FieldCopy::NAME, &form.name, false, locale);
+        let host = new_input(window, cx, FieldCopy::HOST, &form.host, false, locale);
+        let port = new_input(window, cx, FieldCopy::PORT, &form.port, false, locale);
         let username = new_input(
             window,
             cx,
-            MessageId::Username,
+            FieldCopy::USERNAME,
             &form.username,
             false,
             locale,
@@ -60,7 +60,7 @@ impl ConnectionEditor {
         let private_key_path = new_input(
             window,
             cx,
-            MessageId::PrivateKey,
+            FieldCopy::PRIVATE_KEY,
             &form.private_key_path.to_string_lossy(),
             false,
             locale,
@@ -68,7 +68,7 @@ impl ConnectionEditor {
         let ssh_keepalive_interval = new_input(
             window,
             cx,
-            MessageId::ProfileKeepaliveInterval,
+            FieldCopy::PROFILE_KEEPALIVE_INTERVAL,
             &form.ssh_keepalive_interval_seconds,
             false,
             locale,
@@ -76,7 +76,7 @@ impl ConnectionEditor {
         let ssh_keepalive_max_count = new_input(
             window,
             cx,
-            MessageId::ProfileKeepaliveMaxCount,
+            FieldCopy::PROFILE_KEEPALIVE_MAX_COUNT,
             &form.ssh_keepalive_max_count,
             false,
             locale,
@@ -84,37 +84,50 @@ impl ConnectionEditor {
         let terminal_font_size = new_input(
             window,
             cx,
-            MessageId::TerminalFontSize,
+            FieldCopy::PROFILE_TERMINAL_FONT_SIZE,
             &form.terminal_font_size,
             false,
             locale,
         );
-        let ansi_palette = cx.new(|cx| {
-            InputState::new(window, cx)
-                .placeholder(Catalog::text(locale, MessageId::AnsiPaletteDescription))
-                .default_value(form.ansi_palette.clone())
-        });
-        let environment_variables = cx.new(|cx| {
-            InputState::new(window, cx)
-                .placeholder(Catalog::text(locale, MessageId::EnvironmentVariables))
-                .default_value(form.environment_variables_json.clone())
-                .multi_line(true)
-        });
-        let secret_id = if form.auth_method == AuthMethod::PrivateKey {
-            MessageId::Passphrase
+        let ansi_palette = new_input(
+            window,
+            cx,
+            FieldCopy::PROFILE_ANSI_PALETTE,
+            &form.ansi_palette,
+            false,
+            locale,
+        );
+        let environment_variables = new_input_with_multiline(
+            window,
+            cx,
+            FieldCopy::ENVIRONMENT_VARIABLES,
+            &form.environment_variables_json,
+            false,
+            true,
+            locale,
+        );
+        let secret_copy = if form.auth_method == AuthMethod::PrivateKey {
+            FieldCopy::PASSPHRASE
         } else {
-            MessageId::Password
+            FieldCopy::PASSWORD
         };
         let startup_command = new_input(
             window,
             cx,
-            MessageId::StartupCommand,
+            FieldCopy::STARTUP_COMMAND,
             &form.startup_command,
             false,
             locale,
         );
-        let secret = new_input(window, cx, secret_id, "", true, locale);
-        let tag_name = new_input(window, cx, MessageId::NewTag, "", false, locale);
+        let secret = new_input(window, cx, secret_copy, "", true, locale);
+        let tag_name = new_input(
+            window,
+            cx,
+            FieldCopy::placeholder_only(MessageId::NewTag),
+            "",
+            false,
+            locale,
+        );
         Self {
             id: EditorId(Uuid::new_v4()),
             form,
@@ -312,14 +325,9 @@ impl AppView {
     ) {
         if let Some(editor) = &mut self.editor {
             editor.form.auth_method = method;
-            let placeholder = if method == AuthMethod::PrivateKey {
-                MessageId::Passphrase
-            } else {
-                MessageId::Password
-            };
             editor.secret.update(cx, |field, cx| {
                 field.set_value("", window, cx);
-                field.set_placeholder(Catalog::text(self.locale, placeholder), window, cx);
+                field.set_placeholder("", window, cx);
             });
         }
         cx.notify();

@@ -106,12 +106,28 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::Timeout120Seconds => "120 seconds",
         MessageId::SshKeepaliveInterval => "SSH keepalive interval (seconds)",
         MessageId::SshKeepaliveMaxCount => "SSH keepalive maximum missed replies",
-        MessageId::ProfileKeepaliveInterval => {
-            "Profile keepalive interval override (seconds; blank inherits)"
+        MessageId::ProfileKeepaliveInterval => "Profile keepalive interval (seconds)",
+        MessageId::ProfileKeepaliveMaxCount => "Profile keepalive maximum missed replies",
+        MessageId::KeepaliveIntervalExample => "30",
+        MessageId::KeepaliveMaxCountExample => "3",
+        MessageId::ProfileKeepaliveDescription => {
+            "Positive whole number; blank inherits the application setting."
         }
-        MessageId::ProfileKeepaliveMaxCount => {
-            "Profile keepalive maximum missed replies (blank inherits)"
+        MessageId::EnvironmentVariablesDescription => {
+            "JSON array of name/value objects; the server may reject requests."
         }
+        MessageId::EnvironmentVariablesExample => r#"[{"name":"LANG","value":"C"}]"#,
+        MessageId::TerminalFontSizeDescription => "Positive whole number.",
+        MessageId::ProfileTerminalFontSizeDescription => {
+            "Positive whole number; blank inherits the application setting."
+        }
+        MessageId::TerminalFontSizeExample => "14",
+        MessageId::TerminalLineHeightDescription => "Positive whole number.",
+        MessageId::TerminalLineHeightExample => "20",
+        MessageId::ProfileAnsiPaletteDescription => {
+            "16 comma-separated #RRGGBB colors; blank inherits the application palette."
+        }
+        MessageId::TerminalColorExample => "#1E1E1E",
         MessageId::InvalidKeepalive => "Keepalive values must be positive whole numbers.",
         MessageId::InvalidName => "Enter a name between 1 and 64 characters.",
         MessageId::InvalidHost => {
@@ -192,9 +208,7 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::Username => "Username",
         MessageId::AuthMethod => "Authentication method",
         MessageId::Password => "Password",
-        MessageId::EnvironmentVariables => {
-            "Remote environment requests (JSON array; server may reject)"
-        }
+        MessageId::EnvironmentVariables => "Remote environment requests",
         MessageId::PrivateKey => "Private key",
         MessageId::StartupCommand => "Startup command",
         MessageId::Agent => "SSH agent",

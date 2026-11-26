@@ -214,21 +214,112 @@ fn parse_terminal_color(value: &str) -> Result<Option<u32>, ()> {
     u32::from_str_radix(digits, 16).map(Some).map_err(|_| ())
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct FieldCopy {
+    label: MessageId,
+    helper: Option<MessageId>,
+    placeholder: Option<MessageId>,
+}
+
+impl FieldCopy {
+    const fn new(label: MessageId) -> Self {
+        Self {
+            label,
+            helper: None,
+            placeholder: None,
+        }
+    }
+
+    const fn helper(mut self, helper: MessageId) -> Self {
+        self.helper = Some(helper);
+        self
+    }
+
+    const fn example(mut self, placeholder: MessageId) -> Self {
+        self.placeholder = Some(placeholder);
+        self
+    }
+
+    const fn placeholder_only(placeholder: MessageId) -> Self {
+        Self::new(placeholder).example(placeholder)
+    }
+
+    const NAME: Self = Self::new(MessageId::Name);
+    const HOST: Self = Self::new(MessageId::Host);
+    const PORT: Self = Self::new(MessageId::Port);
+    const USERNAME: Self = Self::new(MessageId::Username);
+    const PRIVATE_KEY: Self = Self::new(MessageId::PrivateKey);
+    const STARTUP_COMMAND: Self = Self::new(MessageId::StartupCommand);
+    const PASSWORD: Self = Self::new(MessageId::Password);
+    const PASSPHRASE: Self = Self::new(MessageId::Passphrase);
+    const CREDENTIAL: Self = Self::new(MessageId::CredentialRequired);
+    const PROFILE_KEEPALIVE_INTERVAL: Self = Self::new(MessageId::ProfileKeepaliveInterval)
+        .helper(MessageId::ProfileKeepaliveDescription)
+        .example(MessageId::KeepaliveIntervalExample);
+    const PROFILE_KEEPALIVE_MAX_COUNT: Self = Self::new(MessageId::ProfileKeepaliveMaxCount)
+        .helper(MessageId::ProfileKeepaliveDescription)
+        .example(MessageId::KeepaliveMaxCountExample);
+    const ENVIRONMENT_VARIABLES: Self = Self::new(MessageId::EnvironmentVariables)
+        .helper(MessageId::EnvironmentVariablesDescription)
+        .example(MessageId::EnvironmentVariablesExample);
+    const PROFILE_TERMINAL_FONT_SIZE: Self = Self::new(MessageId::TerminalFontSize)
+        .helper(MessageId::ProfileTerminalFontSizeDescription)
+        .example(MessageId::TerminalFontSizeExample);
+    const PROFILE_ANSI_PALETTE: Self =
+        Self::new(MessageId::AnsiPalette).helper(MessageId::ProfileAnsiPaletteDescription);
+    const TERMINAL_FONT_FAMILY: Self = Self::new(MessageId::TerminalFontFamily);
+    const TERMINAL_FONT_SIZE: Self = Self::new(MessageId::TerminalFontSize)
+        .helper(MessageId::TerminalFontSizeDescription)
+        .example(MessageId::TerminalFontSizeExample);
+    const TERMINAL_LINE_HEIGHT: Self = Self::new(MessageId::TerminalLineHeight)
+        .helper(MessageId::TerminalLineHeightDescription)
+        .example(MessageId::TerminalLineHeightExample);
+    const TERMINAL_FOREGROUND: Self = Self::new(MessageId::TerminalForeground)
+        .helper(MessageId::TerminalColorDescription)
+        .example(MessageId::TerminalColorExample);
+    const TERMINAL_BACKGROUND: Self = Self::new(MessageId::TerminalBackground)
+        .helper(MessageId::TerminalColorDescription)
+        .example(MessageId::TerminalColorExample);
+    const TERMINAL_CURSOR: Self = Self::new(MessageId::TerminalCursor)
+        .helper(MessageId::TerminalColorDescription)
+        .example(MessageId::TerminalColorExample);
+    const SSH_KEEPALIVE_INTERVAL: Self =
+        Self::new(MessageId::SshKeepaliveInterval).example(MessageId::KeepaliveIntervalExample);
+    const SSH_KEEPALIVE_MAX_COUNT: Self =
+        Self::new(MessageId::SshKeepaliveMaxCount).example(MessageId::KeepaliveMaxCountExample);
+}
+
 fn new_input(
     window: &mut Window,
     cx: &mut Context<AppView>,
-    placeholder: MessageId,
+    copy: FieldCopy,
     value: &str,
     masked: bool,
     locale: ResolvedLocale,
 ) -> Entity<InputState> {
-    let placeholder = Catalog::text(locale, placeholder);
+    new_input_with_multiline(window, cx, copy, value, masked, false, locale)
+}
+
+fn new_input_with_multiline(
+    window: &mut Window,
+    cx: &mut Context<AppView>,
+    copy: FieldCopy,
+    value: &str,
+    masked: bool,
+    multi_line: bool,
+    locale: ResolvedLocale,
+) -> Entity<InputState> {
+    let placeholder = copy
+        .placeholder
+        .map(|id| Catalog::text(locale, id))
+        .unwrap_or_default();
     let value = value.to_owned();
     cx.new(|cx| {
         InputState::new(window, cx)
             .placeholder(placeholder)
             .default_value(value)
             .masked(masked)
+            .multi_line(multi_line)
     })
 }
 
@@ -536,8 +627,22 @@ impl AppView {
             Catalog::text(locale, MessageId::NewWindow),
             NewWindow,
         )]);
-        let search = new_input(window, cx, MessageId::SearchConnections, "", false, locale);
-        let secret = new_input(window, cx, MessageId::CredentialRequired, "", true, locale);
+        let search = new_input(
+            window,
+            cx,
+            FieldCopy::placeholder_only(MessageId::SearchConnections),
+            "",
+            false,
+            locale,
+        );
+        let secret = new_input(
+            window,
+            cx,
+            FieldCopy::CREDENTIAL,
+            "",
+            true,
+            locale,
+        );
         let search_subscription = cx.observe(&search, |this, _, cx| {
             let _ = this;
             cx.notify();
@@ -549,7 +654,7 @@ impl AppView {
         let terminal_font_family = new_input(
             window,
             cx,
-            MessageId::TerminalFontFamily,
+            FieldCopy::TERMINAL_FONT_FAMILY,
             &preferences.terminal_font_family,
             false,
             locale,
@@ -557,7 +662,7 @@ impl AppView {
         let terminal_font_size = new_input(
             window,
             cx,
-            MessageId::TerminalFontSize,
+            FieldCopy::TERMINAL_FONT_SIZE,
             &preferences.terminal_font_size.to_string(),
             false,
             locale,
@@ -565,7 +670,7 @@ impl AppView {
         let terminal_line_height = new_input(
             window,
             cx,
-            MessageId::TerminalLineHeight,
+            FieldCopy::TERMINAL_LINE_HEIGHT,
             &preferences.terminal_line_height.to_string(),
             false,
             locale,
@@ -573,7 +678,7 @@ impl AppView {
         let terminal_foreground = new_input(
             window,
             cx,
-            MessageId::TerminalColorDescription,
+            FieldCopy::TERMINAL_FOREGROUND,
             &terminal_color_text(preferences.terminal_foreground),
             false,
             locale,
@@ -581,7 +686,7 @@ impl AppView {
         let terminal_background = new_input(
             window,
             cx,
-            MessageId::TerminalColorDescription,
+            FieldCopy::TERMINAL_BACKGROUND,
             &terminal_color_text(preferences.terminal_background),
             false,
             locale,
@@ -589,7 +694,7 @@ impl AppView {
         let terminal_cursor = new_input(
             window,
             cx,
-            MessageId::TerminalColorDescription,
+            FieldCopy::TERMINAL_CURSOR,
             &terminal_color_text(preferences.terminal_cursor),
             false,
             locale,
@@ -597,7 +702,7 @@ impl AppView {
         let local_shell_path = new_input(
             window,
             cx,
-            MessageId::LocalShellPath,
+            FieldCopy::new(MessageId::LocalShellPath),
             &preferences.local_shell_path,
             false,
             locale,
@@ -605,7 +710,7 @@ impl AppView {
         let local_shell_args = new_input(
             window,
             cx,
-            MessageId::LocalShellArgs,
+            FieldCopy::new(MessageId::LocalShellArgs),
             &format_shell_args(&preferences.local_shell_args),
             false,
             locale,
@@ -616,7 +721,7 @@ impl AppView {
         let ssh_term_input = new_input(
             window,
             cx,
-            MessageId::SshTerm,
+            FieldCopy::new(MessageId::SshTerm),
             &preferences.ssh_term,
             false,
             locale,
@@ -624,7 +729,7 @@ impl AppView {
         let scrollback_input = new_input(
             window,
             cx,
-            MessageId::ScrollbackLines,
+            FieldCopy::new(MessageId::ScrollbackLines),
             &preferences.terminal_scrollback_lines.to_string(),
             false,
             locale,
@@ -702,7 +807,7 @@ impl AppView {
         let ssh_keepalive_interval = new_input(
             window,
             cx,
-            MessageId::SshKeepaliveInterval,
+            FieldCopy::SSH_KEEPALIVE_INTERVAL,
             &preferences.ssh_keepalive_interval_seconds.to_string(),
             false,
             locale,
@@ -710,7 +815,7 @@ impl AppView {
         let ssh_keepalive_max_count = new_input(
             window,
             cx,
-            MessageId::SshKeepaliveMaxCount,
+            FieldCopy::SSH_KEEPALIVE_MAX_COUNT,
             &preferences.ssh_keepalive_max_count.to_string(),
             false,
             locale,
@@ -748,7 +853,7 @@ impl AppView {
         let local_working_directory = new_input(
             window,
             cx,
-            MessageId::LocalWorkingDirectory,
+            FieldCopy::new(MessageId::LocalWorkingDirectory),
             &preferences.local_working_directory,
             false,
             locale,
@@ -1541,55 +1646,93 @@ impl AppView {
             );
         });
         self.secret.update(cx, |field, cx| {
-            field.set_placeholder(
-                Catalog::text(locale, MessageId::CredentialRequired),
-                window,
-                cx,
-            );
+            field.set_placeholder("", window, cx);
         });
-        for input in [
-            &self.terminal_foreground,
-            &self.terminal_background,
-            &self.terminal_cursor,
+        for (input, copy) in [
+            (&self.terminal_font_family, FieldCopy::TERMINAL_FONT_FAMILY),
+            (&self.terminal_font_size, FieldCopy::TERMINAL_FONT_SIZE),
+            (&self.terminal_line_height, FieldCopy::TERMINAL_LINE_HEIGHT),
+            (&self.terminal_foreground, FieldCopy::TERMINAL_FOREGROUND),
+            (&self.terminal_background, FieldCopy::TERMINAL_BACKGROUND),
+            (&self.terminal_cursor, FieldCopy::TERMINAL_CURSOR),
+            (
+                &self.local_shell_path,
+                FieldCopy::new(MessageId::LocalShellPath),
+            ),
+            (
+                &self.local_shell_args,
+                FieldCopy::new(MessageId::LocalShellArgs),
+            ),
+            (&self.ssh_term_input, FieldCopy::new(MessageId::SshTerm)),
+            (
+                &self.scrollback_input,
+                FieldCopy::new(MessageId::ScrollbackLines),
+            ),
+            (
+                &self.ssh_keepalive_interval,
+                FieldCopy::SSH_KEEPALIVE_INTERVAL,
+            ),
+            (
+                &self.ssh_keepalive_max_count,
+                FieldCopy::SSH_KEEPALIVE_MAX_COUNT,
+            ),
+            (
+                &self.local_working_directory,
+                FieldCopy::new(MessageId::LocalWorkingDirectory),
+            ),
         ] {
+            let placeholder = copy
+                .placeholder
+                .map(|id| Catalog::text(locale, id))
+                .unwrap_or_default();
             input.update(cx, |field, cx| {
-                field.set_placeholder(
-                    Catalog::text(locale, MessageId::TerminalColorDescription),
-                    window,
-                    cx,
-                );
+                field.set_placeholder(placeholder, window, cx);
             });
         }
         if let Some(editor) = &self.editor {
+            let secret_copy = if editor.form.auth_method == AuthMethod::PrivateKey {
+                FieldCopy::PASSPHRASE
+            } else {
+                FieldCopy::PASSWORD
+            };
             let fields = [
-                (&editor.name, MessageId::Name),
-                (&editor.host, MessageId::Host),
-                (&editor.port, MessageId::Port),
-                (&editor.username, MessageId::Username),
-                (&editor.private_key_path, MessageId::PrivateKey),
+                (&editor.name, FieldCopy::NAME),
+                (&editor.host, FieldCopy::HOST),
+                (&editor.port, FieldCopy::PORT),
+                (&editor.username, FieldCopy::USERNAME),
+                (&editor.private_key_path, FieldCopy::PRIVATE_KEY),
+                (&editor.startup_command, FieldCopy::STARTUP_COMMAND),
                 (
                     &editor.ssh_keepalive_interval,
-                    MessageId::ProfileKeepaliveInterval,
+                    FieldCopy::PROFILE_KEEPALIVE_INTERVAL,
                 ),
                 (
                     &editor.ssh_keepalive_max_count,
-                    MessageId::ProfileKeepaliveMaxCount,
+                    FieldCopy::PROFILE_KEEPALIVE_MAX_COUNT,
                 ),
                 (
-                    &editor.secret,
-                    if editor.form.auth_method == AuthMethod::PrivateKey {
-                        MessageId::Passphrase
-                    } else {
-                        MessageId::Password
-                    },
+                    &editor.terminal_font_size,
+                    FieldCopy::PROFILE_TERMINAL_FONT_SIZE,
                 ),
-                (&editor.tag_name, MessageId::NewTag),
+                (&editor.ansi_palette, FieldCopy::PROFILE_ANSI_PALETTE),
+                (
+                    &editor.environment_variables,
+                    FieldCopy::ENVIRONMENT_VARIABLES,
+                ),
+                (&editor.secret, secret_copy),
             ];
-            for (entity, placeholder) in fields {
+            for (entity, copy) in fields {
+                let placeholder = copy
+                    .placeholder
+                    .map(|id| Catalog::text(locale, id))
+                    .unwrap_or_default();
                 entity.update(cx, |field, cx| {
-                    field.set_placeholder(Catalog::text(locale, placeholder), window, cx);
+                    field.set_placeholder(placeholder, window, cx);
                 });
             }
+            editor.tag_name.update(cx, |field, cx| {
+                field.set_placeholder(Catalog::text(locale, MessageId::NewTag), window, cx);
+            });
         }
         if let Some(manager) = &self.tag_manager {
             for entry in &manager.entries {
@@ -1600,7 +1743,7 @@ impl AppView {
         }
         if let Some(dialog) = &self.local_rename {
             dialog.name.update(cx, |field, cx| {
-                field.set_placeholder(Catalog::text(locale, MessageId::Name), window, cx);
+                field.set_placeholder("", window, cx);
             });
         }
     }
@@ -2397,6 +2540,47 @@ fn parse_shell_args(input: &str) -> Vec<String> {
         args.push(arg);
     }
     args
+}
+
+#[cfg(test)]
+mod field_copy_tests {
+    use super::{FieldCopy, MessageId};
+
+    #[test]
+    fn field_copy_separates_labels_helpers_and_examples() {
+        assert_eq!(FieldCopy::NAME.label, MessageId::Name);
+        assert_eq!(FieldCopy::NAME.helper, None);
+        assert_eq!(FieldCopy::NAME.placeholder, None);
+
+        let keepalive = FieldCopy::PROFILE_KEEPALIVE_INTERVAL;
+        assert_eq!(keepalive.label, MessageId::ProfileKeepaliveInterval);
+        assert_eq!(
+            keepalive.helper,
+            Some(MessageId::ProfileKeepaliveDescription)
+        );
+        assert_eq!(
+            keepalive.placeholder,
+            Some(MessageId::KeepaliveIntervalExample)
+        );
+
+        let environment = FieldCopy::ENVIRONMENT_VARIABLES;
+        assert_eq!(environment.label, MessageId::EnvironmentVariables);
+        assert_eq!(
+            environment.helper,
+            Some(MessageId::EnvironmentVariablesDescription)
+        );
+        assert_eq!(
+            environment.placeholder,
+            Some(MessageId::EnvironmentVariablesExample)
+        );
+
+        let palette = FieldCopy::PROFILE_ANSI_PALETTE;
+        assert_eq!(
+            palette.helper,
+            Some(MessageId::ProfileAnsiPaletteDescription)
+        );
+        assert_eq!(palette.placeholder, None);
+    }
 }
 
 #[cfg(test)]

@@ -96,8 +96,24 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::Timeout120Seconds => "120 秒",
         MessageId::SshKeepaliveInterval => "SSH 保活间隔（秒）",
         MessageId::SshKeepaliveMaxCount => "SSH 保活最大未响应次数",
-        MessageId::ProfileKeepaliveInterval => "主机保活间隔覆盖（秒；留空则继承）",
-        MessageId::ProfileKeepaliveMaxCount => "主机保活最大未响应次数（留空则继承）",
+        MessageId::ProfileKeepaliveInterval => "主机保活间隔覆盖（秒）",
+        MessageId::ProfileKeepaliveMaxCount => "主机保活最大未响应次数",
+        MessageId::KeepaliveIntervalExample => "30",
+        MessageId::KeepaliveMaxCountExample => "3",
+        MessageId::ProfileKeepaliveDescription => "正整数；留空则继承应用设置。",
+        MessageId::EnvironmentVariablesDescription => {
+            "name/value 对象组成的 JSON 数组；服务器可能拒绝请求。"
+        }
+        MessageId::EnvironmentVariablesExample => r#"[{"name":"LANG","value":"C"}]"#,
+        MessageId::TerminalFontSizeDescription => "正整数。",
+        MessageId::ProfileTerminalFontSizeDescription => "正整数；留空则继承应用设置。",
+        MessageId::TerminalFontSizeExample => "14",
+        MessageId::TerminalLineHeightDescription => "正整数。",
+        MessageId::TerminalLineHeightExample => "20",
+        MessageId::ProfileAnsiPaletteDescription => {
+            "16 个以逗号分隔的 #RRGGBB 颜色；留空则继承应用调色板。"
+        }
+        MessageId::TerminalColorExample => "#1E1E1E",
         MessageId::InvalidKeepalive => "保活参数必须是正整数。",
         MessageId::InvalidName => "名称须为 1–64 个字符。",
         MessageId::InvalidHost => "主机须为不含空白或斜杠的 ASCII 主机名或 IP 地址。",
@@ -166,7 +182,7 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::Username => "用户名",
         MessageId::AuthMethod => "认证方式",
         MessageId::Password => "密码",
-        MessageId::EnvironmentVariables => "远端环境变量请求（JSON 数组；服务器可能拒绝）",
+        MessageId::EnvironmentVariables => "远端环境变量请求",
         MessageId::PrivateKey => "私钥",
         MessageId::StartupCommand => "启动命令",
         MessageId::Agent => "SSH 代理",

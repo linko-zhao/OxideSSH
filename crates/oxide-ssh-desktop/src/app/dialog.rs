@@ -482,6 +482,34 @@ impl DialogPresenter {
         }
     }
 
+    fn input_field(
+        &self,
+        copy: FieldCopy,
+        control: impl IntoElement,
+        error: Option<String>,
+    ) -> gpui_component::form::Field {
+        let helper = copy.helper.map(|id| self.text(id).to_owned());
+        let mut field = field().label(self.text(copy.label)).child(control);
+        if helper.is_some() || error.is_some() {
+            field = field.description_fn(move |_, cx| {
+                let mut description = div().flex().flex_col().gap(px(4.));
+                if let Some(helper) = helper.clone() {
+                    description = description.child(helper_text(helper, cx));
+                }
+                if let Some(error) = error.clone() {
+                    description = description.child(ui_text(
+                        TextRole::Helper,
+                        TextColor::Danger,
+                        error,
+                        cx,
+                    ));
+                }
+                description
+            });
+        }
+        field
+    }
+
     fn render_editor(
         &self,
         editor: &EditorDialogSnapshot,
@@ -490,17 +518,14 @@ impl DialogPresenter {
         let text = |id: MessageId| self.text(id).to_owned();
         let error =
             |target| (editor.error == Some(target)).then(|| text(form_error_message_id(target)));
-        let name_label = text(MessageId::Name);
-        let host_label = text(MessageId::Host);
-        let port_label = text(MessageId::Port);
-        let username_label = text(MessageId::Username);
-        let terminal_font_size_label = text(MessageId::TerminalFontSize);
-        let keepalive_interval_label = text(MessageId::ProfileKeepaliveInterval);
-        let keepalive_max_count_label = text(MessageId::ProfileKeepaliveMaxCount);
         let auth_label = text(MessageId::AuthMethod);
         let private_key_label = text(MessageId::PrivateKey);
         let password_label = text(MessageId::Password);
-        let passphrase_label = text(MessageId::Passphrase);
+        let secret_copy = if editor.auth_method == AuthMethod::PrivateKey {
+            FieldCopy::PASSPHRASE
+        } else {
+            FieldCopy::PASSWORD
+        };
         let remember_label = text(MessageId::Remember);
         let agent_description = text(MessageId::AgentDescription);
         let tags_label = text(MessageId::Tags);
@@ -512,11 +537,6 @@ impl DialogPresenter {
             AuthMethod::Password => 0,
             AuthMethod::PrivateKey => 1,
             AuthMethod::Agent => 2,
-        };
-        let secret_label = if editor.auth_method == AuthMethod::PrivateKey {
-            passphrase_label
-        } else {
-            password_label.clone()
         };
         let heading = if editor.is_editing {
             text(MessageId::Edit)
@@ -557,15 +577,9 @@ impl DialogPresenter {
                 .update(cx, |app, cx| app.select_auth_method(method, window, cx));
             if let DialogSnapshot::Editor(editor) = &mut this.payload.snapshot {
                 editor.auth_method = method;
-                let locale = this.payload.identity.locale;
-                let placeholder = if method == AuthMethod::PrivateKey {
-                    MessageId::Passphrase
-                } else {
-                    MessageId::Password
-                };
                 editor.secret.update(cx, |input, cx| {
                     input.set_value("", window, cx);
-                    input.set_placeholder(Catalog::text(locale, placeholder), window, cx);
+                    input.set_placeholder("", window, cx);
                 });
             }
             cx.notify();
@@ -665,15 +679,12 @@ impl DialogPresenter {
             None,
         );
         push_row(
-            field()
-                .label(name_label)
-                .child(Input::new(&editor.name))
-                .when_some(error(FormError::Name), |field, description| {
-                    field.description_fn(move |_, cx| {
-                        ui_text(TextRole::Helper, TextColor::Danger, description.clone(), cx)
-                    })
-                })
-                .into_any_element(),
+            self.input_field(
+                FieldCopy::NAME,
+                Input::new(&editor.name),
+                error(FormError::Name),
+            )
+            .into_any_element(),
             Some(FormError::Name),
         );
         let endpoint_error = match editor.error {
@@ -684,51 +695,26 @@ impl DialogPresenter {
         push_row(
             h_flex()
                 .gap(px(8.))
-                .child(
-                    field()
-                        .label(host_label)
-                        .child(Input::new(&editor.host))
-                        .when_some(error(FormError::Host), |field, description| {
-                            field.description_fn(move |_, cx| {
-                                ui_text(
-                                    TextRole::Helper,
-                                    TextColor::Danger,
-                                    description.clone(),
-                                    cx,
-                                )
-                            })
-                        }),
-                )
-                .child(
-                    div().w(px(104.)).flex_none().child(
-                        field()
-                            .label(port_label)
-                            .child(Input::new(&editor.port))
-                            .when_some(error(FormError::Port), |field, description| {
-                                field.description_fn(move |_, cx| {
-                                    ui_text(
-                                        TextRole::Helper,
-                                        TextColor::Danger,
-                                        description.clone(),
-                                        cx,
-                                    )
-                                })
-                            }),
-                    ),
-                )
+                .child(self.input_field(
+                    FieldCopy::HOST,
+                    Input::new(&editor.host),
+                    error(FormError::Host),
+                ))
+                .child(div().w(px(104.)).flex_none().child(self.input_field(
+                    FieldCopy::PORT,
+                    Input::new(&editor.port),
+                    error(FormError::Port),
+                )))
                 .into_any_element(),
             endpoint_error,
         );
         push_row(
-            field()
-                .label(username_label)
-                .child(Input::new(&editor.username))
-                .when_some(error(FormError::Username), |field, description| {
-                    field.description_fn(move |_, cx| {
-                        ui_text(TextRole::Helper, TextColor::Danger, description.clone(), cx)
-                    })
-                })
-                .into_any_element(),
+            self.input_field(
+                FieldCopy::USERNAME,
+                Input::new(&editor.username),
+                error(FormError::Username),
+            )
+            .into_any_element(),
             Some(FormError::Username),
         );
         push_row(
@@ -747,28 +733,21 @@ impl DialogPresenter {
         );
         if editor.auth_method == AuthMethod::PrivateKey {
             push_row(
-                field()
-                    .label(private_key_label)
-                    .child(
-                        h_flex()
-                            .gap(px(8.))
-                            .child(Input::new(&editor.private_key_path))
-                            .child(browse_button),
-                    )
-                    .when_some(error(FormError::PrivateKeyPath), |field, description| {
-                        field.description_fn(move |_, cx| {
-                            ui_text(TextRole::Helper, TextColor::Danger, description.clone(), cx)
-                        })
-                    })
-                    .into_any_element(),
+                self.input_field(
+                    FieldCopy::PRIVATE_KEY,
+                    h_flex()
+                        .gap(px(8.))
+                        .child(Input::new(&editor.private_key_path))
+                        .child(browse_button),
+                    error(FormError::PrivateKeyPath),
+                )
+                .into_any_element(),
                 Some(FormError::PrivateKeyPath),
             );
         }
         if secret_is_visible {
             push_row(
-                field()
-                    .label(secret_label)
-                    .child(Input::new(&editor.secret))
+                self.input_field(secret_copy, Input::new(&editor.secret), None)
                     .into_any_element(),
                 None,
             );
@@ -828,54 +807,39 @@ impl DialogPresenter {
                 None,
             );
             push_row(
-                field()
-                    .label(text(MessageId::StartupCommand))
-                    .child(Input::new(&editor.startup_command))
-                    .into_any_element(),
+                self.input_field(
+                    FieldCopy::STARTUP_COMMAND,
+                    Input::new(&editor.startup_command),
+                    None,
+                )
+                .into_any_element(),
                 None,
             );
             push_row(
-                field()
-                    .label(keepalive_interval_label)
-                    .child(Input::new(&editor.ssh_keepalive_interval))
-                    .when_some(error(FormError::Keepalive), |field, description| {
-                        field.description_fn(move |_, cx| {
-                            ui_text(TextRole::Helper, TextColor::Danger, description.clone(), cx)
-                        })
-                    })
-                    .into_any_element(),
+                self.input_field(
+                    FieldCopy::PROFILE_KEEPALIVE_INTERVAL,
+                    Input::new(&editor.ssh_keepalive_interval),
+                    error(FormError::Keepalive),
+                )
+                .into_any_element(),
                 Some(FormError::Keepalive),
             );
             push_row(
-                field()
-                    .label(keepalive_max_count_label)
-                    .child(Input::new(&editor.ssh_keepalive_max_count))
-                    .when_some(error(FormError::KeepaliveMaxCount), |field, description| {
-                        field.description_fn(move |_, cx| {
-                            ui_text(TextRole::Helper, TextColor::Danger, description.clone(), cx)
-                        })
-                    })
-                    .into_any_element(),
+                self.input_field(
+                    FieldCopy::PROFILE_KEEPALIVE_MAX_COUNT,
+                    Input::new(&editor.ssh_keepalive_max_count),
+                    error(FormError::KeepaliveMaxCount),
+                )
+                .into_any_element(),
                 Some(FormError::KeepaliveMaxCount),
             );
             push_row(
-                field()
-                    .label(text(MessageId::EnvironmentVariables))
-                    .child(Input::new(&editor.environment_variables).h(px(110.)))
-                    .when_some(
-                        error(FormError::EnvironmentVariable),
-                        |field, description| {
-                            field.description_fn(move |_, cx| {
-                                ui_text(
-                                    TextRole::Helper,
-                                    TextColor::Danger,
-                                    description.clone(),
-                                    cx,
-                                )
-                            })
-                        },
-                    )
-                    .into_any_element(),
+                self.input_field(
+                    FieldCopy::ENVIRONMENT_VARIABLES,
+                    Input::new(&editor.environment_variables).h(px(110.)),
+                    error(FormError::EnvironmentVariable),
+                )
+                .into_any_element(),
                 Some(FormError::EnvironmentVariable),
             );
             push_row(
@@ -890,27 +854,21 @@ impl DialogPresenter {
                 None,
             );
             push_row(
-                field()
-                    .label(terminal_font_size_label)
-                    .child(Input::new(&editor.terminal_font_size))
-                    .when_some(error(FormError::TerminalFontSize), |field, description| {
-                        field.description_fn(move |_, cx| {
-                            ui_text(TextRole::Helper, TextColor::Danger, description.clone(), cx)
-                        })
-                    })
-                    .into_any_element(),
+                self.input_field(
+                    FieldCopy::PROFILE_TERMINAL_FONT_SIZE,
+                    Input::new(&editor.terminal_font_size),
+                    error(FormError::TerminalFontSize),
+                )
+                .into_any_element(),
                 Some(FormError::TerminalFontSize),
             );
             push_row(
-                field()
-                    .label(text(MessageId::AnsiPalette))
-                    .child(Input::new(&editor.ansi_palette))
-                    .when_some(error(FormError::AnsiPalette), |field, description| {
-                        field.description_fn(move |_, cx| {
-                            ui_text(TextRole::Helper, TextColor::Danger, description.clone(), cx)
-                        })
-                    })
-                    .into_any_element(),
+                self.input_field(
+                    FieldCopy::PROFILE_ANSI_PALETTE,
+                    Input::new(&editor.ansi_palette),
+                    error(FormError::AnsiPalette),
+                )
+                .into_any_element(),
                 Some(FormError::AnsiPalette),
             );
             let mut tags_content = div().flex().flex_col().gap(px(8.));
@@ -1806,7 +1764,7 @@ impl DialogPresenter {
                     .child(ui_text(
                         TextRole::DialogTitle,
                         TextColor::Primary,
-                        self.text(MessageId::CredentialRequired),
+                        self.text(FieldCopy::CREDENTIAL.label),
                         cx,
                     ))
                     .child(Input::new(&secret_input))
