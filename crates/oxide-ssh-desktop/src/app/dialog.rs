@@ -1683,7 +1683,9 @@ impl DialogPresenter {
                 .ok();
         });
         v_form()
-            .w(px(420.))
+            // The Dialog panel already sets the 420px outer width; sizing the
+            // form to the same width would overflow the panel's padding.
+            .w_full()
             .label_width(px(130.))
             .child(field().child(ui_text(
                 TextRole::DialogTitle,
@@ -1718,6 +1720,7 @@ impl DialogPresenter {
                                 self.text(MessageId::Cancel),
                                 ButtonVariant::Secondary,
                             )
+                            .debug_selector(|| "cancel-local-rename".into())
                             .on_click(cancel_listener),
                         )
                         .child(
@@ -1726,6 +1729,7 @@ impl DialogPresenter {
                                 self.text(MessageId::Rename),
                                 ButtonVariant::Primary,
                             )
+                            .debug_selector(|| "save-local-rename".into())
                             .on_click(save_listener),
                         ),
                 ),
@@ -2469,6 +2473,68 @@ mod tests {
         };
 
         assert_eq!(initial.focus_identity(), updated.focus_identity());
+    }
+
+    #[gpui::test]
+    async fn local_rename_actions_fit_minimum_window(cx: &mut gpui::TestAppContext) {
+        // Rendering through AppView's deferred dialog layer never quiesces
+        // under the test executor, so mount the presenter directly in the
+        // same 420px, 24px-padded panel the Dialog provides.
+        struct Harness {
+            presenter: Entity<DialogPresenter>,
+        }
+        impl Render for Harness {
+            fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+                div().size_full().flex().justify_center().child(
+                    div()
+                        .id("rename-panel")
+                        .debug_selector(|| "rename-panel".into())
+                        .w(px(420.))
+                        .flex_none()
+                        .p(px(24.))
+                        .child(self.presenter.clone()),
+                )
+            }
+        }
+
+        cx.update(gpui_component::init);
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().to_path_buf();
+        let (_harness, cx) = cx.add_window_view(|window, cx| {
+            let owner = cx.new(|cx| AppView::new(root.clone(), AppState::load(root), window, cx));
+            let presenter = owner.update(cx, |_, cx| {
+                let dialog_id = LocalConnectionId::new();
+                let name = new_input(
+                    window,
+                    cx,
+                    FieldCopy::NAME,
+                    "Ubuntu",
+                    false,
+                    ResolvedLocale::EnUs,
+                );
+                let payload = DialogPayload {
+                    identity: DialogIdentity {
+                        locale: ResolvedLocale::EnUs,
+                        kind: DialogIdentityKind::LocalRename { id: dialog_id },
+                    },
+                    snapshot: DialogSnapshot::LocalRename(LocalRenameDialog {
+                        id: dialog_id,
+                        distribution: "Ubuntu".into(),
+                        name,
+                    }),
+                };
+                cx.new(|cx| DialogPresenter::new(owner.downgrade(), payload, cx))
+            });
+            Harness { presenter }
+        });
+        cx.simulate_window_resize(cx.windows()[0], size(px(800.), px(520.)));
+        cx.run_until_parked();
+        let panel = cx.debug_bounds("rename-panel").unwrap();
+        for selector in ["cancel-local-rename", "save-local-rename"] {
+            let bounds = cx.debug_bounds(selector).unwrap();
+            assert!(bounds.origin.x >= panel.origin.x, "{selector}: {bounds:?}");
+            assert!(bounds.right() <= panel.right(), "{selector}: {bounds:?}");
+        }
     }
 
     #[test]

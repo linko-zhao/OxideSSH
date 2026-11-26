@@ -1,4 +1,5 @@
 use super::*;
+use gpui_component::scroll::ScrollableElement;
 
 impl AppView {
     /// Pill-shaped tab base: the selected pill lifts one step above the
@@ -67,15 +68,20 @@ impl AppView {
             MainView::Sessions => tab_data.is_empty(),
             MainView::Settings => false,
         };
-        let mut strip = h_flex().items_center().gap(px(4.)).child(
-            Self::tab_pill("tab-workspace", workspace_selected, cx)
-                .child(Icon::new(IconName::LayoutDashboard).size(px(14.)))
-                .child(self.text(MessageId::Workspace))
-                .on_click(cx.listener(|this, _, _, cx| {
-                    this.main_view = MainView::Workspace;
-                    cx.notify();
-                })),
-        );
+        let mut strip = h_flex()
+            .flex_shrink()
+            .min_w(px(0.))
+            .items_center()
+            .gap(px(4.))
+            .child(
+                Self::tab_pill("tab-workspace", workspace_selected, cx)
+                    .child(Icon::new(IconName::LayoutDashboard).size(px(14.)))
+                    .child(self.text(MessageId::Workspace))
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.main_view = MainView::Workspace;
+                        cx.notify();
+                    })),
+            );
         // Fixed separator between the permanent workspace pill and the
         // session area (connection pills + new-tab button).
         strip = strip.child(
@@ -83,10 +89,13 @@ impl AppView {
                 .apply(div().text_color(theme.muted_foreground.opacity(0.6)))
                 .child("|"),
         );
+        // Only the session pills overflow; Workspace, the new-tab button and
+        // the native caption controls stay permanently visible.
+        let mut sessions = h_flex().items_center().gap(px(4.)).pr(px(4.));
         for (id, name, state) in &tab_data {
             let tab_id = *id;
             let selected = self.main_view == MainView::Sessions && active == Some(tab_id);
-            strip = strip.child(
+            sessions = sessions.child(
                 Self::tab_pill(SharedString::from(format!("tab-{tab_id:?}")), selected, cx)
                     .child(div().size(px(8.)).rounded_full().flex_none().bg(dot(state)))
                     .child(
@@ -134,25 +143,34 @@ impl AppView {
                     })),
             );
         }
-        let strip = strip.child(
-            icon_button(
-                "new-tab",
-                IconName::Plus,
-                ButtonVariant::Tertiary,
-                ButtonSize::SmallIcon,
+        let strip = strip
+            .child(
+                div()
+                    .id("session-tabs-scroll")
+                    .flex_shrink()
+                    .min_w(px(0.))
+                    .overflow_x_scrollbar()
+                    .child(sessions),
             )
-            .debug_selector(|| "new-tab-button".into())
-            .on_click(cx.listener(|this, _, window, cx| {
-                let open_local = this.state.as_ref().is_some_and(|state| {
-                    state.settings().new_tab_action == NewTabAction::LocalTerminal
-                });
-                if open_local {
-                    this.connect_local(window, cx);
-                } else {
-                    this.show_add_connection(window, cx);
-                }
-            })),
-        );
+            .child(
+                icon_button(
+                    "new-tab",
+                    IconName::Plus,
+                    ButtonVariant::Tertiary,
+                    ButtonSize::SmallIcon,
+                )
+                .debug_selector(|| "new-tab-button".into())
+                .on_click(cx.listener(|this, _, window, cx| {
+                    let open_local = this.state.as_ref().is_some_and(|state| {
+                        state.settings().new_tab_action == NewTabAction::LocalTerminal
+                    });
+                    if open_local {
+                        this.connect_local(window, cx);
+                    } else {
+                        this.show_add_connection(window, cx);
+                    }
+                })),
+            );
         // Linux keeps the native title bar, so the strip stays a standalone row.
         #[cfg(target_os = "linux")]
         {
@@ -206,6 +224,7 @@ impl AppView {
                         .id(id)
                         .window_control_area(area)
                         .occlude()
+                        .debug_selector(|| id.into())
                         .flex_none()
                         .flex()
                         .w(px(34.))
@@ -325,5 +344,45 @@ mod tests {
             tabs.tabs().is_empty() || tabs.tabs()[0].closing()
         }));
         assert_eq!(cx.read(|app| view.read(app).main_view), MainView::Workspace);
+    }
+
+    #[gpui::test]
+    async fn session_tabs_overflow_without_hiding_permanent_controls(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        cx.update(gpui_component::init);
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().to_path_buf();
+        let mut app_view = None;
+        let (_window, cx) = cx.add_window_view(|window, cx| {
+            let view = cx.new(|cx| AppView::new(root.clone(), AppState::load(root), window, cx));
+            app_view = Some(view.clone());
+            Root::new(view, window, cx)
+        });
+        let view = app_view.unwrap();
+        view.update(cx, |app, cx| {
+            for _ in 0..12 {
+                app.tabs.open_local(
+                    TerminalSize {
+                        columns: 80,
+                        rows: 24,
+                        pixel_width: 640,
+                        pixel_height: 384,
+                    },
+                    TerminalColors::default(),
+                );
+            }
+            cx.notify();
+        });
+        cx.simulate_window_resize(cx.windows()[0], size(px(800.), px(520.)));
+        cx.run_until_parked();
+
+        let new_tab = cx.debug_bounds("new-tab-button").unwrap();
+        assert!(new_tab.right() <= px(800.), "new tab clipped: {new_tab:?}");
+        #[cfg(target_os = "windows")]
+        for selector in ["win-min", "win-max", "win-close"] {
+            let bounds = cx.debug_bounds(selector).unwrap();
+            assert!(bounds.right() <= px(800.), "{selector} clipped: {bounds:?}");
+        }
     }
 }

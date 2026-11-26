@@ -65,7 +65,9 @@ impl AppView {
     ) -> AnyElement {
         let mut labels = div()
             .flex_1()
-            .min_w(px(0.))
+            // Keep a readable label column; below this width the row wraps
+            // and the control stacks instead of clipping.
+            .min_w(px(200.))
             .flex()
             .flex_col()
             .gap(px(4.))
@@ -89,10 +91,18 @@ impl AppView {
         h_flex()
             .w_full()
             .items_center()
+            .flex_wrap()
             .gap(px(24.))
             .p(px(20.))
             .child(labels)
-            .child(div().flex_shrink_0().child(control))
+            .child(
+                div()
+                    .flex_shrink()
+                    .min_w(px(0.))
+                    .flex()
+                    .debug_selector(|| format!("setting-control-{title:?}"))
+                    .child(control),
+            )
             .into_any_element()
     }
 
@@ -146,6 +156,8 @@ impl AppView {
                             MessageId::LanguageDescription,
                             Select::new(&self.locale_select)
                                 .w(px(180.))
+                                .flex_shrink()
+                                .min_w(px(0.))
                                 .with_size(gpui_component::Size::Small)
                                 .into_any_element(),
                             cx,
@@ -155,6 +167,8 @@ impl AppView {
                             MessageId::ScrollbackLinesDescription,
                             div()
                                 .w(px(180.))
+                                .flex_shrink()
+                                .min_w(px(0.))
                                 .child(Input::new(&self.scrollback_input))
                                 .into_any_element(),
                             cx,
@@ -164,6 +178,8 @@ impl AppView {
                             MessageId::SshConnectTimeoutDescription,
                             Select::new(&self.ssh_connect_timeout_select)
                                 .w(px(180.))
+                                .flex_shrink()
+                                .min_w(px(0.))
                                 .with_size(gpui_component::Size::Small)
                                 .into_any_element(),
                             cx,
@@ -173,6 +189,8 @@ impl AppView {
                             MessageId::SshTermDescription,
                             Input::new(&self.ssh_term_input)
                                 .w(px(180.))
+                                .flex_shrink()
+                                .min_w(px(0.))
                                 .into_any_element(),
                             cx,
                         ),
@@ -181,6 +199,8 @@ impl AppView {
                             None,
                             Input::new(&self.ssh_keepalive_interval)
                                 .w(px(180.))
+                                .flex_shrink()
+                                .min_w(px(0.))
                                 .into_any_element(),
                             cx,
                         ),
@@ -189,6 +209,8 @@ impl AppView {
                             None,
                             Input::new(&self.ssh_keepalive_max_count)
                                 .w(px(180.))
+                                .flex_shrink()
+                                .min_w(px(0.))
                                 .into_any_element(),
                             cx,
                         ),
@@ -197,6 +219,8 @@ impl AppView {
                             MessageId::BellDescription,
                             Select::new(&self.terminal_bell_select)
                                 .w(px(180.))
+                                .flex_shrink()
+                                .min_w(px(0.))
                                 .with_size(gpui_component::Size::Small)
                                 .into_any_element(),
                             cx,
@@ -206,6 +230,8 @@ impl AppView {
                             MessageId::PasteConfirmThresholdDescription,
                             Select::new(&self.paste_threshold_select)
                                 .w(px(180.))
+                                .flex_shrink()
+                                .min_w(px(0.))
                                 .with_size(gpui_component::Size::Small)
                                 .into_any_element(),
                             cx,
@@ -215,6 +241,8 @@ impl AppView {
                             MessageId::LocalWorkingDirectoryDescription,
                             Input::new(&self.local_working_directory)
                                 .w(px(280.))
+                                .flex_shrink()
+                                .min_w(px(0.))
                                 .into_any_element(),
                             cx,
                         ),
@@ -223,6 +251,8 @@ impl AppView {
                             MessageId::Osc52ClipboardDescription,
                             Select::new(&self.osc52_clipboard_select)
                                 .w(px(180.))
+                                .flex_shrink()
+                                .min_w(px(0.))
                                 .with_size(gpui_component::Size::Small)
                                 .into_any_element(),
                             cx,
@@ -270,6 +300,8 @@ impl AppView {
                             MessageId::NewTabButtonDescription,
                             Select::new(&self.new_tab_action_select)
                                 .w(px(180.))
+                                .flex_shrink()
+                                .min_w(px(0.))
                                 .with_size(gpui_component::Size::Small)
                                 .into_any_element(),
                             cx,
@@ -315,6 +347,8 @@ impl AppView {
                             MessageId::LocalShellPathDescription,
                             Input::new(&self.local_shell_path)
                                 .w(px(280.))
+                                .flex_shrink()
+                                .min_w(px(0.))
                                 .into_any_element(),
                             cx,
                         ),
@@ -323,6 +357,8 @@ impl AppView {
                             MessageId::LocalShellArgsDescription,
                             Input::new(&self.local_shell_args)
                                 .w(px(280.))
+                                .flex_shrink()
+                                .min_w(px(0.))
                                 .into_any_element(),
                             cx,
                         ),
@@ -338,6 +374,8 @@ impl AppView {
                         MessageId::ThemeDescription,
                         Select::new(&self.theme_select)
                             .w(px(180.))
+                            .flex_shrink()
+                            .min_w(px(0.))
                             .with_size(gpui_component::Size::Small)
                             .into_any_element(),
                         cx,
@@ -347,6 +385,8 @@ impl AppView {
                         MessageId::LightThemeDescription,
                         Select::new(&self.light_theme_select)
                             .w(px(180.))
+                            .flex_shrink()
+                            .min_w(px(0.))
                             .with_size(gpui_component::Size::Small)
                             .into_any_element(),
                         self.light_theme_error.as_deref(),
@@ -358,6 +398,8 @@ impl AppView {
                         MessageId::DarkThemeDescription,
                         Select::new(&self.dark_theme_select)
                             .w(px(180.))
+                            .flex_shrink()
+                            .min_w(px(0.))
                             .with_size(gpui_component::Size::Small)
                             .into_any_element(),
                         self.dark_theme_error.as_deref(),
@@ -369,6 +411,8 @@ impl AppView {
                         MessageId::CursorStyleDescription,
                         Select::new(&self.cursor_style_select)
                             .w(px(180.))
+                            .flex_shrink()
+                            .min_w(px(0.))
                             .with_size(gpui_component::Size::Small)
                             .into_any_element(),
                         cx,
@@ -396,6 +440,8 @@ impl AppView {
                         FieldCopy::TERMINAL_FONT_FAMILY.helper,
                         Input::new(&self.terminal_font_family)
                             .w(px(200.))
+                            .flex_shrink()
+                            .min_w(px(0.))
                             .into_any_element(),
                         cx,
                     ),
@@ -404,6 +450,8 @@ impl AppView {
                         FieldCopy::TERMINAL_FONT_SIZE.helper,
                         Input::new(&self.terminal_font_size)
                             .w(px(200.))
+                            .flex_shrink()
+                            .min_w(px(0.))
                             .into_any_element(),
                         cx,
                     ),
@@ -412,6 +460,8 @@ impl AppView {
                         FieldCopy::TERMINAL_LINE_HEIGHT.helper,
                         Input::new(&self.terminal_line_height)
                             .w(px(200.))
+                            .flex_shrink()
+                            .min_w(px(0.))
                             .into_any_element(),
                         cx,
                     ),
@@ -420,6 +470,8 @@ impl AppView {
                         FieldCopy::TERMINAL_FOREGROUND.helper,
                         Input::new(&self.terminal_foreground)
                             .w(px(200.))
+                            .flex_shrink()
+                            .min_w(px(0.))
                             .into_any_element(),
                         cx,
                     ),
@@ -428,6 +480,8 @@ impl AppView {
                         FieldCopy::TERMINAL_BACKGROUND.helper,
                         Input::new(&self.terminal_background)
                             .w(px(200.))
+                            .flex_shrink()
+                            .min_w(px(0.))
                             .into_any_element(),
                         cx,
                     ),
@@ -436,6 +490,8 @@ impl AppView {
                         FieldCopy::TERMINAL_CURSOR.helper,
                         Input::new(&self.terminal_cursor)
                             .w(px(200.))
+                            .flex_shrink()
+                            .min_w(px(0.))
                             .into_any_element(),
                         cx,
                     ),
@@ -805,6 +861,7 @@ impl AppView {
                     .child(
                         div()
                             .w(px(200.))
+                            .flex_none()
                             .h_full()
                             .flex()
                             .flex_col()
@@ -896,5 +953,56 @@ impl AppView {
             }
         })
         .detach();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[gpui::test]
+    async fn settings_controls_fit_minimum_window(cx: &mut gpui::TestAppContext) {
+        cx.update(gpui_component::init);
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().to_path_buf();
+        let (view, cx) = cx.add_window_view(|window, cx| {
+            AppView::new(root.clone(), AppState::load(root), window, cx)
+        });
+        cx.simulate_window_resize(cx.windows()[0], size(px(800.), px(520.)));
+        view.update(cx, |app, cx| {
+            app.main_view = MainView::Settings;
+            cx.notify();
+        });
+        cx.run_until_parked();
+        for selector in [
+            "setting-control-LocalWorkingDirectory",
+            "setting-control-LocalShellPath",
+            "setting-control-LocalShellArgs",
+            "setting-control-SshTerm",
+        ] {
+            let bounds = cx.debug_bounds(selector).unwrap();
+            assert!(
+                bounds.origin.x >= px(0.),
+                "{selector} clipped left: {bounds:?}"
+            );
+            assert!(
+                bounds.right() <= px(800.),
+                "{selector} clipped right: {bounds:?}"
+            );
+            assert!(
+                bounds.size.width > px(80.),
+                "{selector} collapsed: {bounds:?}"
+            );
+        }
+
+        // The wide layout keeps its full control widths.
+        cx.simulate_window_resize(cx.windows()[0], size(px(1080.), px(720.)));
+        cx.run_until_parked();
+        let bounds = cx.debug_bounds("setting-control-LocalShellPath").unwrap();
+        assert_eq!(
+            bounds.size.width,
+            px(280.),
+            "wide layout shrank: {bounds:?}"
+        );
     }
 }

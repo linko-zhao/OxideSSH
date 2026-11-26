@@ -508,22 +508,33 @@ impl AppView {
                             .flex()
                             .items_center()
                             .justify_between()
+                            .gap(px(12.))
                             .child(
-                                h_flex().child(
+                                h_flex().flex_none().child(
                                     button(
                                         "add-connection",
                                         self.text(MessageId::Add),
                                         ButtonVariant::Primary,
                                     )
                                     .icon(IconName::Plus)
+                                    .debug_selector(|| "add-connection".into())
                                     .on_click(
                                         cx.listener(|this, _, _, cx| this.open_discovery(cx)),
                                     ),
                                 ),
                             )
-                            .child(div().w(px(280.)).child(
-                                Input::new(&self.search).prefix(Icon::new(IconName::Search)),
-                            )),
+                            .child(
+                                div()
+                                    .id("workspace-search")
+                                    .flex_1()
+                                    .min_w(px(0.))
+                                    .max_w(px(280.))
+                                    .debug_selector(|| "workspace-search".into())
+                                    .child(
+                                        Input::new(&self.search)
+                                            .prefix(Icon::new(IconName::Search)),
+                                    ),
+                            ),
                     )
                     .child(div().flex_1().child(content)),
             )
@@ -716,5 +727,26 @@ mod tests {
             view.update(app, |_, cx| cx.notify());
         });
         activate_clear(cx, "enter", WorkspaceEmptyState::SearchAndTagFilter);
+    }
+
+    #[gpui::test]
+    async fn workspace_header_fits_minimum_window(cx: &mut gpui::TestAppContext) {
+        cx.update(gpui_component::init);
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().to_path_buf();
+        let (_view, cx) = cx.add_window_view(|window, cx| {
+            AppView::new(root.clone(), AppState::load(root), window, cx)
+        });
+        cx.simulate_window_resize(cx.windows()[0], size(px(800.), px(520.)));
+        cx.run_until_parked();
+        let add = cx.debug_bounds("add-connection").unwrap();
+        let search = cx.debug_bounds("workspace-search").unwrap();
+        assert!(add.right() <= px(800.), "Add clipped: {add:?}");
+        assert!(search.right() <= px(800.), "search clipped: {search:?}");
+        assert!(
+            search.origin.x >= add.right(),
+            "overlap: {add:?} {search:?}"
+        );
+        assert!(search.size.width > px(80.), "search collapsed: {search:?}");
     }
 }
