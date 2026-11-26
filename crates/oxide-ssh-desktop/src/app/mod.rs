@@ -60,7 +60,7 @@ use crate::{
         },
         theme::{
             BUILT_IN_THEME, CARD_GAP, CARD_PADDING, ResolvedTheme, SemanticColors, apply_theme,
-            available_themes, load_theme,
+            available_themes, avatar_colors, contrasting_foreground, load_theme, tag_color_rgb,
         },
     },
 };
@@ -280,21 +280,6 @@ fn new_theme_select(
 ) -> SettingSelect {
     let (items, selected_index) = theme_select_items(locale, selected);
     cx.new(|cx| SelectState::new(items, Some(IndexPath::new(selected_index)), window, cx))
-}
-
-/// Muted, theme-agnostic hues for tag colors; mirrors the host-card avatar
-/// palette so tags sit comfortably on light and dark surfaces.
-fn tag_color_rgb(color: TagColor) -> u32 {
-    match color {
-        TagColor::Red => 0x00b5_7e7e,
-        TagColor::Orange => 0x00b5_936b,
-        TagColor::Yellow => 0x00b5_a86b,
-        TagColor::Green => 0x007b_a389,
-        TagColor::Blue => 0x006b_8cae,
-        TagColor::Purple => 0x009a_7bb5,
-        TagColor::Pink => 0x00b5_7ea0,
-        TagColor::Gray => 0x008a_9099,
-    }
 }
 
 pub(super) fn ansi_palette_preview(colors: &[u32; 16], swatch: Pixels, cx: &App) -> AnyElement {

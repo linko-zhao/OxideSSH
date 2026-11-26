@@ -1,27 +1,5 @@
 use super::*;
 
-const AVATAR_PALETTE: [u32; 8] = [
-    0x006b_8cae,
-    0x007b_a389,
-    0x00b5_936b,
-    0x009a_7bb5,
-    0x005f_9ea8,
-    0x00b5_7e7e,
-    0x007e_93b8,
-    0x00a8_927c,
-];
-const AVATAR_FOREGROUND: u32 = 0x0021_1f1d;
-
-fn avatar_colors(id: &Uuid) -> (gpui::Rgba, gpui::Rgba) {
-    let hash = id.as_bytes().iter().fold(0usize, |hash, byte| {
-        hash.wrapping_mul(31).wrapping_add(*byte as usize)
-    });
-    (
-        rgb(AVATAR_PALETTE[hash % AVATAR_PALETTE.len()]),
-        rgb(AVATAR_FOREGROUND),
-    )
-}
-
 impl AppView {
     fn render_host_card(
         &mut self,
@@ -747,28 +725,5 @@ mod tests {
             "enter",
             WorkspaceEmptyState::SearchAndTagFilter,
         );
-    }
-
-    #[test]
-    fn avatar_initials_have_sufficient_contrast() {
-        fn luminance(color: u32) -> f32 {
-            fn channel(value: f32) -> f32 {
-                if value <= 0.04045 {
-                    value / 12.92
-                } else {
-                    ((value + 0.055) / 1.055).powf(2.4)
-                }
-            }
-            let channel = |shift: u32| channel(((color >> shift) & 0xff) as f32 / 255.);
-            0.2126 * channel(16) + 0.7152 * channel(8) + 0.0722 * channel(0)
-        }
-
-        for background in AVATAR_PALETTE {
-            let foreground = luminance(AVATAR_FOREGROUND);
-            let background = luminance(background);
-            let contrast =
-                (foreground.max(background) + 0.05) / (foreground.min(background) + 0.05);
-            assert!(contrast >= 4.5, "avatar contrast is {contrast:.2}:1");
-        }
     }
 }

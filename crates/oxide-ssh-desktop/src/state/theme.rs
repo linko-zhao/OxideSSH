@@ -5,11 +5,12 @@ use std::{
     path::{Component, PathBuf},
 };
 
-use gpui::{App, Hsla, Window, hsla, px};
+use gpui::{App, Hsla, Rgba, Window, hsla, px, rgb};
 use gpui_component::{Theme, ThemeColor, ThemeMode as ComponentThemeMode};
-use oxide_ssh_core::model::ThemeMode;
+use oxide_ssh_core::model::{TagColor, ThemeMode};
 use oxide_ssh_terminal::{RgbColor, TerminalColors};
 use serde::Deserialize;
+use uuid::Uuid;
 
 pub const BUILT_IN_THEME: &str = "built-in";
 
@@ -244,6 +245,65 @@ impl SemanticColors {
 }
 
 impl gpui::Global for SemanticColors {}
+
+const AVATAR_PALETTE: [u32; 8] = [
+    0x006b_8cae,
+    0x007b_a389,
+    0x00b5_936b,
+    0x009a_7bb5,
+    0x005f_9ea8,
+    0x00b5_7e7e,
+    0x007e_93b8,
+    0x00a8_927c,
+];
+
+fn relative_luminance(color: Rgba) -> f32 {
+    fn channel(value: f32) -> f32 {
+        if value <= 0.04045 {
+            value / 12.92
+        } else {
+            ((value + 0.055) / 1.055).powf(2.4)
+        }
+    }
+    0.2126 * channel(color.r) + 0.7152 * channel(color.g) + 0.0722 * channel(color.b)
+}
+
+fn color_contrast(foreground: Rgba, background: Rgba) -> f32 {
+    let foreground = relative_luminance(foreground);
+    let background = relative_luminance(background);
+    (foreground.max(background) + 0.05) / (foreground.min(background) + 0.05)
+}
+
+pub fn contrasting_foreground(background: Rgba) -> Rgba {
+    let dark = rgb(0x0021_1f1d);
+    let light = rgb(0x00f8_f5f2);
+    if color_contrast(dark, background) >= color_contrast(light, background) {
+        dark
+    } else {
+        light
+    }
+}
+
+pub fn avatar_colors(id: &Uuid) -> (Rgba, Rgba) {
+    let hash = id.as_bytes().iter().fold(0usize, |hash, byte| {
+        hash.wrapping_mul(31).wrapping_add(*byte as usize)
+    });
+    let background = rgb(AVATAR_PALETTE[hash % AVATAR_PALETTE.len()]);
+    (background, contrasting_foreground(background))
+}
+
+pub fn tag_color_rgb(color: TagColor) -> u32 {
+    match color {
+        TagColor::Red => 0x00b5_7e7e,
+        TagColor::Orange => 0x00b5_936b,
+        TagColor::Yellow => 0x00b5_a86b,
+        TagColor::Green => 0x007b_a389,
+        TagColor::Blue => 0x006b_8cae,
+        TagColor::Purple => 0x009a_7bb5,
+        TagColor::Pink => 0x00b5_7ea0,
+        TagColor::Gray => 0x008a_9099,
+    }
+}
 
 /// Switch gpui-component to the resolved mode, then lay the OxideSSH palette
 /// over its default tokens. Warm Claude-style neutrals (cream light, umber
@@ -766,6 +826,19 @@ mod tests {
             expected_primary_text
         );
         assert!(ThemeOverrides::parse(r##"{"background":"red"}"##).is_err());
+    }
+
+    #[test]
+    fn avatar_initials_have_sufficient_contrast() {
+        for background in AVATAR_PALETTE {
+            let background = gpui::rgb(background);
+            let foreground = contrasting_foreground(background);
+            assert!(
+                contrast(foreground.into(), background.into()) >= 4.5,
+                "avatar contrast is {:.2}:1",
+                contrast(foreground.into(), background.into())
+            );
+        }
     }
 
     #[test]

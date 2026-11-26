@@ -1148,7 +1148,7 @@ impl DialogPresenter {
                             swatch.child(
                                 Icon::new(IconName::Check)
                                     .size(px(12.))
-                                    .text_color(rgb(0x0021_1f1d)),
+                                    .text_color(contrasting_foreground(rgb(tag_color_rgb(color)))),
                             )
                         })
                         .on_click(listener),
