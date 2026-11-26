@@ -390,14 +390,23 @@ impl AppView {
             if let Some(action) = action {
                 empty
                     .child(
-                        button(
-                            "clear-empty-results",
-                            self.text(action),
-                            ButtonVariant::Secondary,
-                        )
-                        .on_click(cx.listener(|this, _, window, cx| {
-                            this.reset_workspace_filters(window, cx);
-                        })),
+                        div()
+                            .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                                if matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                                    cx.stop_propagation();
+                                    this.reset_workspace_filters(window, cx);
+                                }
+                            }))
+                            .child(
+                                button(
+                                    "clear-empty-results",
+                                    self.text(action),
+                                    ButtonVariant::Secondary,
+                                )
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.reset_workspace_filters(window, cx);
+                                })),
+                            ),
                     )
                     .into_any_element()
             } else {
@@ -625,6 +634,120 @@ impl AppView {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::TagFilter;
+
+    #[gpui::test]
+    async fn empty_result_recovery_is_keyboard_accessible(cx: &mut gpui::TestAppContext) {
+        use tempfile::tempdir;
+
+        cx.update(gpui_component::init);
+        let directory = tempdir().unwrap();
+        let store =
+            oxide_ssh_core::storage::AppStore::open(directory.path().to_path_buf()).unwrap();
+        let tag = Tag::new("Production");
+        let empty_tag = Tag::new("Unused");
+        let profile = ConnectionProfile {
+            id: oxide_ssh_core::model::ProfileId::new(),
+            name: "Web".into(),
+            endpoint: Endpoint {
+                host: "web.example".into(),
+                port: 22,
+            },
+            username: "oxide".into(),
+            auth: AuthConfig::Agent,
+            tag_ids: vec![tag.id],
+            startup_command: None,
+            ssh_keepalive_interval_seconds: None,
+            ssh_keepalive_max_count: None,
+            terminal_font_size: None,
+            ansi_palette: None,
+            environment_variables: Vec::new(),
+        };
+        let mut config = store.load_config().unwrap();
+        config.tags = vec![tag.clone(), empty_tag.clone()];
+        config.profiles = vec![profile];
+        store.save_config(&config).unwrap();
+
+        let root = directory.path().to_path_buf();
+        let mut app_view = None;
+        let (_root, cx) = cx.add_window_view(|window, cx| {
+            let view = cx.new(|cx| AppView::new(root.clone(), AppState::load(root), window, cx));
+            app_view = Some(view.clone());
+            Root::new(view, window, cx)
+        });
+        let view = app_view.unwrap();
+
+        let activate_clear = |cx: &mut gpui::VisualTestContext,
+                              key: &str,
+                              expected: WorkspaceEmptyState| {
+            cx.run_until_parked();
+            assert_eq!(
+                cx.read(|app| {
+                    view.read(app)
+                        .state
+                        .as_ref()
+                        .unwrap()
+                        .workspace_empty_state()
+                }),
+                Some(expected)
+            );
+            cx.update(|window, app| {
+                let search = view.read(app).search.clone();
+                search.update(app, |search, cx| search.focus(window, cx));
+                window.focus_next();
+            });
+            cx.simulate_keystrokes(key);
+            cx.run_until_parked();
+
+            assert_eq!(
+                cx.read(|app| {
+                    let state = view.read(app).state.as_ref().unwrap();
+                    (state.filtered_profiles().len(), state.tag_filter().clone())
+                }),
+                (1, TagFilter::default())
+            );
+            cx.update(|window, app| {
+                let search = view.read(app).search.clone();
+                assert!(search.read(app).value().is_empty());
+                assert!(search.read(app).focus_handle(app).is_focused(window));
+            });
+            assert_eq!(store.load_config().unwrap(), config);
+        };
+
+        cx.update(|window, app| {
+            let search = view.read(app).search.clone();
+            search.update(app, |search, cx| search.set_value("missing", window, cx));
+            view.update(app, |_, cx| cx.notify());
+        });
+        activate_clear(cx, "enter", WorkspaceEmptyState::Search);
+
+        view.update(cx, |app, cx| {
+            app.state
+                .as_mut()
+                .unwrap()
+                .toggle_tag_filter(empty_tag.id);
+            cx.notify();
+        });
+        activate_clear(cx, "space", WorkspaceEmptyState::TagFilter);
+
+        view.update(cx, |app, cx| {
+            app.state
+                .as_mut()
+                .unwrap()
+                .toggle_tag_filter(empty_tag.id);
+            cx.notify();
+        });
+        cx.update(|window, app| {
+            let search = view.read(app).search.clone();
+            search.update(app, |search, cx| search.set_value("missing", window, cx));
+            view.update(app, |_, cx| cx.notify());
+        });
+        activate_clear(
+            cx,
+            "enter",
+            WorkspaceEmptyState::SearchAndTagFilter,
+        );
+    }
 
     #[test]
     fn avatar_initials_have_sufficient_contrast() {
