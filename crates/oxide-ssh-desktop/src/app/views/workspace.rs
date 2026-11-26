@@ -381,9 +381,11 @@ impl AppView {
                                     self.text(action),
                                     ButtonVariant::Secondary,
                                 )
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.reset_workspace_filters(window, cx);
-                                })),
+                                .on_click(cx.listener(
+                                    |this, _, window, cx| {
+                                        this.reset_workspace_filters(window, cx);
+                                    },
+                                )),
                             ),
                     )
                     .into_any_element()
@@ -655,42 +657,41 @@ mod tests {
         });
         let view = app_view.unwrap();
 
-        let activate_clear = |cx: &mut gpui::VisualTestContext,
-                              key: &str,
-                              expected: WorkspaceEmptyState| {
-            cx.run_until_parked();
-            assert_eq!(
-                cx.read(|app| {
-                    view.read(app)
-                        .state
-                        .as_ref()
-                        .unwrap()
-                        .workspace_empty_state()
-                }),
-                Some(expected)
-            );
-            cx.update(|window, app| {
-                let search = view.read(app).search.clone();
-                search.update(app, |search, cx| search.focus(window, cx));
-                window.focus_next();
-            });
-            cx.simulate_keystrokes(key);
-            cx.run_until_parked();
+        let activate_clear =
+            |cx: &mut gpui::VisualTestContext, key: &str, expected: WorkspaceEmptyState| {
+                cx.run_until_parked();
+                assert_eq!(
+                    cx.read(|app| {
+                        view.read(app)
+                            .state
+                            .as_ref()
+                            .unwrap()
+                            .workspace_empty_state()
+                    }),
+                    Some(expected)
+                );
+                cx.update(|window, app| {
+                    let search = view.read(app).search.clone();
+                    search.update(app, |search, cx| search.focus(window, cx));
+                    window.focus_next();
+                });
+                cx.simulate_keystrokes(key);
+                cx.run_until_parked();
 
-            assert_eq!(
-                cx.read(|app| {
-                    let state = view.read(app).state.as_ref().unwrap();
-                    (state.filtered_profiles().len(), state.tag_filter().clone())
-                }),
-                (1, TagFilter::default())
-            );
-            cx.update(|window, app| {
-                let search = view.read(app).search.clone();
-                assert!(search.read(app).value().is_empty());
-                assert!(search.read(app).focus_handle(app).is_focused(window));
-            });
-            assert_eq!(store.load_config().unwrap(), config);
-        };
+                assert_eq!(
+                    cx.read(|app| {
+                        let state = view.read(app).state.as_ref().unwrap();
+                        (state.filtered_profiles().len(), state.tag_filter().clone())
+                    }),
+                    (1, TagFilter::default())
+                );
+                cx.update(|window, app| {
+                    let search = view.read(app).search.clone();
+                    assert!(search.read(app).value().is_empty());
+                    assert!(search.read(app).focus_handle(app).is_focused(window));
+                });
+                assert_eq!(store.load_config().unwrap(), config);
+            };
 
         cx.update(|window, app| {
             let search = view.read(app).search.clone();
@@ -700,19 +701,13 @@ mod tests {
         activate_clear(cx, "enter", WorkspaceEmptyState::Search);
 
         view.update(cx, |app, cx| {
-            app.state
-                .as_mut()
-                .unwrap()
-                .toggle_tag_filter(empty_tag.id);
+            app.state.as_mut().unwrap().toggle_tag_filter(empty_tag.id);
             cx.notify();
         });
         activate_clear(cx, "space", WorkspaceEmptyState::TagFilter);
 
         view.update(cx, |app, cx| {
-            app.state
-                .as_mut()
-                .unwrap()
-                .toggle_tag_filter(empty_tag.id);
+            app.state.as_mut().unwrap().toggle_tag_filter(empty_tag.id);
             cx.notify();
         });
         cx.update(|window, app| {
@@ -720,10 +715,6 @@ mod tests {
             search.update(app, |search, cx| search.set_value("missing", window, cx));
             view.update(app, |_, cx| cx.notify());
         });
-        activate_clear(
-            cx,
-            "enter",
-            WorkspaceEmptyState::SearchAndTagFilter,
-        );
+        activate_clear(cx, "enter", WorkspaceEmptyState::SearchAndTagFilter);
     }
 }

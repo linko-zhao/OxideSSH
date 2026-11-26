@@ -635,14 +635,7 @@ impl AppView {
             false,
             locale,
         );
-        let secret = new_input(
-            window,
-            cx,
-            FieldCopy::CREDENTIAL,
-            "",
-            true,
-            locale,
-        );
+        let secret = new_input(window, cx, FieldCopy::CREDENTIAL, "", true, locale);
         let search_subscription = cx.observe(&search, |this, _, cx| {
             let _ = this;
             cx.notify();

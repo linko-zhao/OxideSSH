@@ -497,12 +497,8 @@ impl DialogPresenter {
                     description = description.child(helper_text(helper, cx));
                 }
                 if let Some(error) = error.clone() {
-                    description = description.child(ui_text(
-                        TextRole::Helper,
-                        TextColor::Danger,
-                        error,
-                        cx,
-                    ));
+                    description =
+                        description.child(ui_text(TextRole::Helper, TextColor::Danger, error, cx));
                 }
                 description
             });
