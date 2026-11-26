@@ -167,7 +167,8 @@ impl ButtonDesign for Button {
     fn button_size(self, size: ButtonSize) -> Self {
         match size {
             ButtonSize::Medium => self,
-            ButtonSize::Compact | ButtonSize::Icon => self.compact(),
+            // Compact text and icon buttons are 24px high; text has 6px horizontal padding.
+            ButtonSize::Compact | ButtonSize::Icon => self.small().compact(),
             ButtonSize::SmallIcon => self.compact().xsmall(),
         }
     }
@@ -200,4 +201,148 @@ pub(super) fn icon_button(
         .icon(icon)
         .variant(variant)
         .button_size(size)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gpui::{AppContext as _, Context, Modifiers, Render, point, px};
+    use gpui_component::{Disableable as _, IconName, Root};
+
+    struct ButtonTestView;
+
+    impl Render for ButtonTestView {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div()
+                .flex()
+                .flex_col()
+                .items_start()
+                .child(
+                    custom_button("compact", ButtonVariant::Secondary)
+                        .button_size(ButtonSize::Compact)
+                        .child(
+                            TextRole::Button
+                                .apply(div())
+                                .child("Compact")
+                                .debug_selector(|| "compact-label".into()),
+                        )
+                        .debug_selector(|| "compact-button".into()),
+                )
+                .child(
+                    icon_button(
+                        "small-icon",
+                        IconName::Close,
+                        ButtonVariant::Tertiary,
+                        ButtonSize::SmallIcon,
+                    )
+                    .debug_selector(|| "small-icon-button".into()),
+                )
+                .child(
+                    icon_button(
+                        "compact-icon",
+                        IconName::Plus,
+                        ButtonVariant::Tertiary,
+                        ButtonSize::Icon,
+                    )
+                    .debug_selector(|| "compact-icon-button".into()),
+                )
+        }
+    }
+
+    #[gpui::test]
+    async fn compact_buttons_have_dense_external_targets(cx: &mut gpui::TestAppContext) {
+        cx.update(gpui_component::init);
+        let (_view, cx) = cx.add_window_view(|_, _| ButtonTestView);
+        cx.run_until_parked();
+
+        let compact = cx.debug_bounds("compact-button").unwrap();
+        let label = cx.debug_bounds("compact-label").unwrap();
+        assert_eq!(compact.size.height, px(24.));
+        // Six pixels of padding plus the existing one-pixel border on each side.
+        assert_eq!(compact.size.width - label.size.width, px(14.));
+
+        for selector in ["small-icon-button", "compact-icon-button"] {
+            let icon = cx.debug_bounds(selector).unwrap();
+            assert!(icon.size.width >= px(24.));
+            assert!(icon.size.height >= px(24.));
+            assert!(icon.contains(&icon.center()));
+            assert!(!icon.contains(&point(icon.right() + px(1.), icon.center().y,)));
+        }
+    }
+
+    struct ActivationTestView {
+        clicks: usize,
+        focus_handle: gpui::FocusHandle,
+    }
+
+    impl gpui::Focusable for ActivationTestView {
+        fn focus_handle(&self, _: &App) -> gpui::FocusHandle {
+            self.focus_handle.clone()
+        }
+    }
+
+    impl Render for ActivationTestView {
+        fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            let action = |id: &'static str| {
+                button(id, id, ButtonVariant::Primary).on_click(cx.listener(|this, _, _, cx| {
+                    this.clicks += 1;
+                    cx.notify();
+                }))
+            };
+            div()
+                .child(action("enabled").debug_selector(|| "enabled-button".into()))
+                .child(
+                    action("disabled")
+                        .disabled(true)
+                        .debug_selector(|| "disabled-button".into()),
+                )
+                .child(
+                    action("loading")
+                        .loading(true)
+                        .debug_selector(|| "loading-button".into()),
+                )
+        }
+    }
+
+    #[gpui::test]
+    async fn disabled_and_loading_buttons_never_activate(cx: &mut gpui::TestAppContext) {
+        cx.update(gpui_component::init);
+        let mut test_view = None;
+        let (_root, cx) = cx.add_window_view(|window, cx| {
+            let view = cx.new(|cx| ActivationTestView {
+                clicks: 0,
+                focus_handle: cx.focus_handle(),
+            });
+            test_view = Some(view.clone());
+            Root::new(view, window, cx)
+        });
+        let view = test_view.unwrap();
+        cx.run_until_parked();
+
+        let enabled = cx.debug_bounds("enabled-button").unwrap();
+        cx.simulate_click(enabled.center(), Modifiers::default());
+        assert_eq!(cx.read(|app| view.read(app).clicks), 1);
+
+        for selector in ["disabled-button", "loading-button"] {
+            let bounds = cx.debug_bounds(selector).unwrap();
+            cx.simulate_click(bounds.center(), Modifiers::default());
+            assert_eq!(cx.read(|app| view.read(app).clicks), 1);
+        }
+
+        cx.update(|window, app| {
+            let focus_handle = view.read(app).focus_handle.clone();
+            focus_handle.focus(window);
+            window.focus_next();
+        });
+        cx.simulate_keystrokes("enter");
+        assert_eq!(cx.read(|app| view.read(app).clicks), 1);
+
+        cx.update(|window, _| window.focus_next());
+        cx.simulate_keystrokes("enter");
+        assert_eq!(cx.read(|app| view.read(app).clicks), 1);
+
+        cx.update(|window, _| window.focus_next());
+        cx.simulate_keystrokes("enter");
+        assert_eq!(cx.read(|app| view.read(app).clicks), 1);
+    }
 }

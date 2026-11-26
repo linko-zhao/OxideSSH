@@ -112,9 +112,8 @@ impl AppView {
                         .whitespace_nowrap(),
                     )
                     .child(
-                        // xsmall (20px) keeps the pill slim; the default
-                        // medium icon button is 32px and would inflate both
-                        // the pill and the title bar wrapping it.
+                        // Keep a 24px target without inflating the pill;
+                        // the default medium icon button is 32px.
                         icon_button(
                             SharedString::from(format!("close-{tab_id:?}")),
                             IconName::Close,
@@ -122,6 +121,7 @@ impl AppView {
                             ButtonSize::SmallIcon,
                         )
                         .flex_none()
+                        .debug_selector(|| "tab-close-button".into())
                         .on_click(cx.listener(move |this, _, _, cx| {
                             cx.stop_propagation();
                             this.close_tab(tab_id, cx);
@@ -141,6 +141,7 @@ impl AppView {
                 ButtonVariant::Tertiary,
                 ButtonSize::SmallIcon,
             )
+            .debug_selector(|| "new-tab-button".into())
             .on_click(cx.listener(|this, _, window, cx| {
                 let open_local = this.state.as_ref().is_some_and(|state| {
                     state.settings().new_tab_action == NewTabAction::LocalTerminal
@@ -260,5 +261,69 @@ impl AppView {
                 ))
                 .into_any_element()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use oxide_ssh_terminal::TerminalColors;
+
+    #[gpui::test]
+    async fn tab_icon_targets_are_24px_and_non_overlapping(cx: &mut gpui::TestAppContext) {
+        cx.update(gpui_component::init);
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().to_path_buf();
+        let mut app_view = None;
+        let (_root, cx) = cx.add_window_view(|window, cx| {
+            let view = cx.new(|cx| AppView::new(root.clone(), AppState::load(root), window, cx));
+            app_view = Some(view.clone());
+            Root::new(view, window, cx)
+        });
+        let view = app_view.unwrap();
+        cx.run_until_parked();
+        let new_tab = cx.debug_bounds("new-tab-button").unwrap();
+        assert!(new_tab.size.width >= px(24.));
+        assert!(new_tab.size.height >= px(24.));
+
+        view.update(cx, |app, cx| {
+            app.state
+                .as_mut()
+                .unwrap()
+                .set_confirm_before_close_with_sessions(false)
+                .unwrap();
+            app.tabs.open_local(
+                TerminalSize {
+                    columns: 80,
+                    rows: 24,
+                    pixel_width: 640,
+                    pixel_height: 384,
+                },
+                TerminalColors::default(),
+            );
+            cx.notify();
+        });
+        cx.run_until_parked();
+
+        let close = cx.debug_bounds("tab-close-button").unwrap();
+        assert!(close.size.width >= px(24.));
+        assert!(close.size.height >= px(24.));
+        let new_tab = cx.debug_bounds("new-tab-button").unwrap();
+        assert!(!close.intersects(&new_tab));
+
+        view.update(cx, |app, cx| {
+            app.main_view = MainView::Workspace;
+            cx.notify();
+        });
+        cx.run_until_parked();
+        cx.simulate_click(
+            point(close.origin.x + px(1.), close.center().y),
+            gpui::Modifiers::default(),
+        );
+        assert!(cx.read(|app| {
+            let tabs = &view.read(app).tabs;
+            tabs.tabs().is_empty() || tabs.tabs()[0].closing()
+        }));
+        assert_eq!(cx.read(|app| view.read(app).main_view), MainView::Workspace);
     }
 }
