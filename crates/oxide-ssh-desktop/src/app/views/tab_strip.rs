@@ -189,11 +189,14 @@ impl AppView {
         // lights enough height to avoid clipping.
         #[cfg(target_os = "macos")]
         {
+            // gpui-component's drag bar refuses to shrink (flex_shrink_0) and
+            // takes its min-content from its children, so the strip needs a
+            // definite width or overflowing session pills push the new-tab
+            // button offscreen. 80px is TitleBar's private traffic-light inset.
+            let width = (window.viewport_size().width - px(80.)).max(px(0.));
             TitleBar::new()
                 .w_full()
-                // The strip must be able to shrink below its pill content,
-                // otherwise the session pills push the new-tab button offscreen.
-                .child(div().flex_1().min_w(px(0.)).py(px(CARD_GAP)).child(strip))
+                .child(div().w(width).py(px(CARD_GAP)).child(strip))
                 .into_any_element()
         }
         // Windows: route caption interactions through gpui's native
