@@ -536,7 +536,7 @@ impl AppView {
                                     ),
                             ),
                     )
-                    .child(div().flex_1().child(content)),
+                    .child(div().flex_1().min_w(px(0.)).child(content)),
             )
             .into_any_element()
     }
@@ -734,6 +734,12 @@ mod tests {
         cx.update(gpui_component::init);
         let directory = tempfile::tempdir().unwrap();
         let root = directory.path().to_path_buf();
+        // Pin English: its empty-state copy is the widest, so the geometry is
+        // the same on every host locale.
+        oxide_ssh_core::storage::AppStore::open(root.clone())
+            .unwrap()
+            .update_settings(|settings| settings.locale = LocaleSetting::EnUs)
+            .unwrap();
         let (_view, cx) = cx.add_window_view(|window, cx| {
             AppView::new(root.clone(), AppState::load(root), window, cx)
         });

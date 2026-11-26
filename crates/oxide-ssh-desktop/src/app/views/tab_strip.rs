@@ -190,7 +190,10 @@ impl AppView {
         #[cfg(target_os = "macos")]
         {
             TitleBar::new()
-                .child(div().py(px(CARD_GAP)).child(strip))
+                .w_full()
+                // The strip must be able to shrink below its pill content,
+                // otherwise the session pills push the new-tab button offscreen.
+                .child(div().flex_1().min_w(px(0.)).py(px(CARD_GAP)).child(strip))
                 .into_any_element()
         }
         // Windows: route caption interactions through gpui's native
