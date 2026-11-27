@@ -100,6 +100,7 @@ pub fn init(cx: &mut App) {
     #[cfg(any(feature = "inspector", debug_assertions))]
     inspector::init(cx);
     root::init(cx);
+    button::init(cx);
     date_picker::init(cx);
     color_picker::init(cx);
     dock::init(cx);

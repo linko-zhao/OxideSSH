@@ -40,7 +40,7 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::LocalShellArgsDescription => {
             "Arguments passed as separate words to the local shell."
         }
-        MessageId::NewTabButton => "New tab button",
+        MessageId::NewTabButton => "New tab",
         MessageId::Settings => "Settings",
         MessageId::General => "General",
         MessageId::Appearance => "Appearance",
@@ -201,6 +201,7 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::KnownHostsImported => "Trusted hosts imported.",
         MessageId::NoTrustedHosts => "No trusted hosts",
         MessageId::Close => "Close",
+        MessageId::CloseTab => "Close tab",
         MessageId::Copy => "Copy",
         MessageId::Name => "Name",
         MessageId::Host => "Host",

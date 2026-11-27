@@ -155,6 +155,7 @@ pub enum MessageId {
     KnownHostsExported,
     KnownHostsImported,
     Close,
+    CloseTab,
     Copy,
     Name,
     Host,

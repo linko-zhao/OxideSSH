@@ -1,5 +1,4 @@
 use super::*;
-use gpui_component::scroll::ScrollableElement;
 
 pub(in crate::app) fn tab_state_icon(state: &TabState) -> IconName {
     match state {
@@ -15,11 +14,14 @@ impl AppView {
     /// Pill-shaped tab base: the selected pill lifts one step above the
     /// strip; hovering an unselected pill shows a fainter step of the same
     /// color, so both states read consistently in light and dark mode.
-    fn tab_pill(id: impl Into<ElementId>, selected: bool, cx: &App) -> gpui::Stateful<gpui::Div> {
+    fn tab_pill(
+        id: impl Into<ElementId>,
+        selected: bool,
+        cx: &App,
+    ) -> gpui_component::button::Button {
         let theme = cx.theme();
         let base = TextRole::Body.apply(
-            h_flex()
-                .id(id)
+            custom_button(id, ButtonVariant::Tertiary)
                 .items_center()
                 .gap(px(8.))
                 .px(px(12.))
@@ -32,13 +34,18 @@ impl AppView {
                 .cursor_pointer(),
         );
         if selected {
-            TextColor::Primary.apply(base.bg(theme.secondary), cx)
+            TextColor::Primary.apply(base.selected(true).bg(theme.secondary), cx)
         } else {
             let hover_bg = theme.secondary.opacity(0.55);
-            let hover_fg = theme.foreground;
-            TextColor::Secondary
-                .apply(base, cx)
-                .hover(move |style| style.bg(hover_bg).text_color(hover_fg))
+            TextColor::Secondary.apply(
+                base.with_variant(gpui_component::button::ButtonVariant::Custom(
+                    gpui_component::button::ButtonCustomVariant::new(cx)
+                        .foreground(theme.muted_foreground)
+                        .hover(hover_bg)
+                        .active(hover_bg),
+                )),
+                cx,
+            )
         }
     }
 
@@ -101,9 +108,20 @@ impl AppView {
         );
         // Only the session pills overflow; Workspace, the new-tab button and
         // the native caption controls stay permanently visible.
-        let mut sessions = h_flex().items_center().gap(px(4.)).pr(px(4.));
-        for (id, name, state) in &tab_data {
+        let mut sessions = div()
+            .id("session-tabs-scroll")
+            .flex_shrink()
+            .min_w(px(0.))
+            .flex()
+            .items_center()
+            .gap(px(4.))
+            .pr(px(4.))
+            .track_scroll(&self.session_tabs_scroll)
+            .overflow_x_scroll();
+        for (index, (id, name, state)) in tab_data.iter().enumerate() {
             let tab_id = *id;
+            let session_scroll = self.session_tabs_scroll.clone();
+            let close_scroll = self.session_tabs_scroll.clone();
             let selected = self.main_view == MainView::Sessions && active == Some(tab_id);
             let title_truncated = {
                 let text_style = window.text_style();
@@ -153,9 +171,8 @@ impl AppView {
                         .whitespace_nowrap(),
                     )
                     .when(title_truncated, |tab| {
-                        let title_for_key = name.clone();
                         let title_for_click = name.clone();
-                        let key_view = cx.entity();
+                        let details_scroll = self.session_tabs_scroll.clone();
                         tab.child(
                             icon_button(
                                 SharedString::from(format!("details-tab-{tab_id:?}")),
@@ -166,15 +183,7 @@ impl AppView {
                             .flex_none()
                             .debug_selector(|| "tab-details-button".into())
                             .tooltip(format!("{}\n{}", self.text(MessageId::SessionTitle), name))
-                            .on_key_down(move |event: &KeyDownEvent, _window, cx| {
-                                if matches!(event.keystroke.key.as_str(), "enter" | "space") {
-                                    cx.stop_propagation();
-                                    key_view.update(cx, |this, cx| {
-                                        this.session_title_details = Some(title_for_key.clone());
-                                        cx.notify();
-                                    });
-                                }
-                            })
+                            .on_focus(move |_, _| details_scroll.scroll_to_item(index))
                             .on_click(cx.listener(
                                 move |this, _, _, cx| {
                                     cx.stop_propagation();
@@ -194,12 +203,15 @@ impl AppView {
                             ButtonSize::SmallIcon,
                         )
                         .flex_none()
+                        .tooltip(self.text(MessageId::CloseTab))
                         .debug_selector(|| "tab-close-button".into())
+                        .on_focus(move |_, _| close_scroll.scroll_to_item(index))
                         .on_click(cx.listener(move |this, _, _, cx| {
                             cx.stop_propagation();
                             this.close_tab(tab_id, cx);
                         })),
                     )
+                    .on_focus(move |_, _| session_scroll.scroll_to_item(index))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.tabs.set_active(tab_id);
                         this.main_view = MainView::Sessions;
@@ -207,34 +219,26 @@ impl AppView {
                     })),
             );
         }
-        let strip = strip
-            .child(
-                div()
-                    .id("session-tabs-scroll")
-                    .flex_shrink()
-                    .min_w(px(0.))
-                    .overflow_x_scrollbar()
-                    .child(sessions),
+        let strip = strip.child(sessions).child(
+            icon_button(
+                "new-tab",
+                IconName::Plus,
+                ButtonVariant::Tertiary,
+                ButtonSize::SmallIcon,
             )
-            .child(
-                icon_button(
-                    "new-tab",
-                    IconName::Plus,
-                    ButtonVariant::Tertiary,
-                    ButtonSize::SmallIcon,
-                )
-                .debug_selector(|| "new-tab-button".into())
-                .on_click(cx.listener(|this, _, window, cx| {
-                    let open_local = this.state.as_ref().is_some_and(|state| {
-                        state.settings().new_tab_action == NewTabAction::LocalTerminal
-                    });
-                    if open_local {
-                        this.connect_local(window, cx);
-                    } else {
-                        this.show_add_connection(window, cx);
-                    }
-                })),
-            );
+            .tooltip(self.text(MessageId::NewTabButton))
+            .debug_selector(|| "new-tab-button".into())
+            .on_click(cx.listener(|this, _, window, cx| {
+                let open_local = this.state.as_ref().is_some_and(|state| {
+                    state.settings().new_tab_action == NewTabAction::LocalTerminal
+                });
+                if open_local {
+                    this.connect_local(window, cx);
+                } else {
+                    this.show_add_connection(window, cx);
+                }
+            })),
+        );
         // Linux keeps the native title bar, so the strip stays a standalone row.
         #[cfg(target_os = "linux")]
         {
@@ -461,55 +465,6 @@ mod tests {
     }
 
     #[gpui::test]
-    async fn complete_session_title_is_keyboard_recoverable(cx: &mut gpui::TestAppContext) {
-        cx.update(gpui_component::init);
-        let directory = tempfile::tempdir().unwrap();
-        let root = directory.path().to_path_buf();
-        let title = "production-shared-prefix-东亚-development";
-        let profile = profile(title);
-        let mut app_view = None;
-        let (_root, cx) = cx.add_window_view(|window, cx| {
-            let view = cx.new(|cx| AppView::new(root.clone(), AppState::load(root), window, cx));
-            app_view = Some(view.clone());
-            Root::new(view, window, cx)
-        });
-        let view = app_view.unwrap();
-        let tab_id = view.update(cx, |app, cx| {
-            let tab_id = app.tabs.open(
-                profile,
-                TerminalSize {
-                    columns: 80,
-                    rows: 24,
-                    pixel_width: 640,
-                    pixel_height: 384,
-                },
-                TerminalColors::default(),
-                false,
-            );
-            app.main_view = MainView::Workspace;
-            cx.notify();
-            tab_id
-        });
-        cx.run_until_parked();
-
-        cx.update(|window, app| {
-            view.read(app).focus_handle.clone().focus(window);
-            window.focus_next();
-            window.dispatch_keystroke(gpui::Keystroke::parse("enter").unwrap(), app);
-
-            assert_eq!(view.read(app).session_title_details.as_deref(), Some(title));
-            assert!(view.read(app).editor.is_none());
-            assert!({
-                let app_view = view.read(app);
-                app_view.tabs.tabs().len() == 1
-                    && app_view.tabs.tab(tab_id).is_some()
-                    && app_view.main_view == MainView::Workspace
-            });
-            view.update(app, |app, _| app.session_title_details = None);
-        });
-    }
-
-    #[gpui::test]
     async fn short_session_title_adds_no_recovery_chrome(cx: &mut gpui::TestAppContext) {
         cx.update(gpui_component::init);
         let directory = tempfile::tempdir().unwrap();
@@ -654,5 +609,39 @@ mod tests {
                 );
             }
         }
+
+        cx.update(|window, app| {
+            view.read(app).focus_handle.clone().focus(window);
+            for _ in 0..24 {
+                window.focus_next();
+            }
+        });
+        cx.run_until_parked();
+        let assert_visible = |cx: &mut gpui::VisualTestContext, index| {
+            let (item, offset, viewport) = cx.read(|app| {
+                let scroll = &view.read(app).session_tabs_scroll;
+                (
+                    scroll.bounds_for_item(index).unwrap(),
+                    scroll.offset(),
+                    scroll.bounds(),
+                )
+            });
+            assert!(item.left() + offset.x >= viewport.left());
+            assert!(item.right() + offset.x <= viewport.right());
+        };
+        assert_visible(cx, 11);
+        cx.update(|window, _| {
+            window.focus_next();
+            window.focus_prev();
+        });
+        cx.run_until_parked();
+        assert_visible(cx, 11);
+        cx.update(|window, _| {
+            window.focus_prev();
+            window.focus_prev();
+            window.focus_prev();
+        });
+        cx.run_until_parked();
+        assert_visible(cx, 10);
     }
 }

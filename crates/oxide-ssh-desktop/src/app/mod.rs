@@ -12,6 +12,7 @@ use gpui_component::{
     ActiveTheme as _, Disableable as _, Icon, IconName, IndexPath, Root, Selectable as _,
     Sizable as _, WindowExt as _,
     alert::Alert,
+    button::ButtonVariants as _,
     checkbox::Checkbox,
     form::{field, v_form},
     h_flex,
@@ -451,6 +452,8 @@ pub struct AppView {
     dark_theme_error: Option<String>,
     focus_handle: FocusHandle,
     terminal_focus: FocusHandle,
+    session_tabs_scroll: gpui::ScrollHandle,
+    workspace_scroll: gpui::ScrollHandle,
     pending_terminal_focus: bool,
     composing: bool,
     compose_tab: Option<TabId>,
@@ -1270,6 +1273,8 @@ impl AppView {
             },
             focus_handle: cx.focus_handle(),
             terminal_focus: cx.focus_handle(),
+            session_tabs_scroll: gpui::ScrollHandle::new(),
+            workspace_scroll: gpui::ScrollHandle::new(),
             pending_terminal_focus: false,
             composing: false,
             compose_tab: None,
@@ -2365,8 +2370,10 @@ impl Render for AppView {
             self.render_recovery(cx)
         } else {
             let main = match self.main_view {
-                MainView::Workspace => self.render_workspace(cx),
-                MainView::Sessions if self.tabs.tabs().is_empty() => self.render_workspace(cx),
+                MainView::Workspace => self.render_workspace(window, cx),
+                MainView::Sessions if self.tabs.tabs().is_empty() => {
+                    self.render_workspace(window, cx)
+                }
                 MainView::Sessions => self.render_sessions(cx),
                 MainView::Settings => self.render_settings(cx),
             };

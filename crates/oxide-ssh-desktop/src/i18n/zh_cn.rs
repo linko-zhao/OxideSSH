@@ -36,7 +36,7 @@ pub(super) fn text(id: MessageId) -> &'static str {
             "新建或重启本机终端时使用的程序；留空则使用平台默认 Shell。"
         }
         MessageId::LocalShellArgsDescription => "以空格分隔传递给本地 Shell 的启动参数。",
-        MessageId::NewTabButton => "新建标签按钮",
+        MessageId::NewTabButton => "新建标签页",
         MessageId::Settings => "设置",
         MessageId::General => "通用",
         MessageId::Appearance => "外观",
@@ -175,6 +175,7 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::KnownHostsImported => "已导入受信任主机。",
         MessageId::NoTrustedHosts => "暂无受信任主机",
         MessageId::Close => "关闭",
+        MessageId::CloseTab => "关闭标签页",
         MessageId::Copy => "复制",
         MessageId::Name => "名称",
         MessageId::Host => "主机",

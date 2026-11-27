@@ -632,32 +632,39 @@ impl DialogPresenter {
                 cx.notify();
             });
             let chip = TextRole::Caption.apply(
-                h_flex()
-                    .id(SharedString::from(format!("editor-tag-{}", tag.id.0)))
-                    .items_center()
-                    .gap(px(6.))
-                    .px(px(8.))
-                    .py(px(3.))
-                    .rounded_full()
-                    .border_1()
-                    .cursor_pointer()
-                    .child(
-                        div()
-                            .size(px(8.))
-                            .flex_none()
-                            .rounded_full()
-                            .bg(rgb(tag_color_rgb(tag.color.unwrap_or(TagColor::Gray)))),
-                    )
-                    .child(tag.name.clone())
-                    .when(selected, |chip| {
-                        chip.child(Icon::new(IconName::Check).size(px(12.)).flex_none())
-                            .child(self.text(MessageId::Selected))
-                    })
-                    .on_click(toggle_listener),
+                custom_button(
+                    SharedString::from(format!("editor-tag-{}", tag.id.0)),
+                    ButtonVariant::Tertiary,
+                )
+                .button_size(ButtonSize::Compact)
+                .items_center()
+                .gap(px(6.))
+                .px(px(8.))
+                .py(px(3.))
+                .rounded_full()
+                .border_1()
+                .cursor_pointer()
+                .child(
+                    div()
+                        .size(px(8.))
+                        .flex_none()
+                        .rounded_full()
+                        .bg(rgb(tag_color_rgb(tag.color.unwrap_or(TagColor::Gray)))),
+                )
+                .child(tag.name.clone())
+                .when(selected, |chip| {
+                    chip.child(Icon::new(IconName::Check).size(px(12.)).flex_none())
+                        .child(self.text(MessageId::Selected))
+                })
+                .on_click(toggle_listener),
             );
             tag_chips = tag_chips.child(if selected {
-                TextColor::OnAccent
-                    .apply(chip.bg(tag_selected_bg).border_color(tag_selected_bg), cx)
+                TextColor::OnAccent.apply(
+                    chip.selected(true)
+                        .bg(tag_selected_bg)
+                        .border_color(tag_selected_bg),
+                    cx,
+                )
             } else {
                 chip.bg(tag_secondary).border_color(tag_border)
             });

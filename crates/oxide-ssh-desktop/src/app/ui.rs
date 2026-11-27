@@ -206,6 +206,7 @@ pub(super) fn icon_button(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::DialogSubmit;
     use gpui::{AppContext as _, Context, Modifiers, Render, point, px};
     use gpui_component::{Disableable as _, IconName, Root};
 
@@ -272,6 +273,8 @@ mod tests {
 
     struct ActivationTestView {
         clicks: usize,
+        submissions: usize,
+        focuses: usize,
         focus_handle: gpui::FocusHandle,
     }
 
@@ -289,8 +292,19 @@ mod tests {
                     cx.notify();
                 }))
             };
+            let focus_view = cx.entity();
             div()
-                .child(action("enabled").debug_selector(|| "enabled-button".into()))
+                .key_context("OxideSSHDialog")
+                .on_action(cx.listener(|this, _: &DialogSubmit, _, _| {
+                    this.submissions += 1;
+                }))
+                .child(
+                    action("enabled")
+                        .on_focus(move |_, app| {
+                            focus_view.update(app, |this, _| this.focuses += 1);
+                        })
+                        .debug_selector(|| "enabled-button".into()),
+                )
                 .child(
                     action("disabled")
                         .disabled(true)
@@ -306,11 +320,16 @@ mod tests {
 
     #[gpui::test]
     async fn disabled_and_loading_buttons_never_activate(cx: &mut gpui::TestAppContext) {
-        cx.update(gpui_component::init);
+        cx.update(|app| {
+            gpui_component::init(app);
+            crate::app::init(app);
+        });
         let mut test_view = None;
         let (_root, cx) = cx.add_window_view(|window, cx| {
             let view = cx.new(|cx| ActivationTestView {
                 clicks: 0,
+                submissions: 0,
+                focuses: 0,
                 focus_handle: cx.focus_handle(),
             });
             test_view = Some(view.clone());
@@ -334,8 +353,11 @@ mod tests {
             focus_handle.focus(window);
             window.focus_next();
         });
+        cx.run_until_parked();
+        assert!(cx.read(|app| view.read(app).focuses > 0));
         cx.simulate_keystrokes("enter");
         assert_eq!(cx.read(|app| view.read(app).clicks), 1);
+        assert_eq!(cx.read(|app| view.read(app).submissions), 0);
 
         cx.update(|window, _| window.focus_next());
         cx.simulate_keystrokes("enter");

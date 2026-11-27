@@ -8,11 +8,10 @@ impl AppView {
         label: &'static str,
         active: bool,
         cx: &App,
-    ) -> gpui::Stateful<gpui::Div> {
+    ) -> gpui_component::button::Button {
         let theme = cx.theme();
         let item = TextRole::Body.apply(
-            h_flex()
-                .id(id)
+            custom_button(id, ButtonVariant::Tertiary)
                 .items_center()
                 .gap(px(10.))
                 .px(px(10.))
@@ -22,12 +21,17 @@ impl AppView {
                 .child(label),
         );
         if active {
-            TextColor::OnSelection.apply(item.bg(theme.accent), cx)
+            TextColor::OnSelection.apply(item.selected(true).bg(theme.accent), cx)
         } else {
             let hover_bg = theme.list_hover;
-            TextColor::Secondary
-                .apply(item, cx)
-                .hover(move |style| style.bg(hover_bg))
+            TextColor::Secondary.apply(
+                item.with_variant(gpui_component::button::ButtonVariant::Custom(
+                    gpui_component::button::ButtonCustomVariant::new(cx)
+                        .hover(hover_bg)
+                        .active(hover_bg),
+                )),
+                cx,
+            )
         }
     }
 
@@ -67,7 +71,11 @@ impl AppView {
         for (id, icon, label) in placeholder_items {
             nav = nav.child(
                 TextColor::Weak
-                    .apply(self.nav_item(id, icon, self.text(label), false, cx), cx)
+                    .apply(
+                        self.nav_item(id, icon, self.text(label), false, cx)
+                            .tab_stop(false),
+                        cx,
+                    )
                     .opacity(0.45),
             );
         }

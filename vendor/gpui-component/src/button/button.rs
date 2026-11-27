@@ -1,13 +1,23 @@
 use std::rc::Rc;
 
+actions!(button, [Activate]);
+
+pub(crate) fn init(cx: &mut App) {
+    cx.bind_keys([
+        KeyBinding::new("enter", Activate, Some("Button")),
+        KeyBinding::new("space", Activate, Some("Button")),
+    ]);
+}
+
 use crate::{
     ActiveTheme, Colorize as _, Disableable, FocusableExt as _, Icon, IconName, Selectable,
     Sizable, Size, StyleSized, StyledExt, h_flex, spinner::Spinner, tooltip::Tooltip,
 };
 use gpui::{
     Action, AnyElement, App, ClickEvent, Corners, Div, Edges, ElementId, Hsla, InteractiveElement,
-    Interactivity, IntoElement, MouseButton, ParentElement, Pixels, RenderOnce, SharedString,
-    Stateful, StatefulInteractiveElement as _, StyleRefinement, Styled, Window, div,
+    Interactivity, IntoElement, KeyBinding, MouseButton, ParentElement, Pixels, RenderOnce,
+    SharedString, Stateful, StatefulInteractiveElement as _, StyleRefinement, Styled, Window, actions,
+    div,
     prelude::FluentBuilder as _, px, relative,
 };
 
@@ -197,6 +207,7 @@ pub struct Button {
         Option<(Rc<Box<dyn Action>>, Option<SharedString>)>,
     )>,
     on_click: Option<Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>>,
+    on_focus: Option<Rc<dyn Fn(&mut Window, &mut App)>>,
     on_hover: Option<Rc<dyn Fn(&bool, &mut Window, &mut App)>>,
     loading: bool,
     loading_icon: Option<Icon>,
@@ -232,6 +243,7 @@ impl Button {
             size: Size::Medium,
             tooltip: None,
             on_click: None,
+            on_focus: None,
             on_hover: None,
             loading: false,
             compact: false,
@@ -321,6 +333,12 @@ impl Button {
         handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.on_click = Some(Rc::new(handler));
+        self
+    }
+
+    /// Add a handler invoked while rendering the focused button.
+    pub fn on_focus(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
+        self.on_focus = Some(Rc::new(handler));
         self
     }
 
@@ -438,6 +456,11 @@ impl RenderOnce for Button {
             .read(cx)
             .clone();
         let is_focused = focus_handle.is_focused(window);
+        if is_focused
+            && let Some(on_focus) = &self.on_focus
+        {
+            on_focus(window, cx);
+        }
 
         let rounding = match self.rounded {
             ButtonRounded::Small => cx.theme().radius * 0.5,
@@ -454,6 +477,12 @@ impl RenderOnce for Button {
                         .tab_index(self.tab_index)
                         .tab_stop(self.tab_stop),
                 )
+            })
+            .key_context("Button")
+            .when(clickable, |this| {
+                // GPUI dispatches the click on key-up. Consume the local action
+                // so dialog and window activation shortcuts do not fire first.
+                this.on_action(|_: &Activate, _, cx| cx.stop_propagation())
             })
             .cursor_default()
             .flex()

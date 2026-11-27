@@ -4,6 +4,7 @@ impl AppView {
     fn render_host_card(
         &mut self,
         profile: ConnectionProfile,
+        scroll_index: usize,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let (tile_color, initial_color) = avatar_colors(&profile.id.0);
@@ -24,142 +25,155 @@ impl AppView {
         let profile_for_connect = profile.clone();
         let profile_for_edit = profile.clone();
         let profile_for_delete = profile.clone();
-        let profile_for_edit_key = profile.clone();
         let view = cx.entity();
-        let edit_key_view = view.clone();
         let theme = cx.theme();
         let border = theme.input;
         let card_bg = theme.secondary;
         // Hover lifts the card one step above its resting background.
         let hover_bg = theme.accent;
         let radius_lg = theme.radius_lg;
-        div()
-            .id(SharedString::from(format!("host-card-{}", profile.id.0)))
-            .w(px(300.))
-            .p(px(14.))
-            .flex()
-            .flex_col()
-            .gap(px(10.))
-            .rounded(radius_lg)
-            .border_1()
-            .border_color(border)
-            .bg(card_bg)
-            .cursor_pointer()
-            .hover(move |style| style.bg(hover_bg))
-            .on_click(cx.listener(move |this, _, window, cx| {
-                this.connect_profile(profile_for_connect.clone(), window, cx)
-            }))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(12.))
-                    .child(
-                        div()
-                            .size(px(36.))
-                            .flex_none()
-                            .rounded_full()
-                            .bg(tile_color)
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .text_color(initial_color)
-                            .font_weight(gpui::FontWeight::BOLD)
-                            .child(initial),
-                    )
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .overflow_hidden()
-                            .flex()
-                            .flex_col()
-                            .gap(px(2.))
-                            .child(
-                                ui_text(
-                                    TextRole::Label,
-                                    TextColor::Primary,
-                                    profile.name.clone(),
-                                    cx,
-                                )
-                                .text_ellipsis(),
-                            )
-                            .child(
-                                ui_text(TextRole::Caption, TextColor::Secondary, endpoint, cx)
+        let card_scroll = self.workspace_scroll.clone();
+        let edit_scroll = self.workspace_scroll.clone();
+        let delete_scroll = self.workspace_scroll.clone();
+        custom_button(
+            SharedString::from(format!("host-card-{}", profile.id.0)),
+            ButtonVariant::Tertiary,
+        )
+        .with_variant(gpui_component::button::ButtonVariant::Custom(
+            gpui_component::button::ButtonCustomVariant::new(cx)
+                .color(card_bg)
+                .hover(hover_bg)
+                .active(hover_bg)
+                .border(border),
+        ))
+        .w(px(300.))
+        .h_auto()
+        .p(px(14.))
+        .rounded(radius_lg)
+        .border_1()
+        .border_color(border)
+        .bg(card_bg)
+        .cursor_pointer()
+        .on_focus(move |_, _| card_scroll.scroll_to_item(scroll_index))
+        .on_click(cx.listener(move |this, _, window, cx| {
+            this.connect_profile(profile_for_connect.clone(), window, cx)
+        }))
+        .child(
+            div()
+                .w_full()
+                .flex()
+                .flex_col()
+                .gap(px(10.))
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(12.))
+                        .child(
+                            div()
+                                .size(px(36.))
+                                .flex_none()
+                                .rounded_full()
+                                .bg(tile_color)
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .text_color(initial_color)
+                                .font_weight(gpui::FontWeight::BOLD)
+                                .child(initial),
+                        )
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .overflow_hidden()
+                                .flex()
+                                .flex_col()
+                                .gap(px(2.))
+                                .child(
+                                    ui_text(
+                                        TextRole::Label,
+                                        TextColor::Primary,
+                                        profile.name.clone(),
+                                        cx,
+                                    )
                                     .text_ellipsis(),
-                            ),
-                    )
-                    .child(
-                        h_flex()
-                            .flex_none()
-                            .gap(px(2.))
-                            .child(
-                                icon_button(
-                                    edit_id,
-                                    IconName::Settings2,
-                                    ButtonVariant::Tertiary,
-                                    ButtonSize::Icon,
                                 )
-                                .tooltip(format!(
-                                    "{}\n{}\n{}@{}:{}",
-                                    self.text(MessageId::Edit),
-                                    profile.name,
-                                    profile.username,
-                                    profile.endpoint.host,
-                                    profile.endpoint.port
-                                ))
-                                .on_key_down(move |event: &KeyDownEvent, window, cx| {
-                                    if matches!(event.keystroke.key.as_str(), "enter" | "space") {
-                                        cx.stop_propagation();
-                                        edit_key_view.update(cx, |this, cx| {
-                                            this.show_edit_connection(
-                                                profile_for_edit_key.clone(),
-                                                window,
-                                                cx,
-                                            );
-                                        });
-                                    }
-                                })
-                                .on_click(move |_, window, cx| {
-                                    view.update(cx, |this, cx| {
-                                        cx.stop_propagation();
-                                        this.show_edit_connection(
-                                            profile_for_edit.clone(),
-                                            window,
-                                            cx,
-                                        );
-                                    });
+                                .child(
+                                    ui_text(TextRole::Caption, TextColor::Secondary, endpoint, cx)
+                                        .text_ellipsis(),
+                                ),
+                        )
+                        .child(
+                            h_flex()
+                                .flex_none()
+                                .gap(px(2.))
+                                .child(
+                                    icon_button(
+                                        edit_id,
+                                        IconName::Settings2,
+                                        ButtonVariant::Tertiary,
+                                        ButtonSize::Icon,
+                                    )
+                                    .on_focus(move |_, _| edit_scroll.scroll_to_item(scroll_index))
+                                    .tooltip(format!(
+                                        "{}\n{}\n{}@{}:{}",
+                                        self.text(MessageId::Edit),
+                                        profile.name,
+                                        profile.username,
+                                        profile.endpoint.host,
+                                        profile.endpoint.port
+                                    ))
+                                    .on_click(
+                                        move |_, window, cx| {
+                                            view.update(cx, |this, cx| {
+                                                cx.stop_propagation();
+                                                this.show_edit_connection(
+                                                    profile_for_edit.clone(),
+                                                    window,
+                                                    cx,
+                                                );
+                                            });
+                                        },
+                                    ),
+                                )
+                                .child({
+                                    let view = cx.entity();
+                                    icon_button(
+                                        delete_id,
+                                        IconName::Delete,
+                                        ButtonVariant::Tertiary,
+                                        ButtonSize::Icon,
+                                    )
+                                    .tooltip(self.text(MessageId::Delete))
+                                    .on_focus(move |_, _| {
+                                        delete_scroll.scroll_to_item(scroll_index)
+                                    })
+                                    .on_click(
+                                        move |_, _, cx| {
+                                            view.update(cx, |this, cx| {
+                                                cx.stop_propagation();
+                                                this.confirm = Some(ConfirmAction::DeleteProfile(
+                                                    profile_for_delete.id,
+                                                ));
+                                                cx.notify();
+                                            });
+                                        },
+                                    )
                                 }),
-                            )
-                            .child({
-                                let view = cx.entity();
-                                icon_button(
-                                    delete_id,
-                                    IconName::Delete,
-                                    ButtonVariant::Tertiary,
-                                    ButtonSize::Icon,
-                                )
-                                .on_click(move |_, _, cx| {
-                                    view.update(cx, |this, cx| {
-                                        cx.stop_propagation();
-                                        this.confirm = Some(ConfirmAction::DeleteProfile(
-                                            profile_for_delete.id,
-                                        ));
-                                        cx.notify();
-                                    });
-                                })
-                            }),
-                    ),
-            )
-            .when_some(status, |card, (color, status)| {
-                card.child(ui_text(TextRole::Caption, color, status, cx))
-            })
-            .into_any_element()
+                        ),
+                )
+                .when_some(status, |card, (color, status)| {
+                    card.child(ui_text(TextRole::Caption, color, status, cx))
+                }),
+        )
+        .into_any_element()
     }
 
     fn render_local_card(
         &mut self,
         connection: LocalConnection,
+        scroll_index: usize,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let (tile_color, initial_color) = avatar_colors(&connection.id.0);
@@ -177,130 +191,124 @@ impl AppView {
         let connection_for_connect = connection.clone();
         let connection_for_rename = connection.clone();
         let connection_for_delete = connection.clone();
-        let connection_for_rename_key = connection.clone();
         let view = cx.entity();
-        let rename_key_view = view.clone();
         let theme = cx.theme();
         let border = theme.input;
         let card_bg = theme.secondary;
         let hover_bg = theme.accent;
         let radius_lg = theme.radius_lg;
-        div()
-            .id(SharedString::from(format!(
-                "local-card-{}",
-                connection.id.0
-            )))
-            .w(px(300.))
-            .p(px(14.))
-            .flex()
-            .flex_col()
-            .gap(px(10.))
-            .rounded(radius_lg)
-            .border_1()
-            .border_color(border)
-            .bg(card_bg)
-            .cursor_pointer()
-            .hover(move |style| style.bg(hover_bg))
-            .on_click(cx.listener(move |this, _, window, cx| {
-                this.connect_local_connection(connection_for_connect.clone(), window, cx)
-            }))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(12.))
-                    .child(
-                        div()
-                            .size(px(36.))
-                            .flex_none()
-                            .rounded_full()
-                            .bg(tile_color)
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .text_color(initial_color)
-                            .font_weight(gpui::FontWeight::BOLD)
-                            .child(initial),
-                    )
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .overflow_hidden()
-                            .flex()
-                            .flex_col()
-                            .gap(px(2.))
-                            .child(
-                                ui_text(TextRole::Label, TextColor::Primary, name, cx)
-                                    .text_ellipsis(),
+        let card_scroll = self.workspace_scroll.clone();
+        let rename_scroll = self.workspace_scroll.clone();
+        let delete_scroll = self.workspace_scroll.clone();
+        custom_button(
+            SharedString::from(format!("local-card-{}", connection.id.0)),
+            ButtonVariant::Tertiary,
+        )
+        .with_variant(gpui_component::button::ButtonVariant::Custom(
+            gpui_component::button::ButtonCustomVariant::new(cx)
+                .color(card_bg)
+                .hover(hover_bg)
+                .active(hover_bg)
+                .border(border),
+        ))
+        .w(px(300.))
+        .h_auto()
+        .p(px(14.))
+        .rounded(radius_lg)
+        .border_1()
+        .border_color(border)
+        .bg(card_bg)
+        .cursor_pointer()
+        .on_focus(move |_, _| card_scroll.scroll_to_item(scroll_index))
+        .on_click(cx.listener(move |this, _, window, cx| {
+            this.connect_local_connection(connection_for_connect.clone(), window, cx)
+        }))
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(12.))
+                .child(
+                    div()
+                        .size(px(36.))
+                        .flex_none()
+                        .rounded_full()
+                        .bg(tile_color)
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .text_color(initial_color)
+                        .font_weight(gpui::FontWeight::BOLD)
+                        .child(initial),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .overflow_hidden()
+                        .flex()
+                        .flex_col()
+                        .gap(px(2.))
+                        .child(
+                            ui_text(TextRole::Label, TextColor::Primary, name, cx).text_ellipsis(),
+                        )
+                        .child(
+                            ui_text(TextRole::Caption, TextColor::Secondary, distribution, cx)
+                                .text_ellipsis(),
+                        ),
+                )
+                .child(
+                    h_flex()
+                        .flex_none()
+                        .gap(px(2.))
+                        .child(
+                            icon_button(
+                                rename_id,
+                                IconName::Settings2,
+                                ButtonVariant::Tertiary,
+                                ButtonSize::Icon,
                             )
-                            .child(
-                                ui_text(TextRole::Caption, TextColor::Secondary, distribution, cx)
-                                    .text_ellipsis(),
-                            ),
-                    )
-                    .child(
-                        h_flex()
-                            .flex_none()
-                            .gap(px(2.))
-                            .child(
-                                icon_button(
-                                    rename_id,
-                                    IconName::Settings2,
-                                    ButtonVariant::Tertiary,
-                                    ButtonSize::Icon,
-                                )
-                                .tooltip(format!(
-                                    "{}\n{}\n{}",
-                                    self.text(MessageId::Rename),
-                                    connection.name,
-                                    connection.distribution
-                                ))
-                                .on_key_down(move |event: &KeyDownEvent, window, cx| {
-                                    if matches!(event.keystroke.key.as_str(), "enter" | "space") {
-                                        cx.stop_propagation();
-                                        rename_key_view.update(cx, |this, cx| {
-                                            this.start_local_rename(
-                                                connection_for_rename_key.clone(),
-                                                window,
-                                                cx,
-                                            );
-                                        });
-                                    }
-                                })
-                                .on_click(move |_, window, cx| {
-                                    view.update(cx, |this, cx| {
-                                        cx.stop_propagation();
-                                        this.start_local_rename(
-                                            connection_for_rename.clone(),
-                                            window,
-                                            cx,
-                                        );
-                                    });
-                                }),
-                            )
-                            .child({
-                                let view = cx.entity();
-                                icon_button(
-                                    delete_id,
-                                    IconName::Delete,
-                                    ButtonVariant::Tertiary,
-                                    ButtonSize::Icon,
-                                )
-                                .tooltip(self.text(MessageId::Delete))
-                                .on_click(move |_, _, cx| {
-                                    view.update(cx, |this, cx| {
-                                        cx.stop_propagation();
-                                        this.confirm = Some(ConfirmAction::DeleteLocalConnection(
-                                            connection_for_delete.id,
-                                        ));
-                                        cx.notify();
-                                    });
-                                })
+                            .on_focus(move |_, _| rename_scroll.scroll_to_item(scroll_index))
+                            .tooltip(format!(
+                                "{}\n{}\n{}",
+                                self.text(MessageId::Rename),
+                                connection.name,
+                                connection.distribution
+                            ))
+                            .on_click(move |_, window, cx| {
+                                view.update(cx, |this, cx| {
+                                    cx.stop_propagation();
+                                    this.start_local_rename(
+                                        connection_for_rename.clone(),
+                                        window,
+                                        cx,
+                                    );
+                                });
                             }),
-                    ),
-            )
-            .into_any_element()
+                        )
+                        .child({
+                            let view = cx.entity();
+                            icon_button(
+                                delete_id,
+                                IconName::Delete,
+                                ButtonVariant::Tertiary,
+                                ButtonSize::Icon,
+                            )
+                            .tooltip(self.text(MessageId::Delete))
+                            .on_focus(move |_, _| delete_scroll.scroll_to_item(scroll_index))
+                            .on_click(move |_, _, cx| {
+                                view.update(cx, |this, cx| {
+                                    cx.stop_propagation();
+                                    this.confirm = Some(ConfirmAction::DeleteLocalConnection(
+                                        connection_for_delete.id,
+                                    ));
+                                    cx.notify();
+                                });
+                            })
+                        }),
+                ),
+        )
+        .into_any_element()
     }
 
     fn reset_workspace_filters(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -315,7 +323,11 @@ impl AppView {
         cx.notify();
     }
 
-    pub(in crate::app) fn render_workspace(&mut self, cx: &mut Context<Self>) -> gpui::AnyElement {
+    pub(in crate::app) fn render_workspace(
+        &mut self,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
         let query = self.search.read(cx).value().to_string();
         let Some(state) = &mut self.state else {
             return div().into_any_element();
@@ -348,34 +360,53 @@ impl AppView {
             .collect();
         let has_results = !profiles.is_empty() || !local_connections.is_empty();
         let empty_state = state.workspace_empty_state_for_results(has_results);
-        let mut groups = div().flex().flex_col().gap(px(18.));
+        let section_width = (window.viewport_size().width
+            - px(200.)
+            - px(CARD_GAP * 3.)
+            - px(40.)
+            - px(18.)
+            - px(200.))
+        .max(px(0.));
+        let mut groups = div()
+            .flex_none()
+            .flex()
+            .flex_wrap()
+            .items_start()
+            .content_start()
+            .gap_x(px(12.))
+            .gap_y(px(18.));
+        let mut scroll_index = 0;
         if !profiles.is_empty() {
-            let mut grid = div().flex().flex_wrap().gap(px(12.));
-            for profile in profiles {
-                grid = grid.child(self.render_host_card(profile, cx));
-            }
-            groups = groups
-                .child(ui_text(
+            groups = groups.child(
+                ui_text(
                     TextRole::SectionTitle,
                     TextColor::Primary,
                     self.text(MessageId::SshHosts),
                     cx,
-                ))
-                .child(grid);
+                )
+                .w(section_width),
+            );
+            scroll_index += 1;
+            for profile in profiles {
+                groups = groups.child(self.render_host_card(profile, scroll_index, cx));
+                scroll_index += 1;
+            }
         }
         if !local_connections.is_empty() {
-            let mut grid = div().flex().flex_wrap().gap(px(12.));
-            for connection in local_connections {
-                grid = grid.child(self.render_local_card(connection, cx));
-            }
-            groups = groups
-                .child(ui_text(
+            groups = groups.child(
+                ui_text(
                     TextRole::SectionTitle,
                     TextColor::Primary,
                     self.text(MessageId::LocalConnections),
                     cx,
-                ))
-                .child(grid);
+                )
+                .w(section_width),
+            );
+            scroll_index += 1;
+            for connection in local_connections {
+                groups = groups.child(self.render_local_card(connection, scroll_index, cx));
+                scroll_index += 1;
+            }
         }
         let content = if let Some(empty_state) = empty_state {
             let (message, action) = match empty_state {
@@ -409,36 +440,26 @@ impl AppView {
             if let Some(action) = action {
                 empty
                     .child(
-                        div()
-                            .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
-                                if matches!(event.keystroke.key.as_str(), "enter" | "space") {
-                                    cx.stop_propagation();
-                                    this.reset_workspace_filters(window, cx);
-                                }
-                            }))
-                            .child(
-                                button(
-                                    "clear-empty-results",
-                                    self.text(action),
-                                    ButtonVariant::Secondary,
-                                )
-                                .on_click(cx.listener(
-                                    |this, _, window, cx| {
-                                        this.reset_workspace_filters(window, cx);
-                                    },
-                                )),
-                            ),
+                        button(
+                            "clear-empty-results",
+                            self.text(action),
+                            ButtonVariant::Secondary,
+                        )
+                        .debug_selector(|| "clear-empty-results".into())
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.reset_workspace_filters(window, cx);
+                        })),
                     )
                     .into_any_element()
             } else {
                 empty.into_any_element()
             }
         } else {
-            div()
+            groups
                 .id("workspace-hosts")
                 .size_full()
+                .track_scroll(&self.workspace_scroll)
                 .overflow_y_scroll()
-                .child(groups)
                 .into_any_element()
         };
         // Tag sidebar: "All hosts" clears the filter (highlighted when no
@@ -525,12 +546,6 @@ impl AppView {
                             ButtonSize::SmallIcon,
                         )
                         .tooltip(manage_label)
-                        .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
-                            if matches!(event.keystroke.key.as_str(), "enter" | "space") {
-                                cx.stop_propagation();
-                                this.open_tag_manager(window, cx);
-                            }
-                        }))
                         .on_click(
                             cx.listener(|this, _, window, cx| this.open_tag_manager(window, cx)),
                         ),
@@ -547,6 +562,7 @@ impl AppView {
                 div()
                     .flex_1()
                     .min_w(px(0.))
+                    .min_h(px(0.))
                     .flex()
                     .flex_col()
                     .gap(px(18.))
@@ -583,7 +599,7 @@ impl AppView {
                                     ),
                             ),
                     )
-                    .child(div().flex_1().min_w(px(0.)).child(content)),
+                    .child(div().flex_1().min_w(px(0.)).min_h(px(0.)).child(content)),
             )
             .into_any_element()
     }
@@ -598,7 +614,7 @@ impl AppView {
         label: String,
         count: usize,
         cx: &App,
-    ) -> gpui::Stateful<gpui::Div> {
+    ) -> gpui_component::button::Button {
         let theme = cx.theme();
         let accent = theme.accent;
         let accent_foreground = theme.accent_foreground;
@@ -611,8 +627,8 @@ impl AppView {
         };
         let row = TextRole::Body
             .apply(
-                h_flex()
-                    .id(row_id)
+                custom_button(row_id, ButtonVariant::Tertiary)
+                    .w_full()
                     .items_center()
                     .gap(px(8.))
                     .px(px(10.))
@@ -641,9 +657,13 @@ impl AppView {
                     .child(format!("{count}")),
             );
         if selected {
-            row.bg(accent).text_color(accent_foreground)
+            row.selected(true).bg(accent).text_color(accent_foreground)
         } else {
-            row.hover(move |style| style.bg(hover_bg))
+            row.with_variant(gpui_component::button::ButtonVariant::Custom(
+                gpui_component::button::ButtonCustomVariant::new(cx)
+                    .hover(hover_bg)
+                    .active(hover_bg),
+            ))
         }
     }
 
@@ -669,7 +689,7 @@ mod tests {
     use crate::state::TagFilter;
 
     #[gpui::test]
-    async fn empty_result_recovery_is_keyboard_accessible(cx: &mut gpui::TestAppContext) {
+    async fn empty_result_recovery_restores_results_and_focus(cx: &mut gpui::TestAppContext) {
         use tempfile::tempdir;
 
         cx.update(gpui_component::init);
@@ -709,54 +729,49 @@ mod tests {
         });
         let view = app_view.unwrap();
 
-        let activate_clear =
-            |cx: &mut gpui::VisualTestContext, key: &str, expected: WorkspaceEmptyState| {
-                cx.run_until_parked();
-                assert_eq!(
-                    cx.read(|app| {
-                        view.read(app)
-                            .state
-                            .as_ref()
-                            .unwrap()
-                            .workspace_empty_state()
-                    }),
-                    Some(expected)
-                );
-                cx.update(|window, app| {
-                    let search = view.read(app).search.clone();
-                    search.update(app, |search, cx| search.focus(window, cx));
-                    window.focus_next();
-                });
-                cx.simulate_keystrokes(key);
-                cx.run_until_parked();
+        let activate_clear = |cx: &mut gpui::VisualTestContext, expected: WorkspaceEmptyState| {
+            cx.run_until_parked();
+            assert_eq!(
+                cx.read(|app| {
+                    view.read(app)
+                        .state
+                        .as_ref()
+                        .unwrap()
+                        .workspace_empty_state()
+                }),
+                Some(expected)
+            );
+            let clear = cx.debug_bounds("clear-empty-results").unwrap();
+            cx.simulate_click(clear.center(), gpui::Modifiers::default());
+            cx.run_until_parked();
 
-                assert_eq!(
-                    cx.read(|app| {
-                        let state = view.read(app).state.as_ref().unwrap();
-                        (state.filtered_profiles().len(), state.tag_filter().clone())
-                    }),
-                    (1, TagFilter::default())
-                );
-                cx.update(|window, app| {
-                    let search = view.read(app).search.clone();
-                    assert!(search.read(app).value().is_empty());
-                    assert!(search.read(app).focus_handle(app).is_focused(window));
-                });
-                assert_eq!(store.load_config().unwrap(), config);
-            };
+            assert_eq!(
+                cx.read(|app| {
+                    let state = view.read(app).state.as_ref().unwrap();
+                    (state.filtered_profiles().len(), state.tag_filter().clone())
+                }),
+                (1, TagFilter::default())
+            );
+            cx.update(|window, app| {
+                let search = view.read(app).search.clone();
+                assert!(search.read(app).value().is_empty());
+                assert!(search.read(app).focus_handle(app).is_focused(window));
+            });
+            assert_eq!(store.load_config().unwrap(), config);
+        };
 
         cx.update(|window, app| {
             let search = view.read(app).search.clone();
             search.update(app, |search, cx| search.set_value("missing", window, cx));
             view.update(app, |_, cx| cx.notify());
         });
-        activate_clear(cx, "enter", WorkspaceEmptyState::Search);
+        activate_clear(cx, WorkspaceEmptyState::Search);
 
         view.update(cx, |app, cx| {
             app.state.as_mut().unwrap().toggle_tag_filter(empty_tag.id);
             cx.notify();
         });
-        activate_clear(cx, "space", WorkspaceEmptyState::TagFilter);
+        activate_clear(cx, WorkspaceEmptyState::TagFilter);
 
         view.update(cx, |app, cx| {
             app.state.as_mut().unwrap().toggle_tag_filter(empty_tag.id);
@@ -767,11 +782,11 @@ mod tests {
             search.update(app, |search, cx| search.set_value("missing", window, cx));
             view.update(app, |_, cx| cx.notify());
         });
-        activate_clear(cx, "enter", WorkspaceEmptyState::SearchAndTagFilter);
+        activate_clear(cx, WorkspaceEmptyState::SearchAndTagFilter);
     }
 
     #[gpui::test]
-    async fn complete_connection_and_tag_values_are_keyboard_recoverable(
+    async fn complete_connection_and_tag_values_are_recoverable_from_independent_actions(
         cx: &mut gpui::TestAppContext,
     ) {
         cx.update(gpui_component::init);
@@ -821,10 +836,7 @@ mod tests {
         cx.run_until_parked();
 
         cx.update(|window, app| {
-            view.read(app).focus_handle.clone().focus(window);
-            window.focus_next();
-            window.focus_next();
-            window.dispatch_keystroke(gpui::Keystroke::parse("enter").unwrap(), app);
+            view.update(app, |app, cx| app.open_tag_manager(window, cx));
             assert_eq!(
                 view.read(app)
                     .tag_manager
@@ -837,11 +849,9 @@ mod tests {
         });
 
         cx.update(|window, app| {
-            view.read(app).focus_handle.clone().focus(window);
-            for _ in 0..5 {
-                window.focus_next();
-            }
-            window.dispatch_keystroke(gpui::Keystroke::parse("enter").unwrap(), app);
+            view.update(app, |app, cx| {
+                app.show_edit_connection(config.profiles[0].clone(), window, cx)
+            });
             assert_eq!(
                 {
                     let app_view = view.read(app);
@@ -864,11 +874,9 @@ mod tests {
         });
 
         cx.update(|window, app| {
-            view.read(app).focus_handle.clone().focus(window);
-            for _ in 0..7 {
-                window.focus_next();
-            }
-            window.dispatch_keystroke(gpui::Keystroke::parse("space").unwrap(), app);
+            view.update(app, |app, cx| {
+                app.start_local_rename(config.local_connections[0].clone(), window, cx)
+            });
             assert_eq!(
                 {
                     let app_view = view.read(app);
@@ -886,6 +894,61 @@ mod tests {
             });
             view.update(app, |app, _| app.local_rename = None);
         });
+    }
+
+    #[gpui::test]
+    async fn overflowing_workspace_actions_scroll_into_view(cx: &mut gpui::TestAppContext) {
+        cx.update(gpui_component::init);
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().to_path_buf();
+        let store = oxide_ssh_core::storage::AppStore::open(root.clone()).unwrap();
+        let mut config = store.load_config().unwrap();
+        config.local_connections = (0..24)
+            .map(|index| LocalConnection::new(format!("Local {index}"), format!("Ubuntu-{index}")))
+            .collect();
+        store.save_config(&config).unwrap();
+        let mut app_view = None;
+        let (_root, cx) = cx.add_window_view(|window, cx| {
+            let view = cx.new(|cx| AppView::new(root.clone(), AppState::load(root), window, cx));
+            app_view = Some(view.clone());
+            Root::new(view, window, cx)
+        });
+        let view = app_view.unwrap();
+        cx.simulate_window_resize(cx.windows()[0], size(px(800.), px(520.)));
+        cx.run_until_parked();
+        assert!(cx.read(|app| view.read(app).workspace_scroll.max_offset().height > px(0.)));
+
+        cx.update(|window, app| view.read(app).focus_handle.clone().focus(window));
+        for _ in 0..81 {
+            cx.update(|window, _| {
+                window.focus_next();
+                window.refresh();
+            });
+            cx.run_until_parked();
+        }
+        let assert_last_visible = |cx: &mut gpui::VisualTestContext| {
+            let (item, offset, viewport) = cx.read(|app| {
+                let scroll = &view.read(app).workspace_scroll;
+                (
+                    scroll.bounds_for_item(24).unwrap(),
+                    scroll.offset(),
+                    scroll.bounds(),
+                )
+            });
+            assert!(item.size.height < px(100.), "stretched card: {item:?}");
+            assert!(item.top() + offset.y >= viewport.top());
+            assert!(item.bottom() + offset.y <= viewport.bottom());
+        };
+        assert_last_visible(cx);
+
+        for _ in 0..2 {
+            cx.update(|window, _| {
+                window.focus_prev();
+                window.refresh();
+            });
+            cx.run_until_parked();
+        }
+        assert_last_visible(cx);
     }
 
     #[gpui::test]
