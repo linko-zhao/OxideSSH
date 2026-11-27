@@ -13,6 +13,7 @@ impl AppView {
         let item = TextRole::Body.apply(
             custom_button(id, ButtonVariant::Tertiary)
                 .items_center()
+                .justify_start()
                 .gap(px(10.))
                 .px(px(10.))
                 .py(px(8.))

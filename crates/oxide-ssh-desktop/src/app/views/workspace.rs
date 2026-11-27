@@ -48,6 +48,7 @@ impl AppView {
         ))
         .w(px(300.))
         .h_auto()
+        .justify_start()
         .p(px(14.))
         .rounded(radius_lg)
         .border_1()
@@ -60,7 +61,7 @@ impl AppView {
         }))
         .child(
             div()
-                .w_full()
+                .w(px(270.))
                 .flex()
                 .flex_col()
                 .gap(px(10.))
@@ -213,6 +214,7 @@ impl AppView {
         ))
         .w(px(300.))
         .h_auto()
+        .justify_start()
         .p(px(14.))
         .rounded(radius_lg)
         .border_1()
@@ -225,6 +227,7 @@ impl AppView {
         }))
         .child(
             div()
+                .w(px(270.))
                 .flex()
                 .items_center()
                 .gap(px(12.))
@@ -630,31 +633,35 @@ impl AppView {
                 custom_button(row_id, ButtonVariant::Tertiary)
                     .w_full()
                     .items_center()
+                    .justify_start()
                     .gap(px(8.))
                     .px(px(10.))
                     .py(px(6.))
                     .rounded(px(8.)),
             )
             .cursor_pointer()
-            .child(match dot {
-                Some(color) => div()
-                    .size(px(8.))
-                    .flex_none()
-                    .rounded_full()
-                    .bg(rgb(color))
-                    .into_any_element(),
-                None => div().size(px(8.)).flex_none().into_any_element(),
-            })
-            .child(div().flex_1().truncate().child(label))
-            .when(selected, |row| {
-                row.child(Icon::new(IconName::Check).size(px(14.)).flex_none())
-                    .child(self.text(MessageId::Selected))
-            })
             .child(
-                TextRole::Caption
-                    .apply(div())
-                    .text_color(count_color)
-                    .child(format!("{count}")),
+                div()
+                    .w(px(165.))
+                    .flex()
+                    .items_center()
+                    .gap(px(8.))
+                    .child(match dot {
+                        Some(color) => div()
+                            .size(px(8.))
+                            .flex_none()
+                            .rounded_full()
+                            .bg(rgb(color))
+                            .into_any_element(),
+                        None => div().size(px(8.)).flex_none().into_any_element(),
+                    })
+                    .child(div().flex_1().truncate().child(label))
+                    .child(
+                        TextRole::Caption
+                            .apply(div())
+                            .text_color(count_color)
+                            .child(format!("{count}")),
+                    ),
             );
         if selected {
             row.selected(true).bg(accent).text_color(accent_foreground)
