@@ -24,7 +24,9 @@ impl AppView {
         let profile_for_connect = profile.clone();
         let profile_for_edit = profile.clone();
         let profile_for_delete = profile.clone();
+        let profile_for_edit_key = profile.clone();
         let view = cx.entity();
+        let edit_key_view = view.clone();
         let theme = cx.theme();
         let border = theme.input;
         let card_bg = theme.secondary;
@@ -80,11 +82,11 @@ impl AppView {
                                     profile.name.clone(),
                                     cx,
                                 )
-                                .whitespace_nowrap(),
+                                .text_ellipsis(),
                             )
                             .child(
                                 ui_text(TextRole::Caption, TextColor::Secondary, endpoint, cx)
-                                    .whitespace_nowrap(),
+                                    .text_ellipsis(),
                             ),
                     )
                     .child(
@@ -98,6 +100,26 @@ impl AppView {
                                     ButtonVariant::Tertiary,
                                     ButtonSize::Icon,
                                 )
+                                .tooltip(format!(
+                                    "{}\n{}\n{}@{}:{}",
+                                    self.text(MessageId::Edit),
+                                    profile.name,
+                                    profile.username,
+                                    profile.endpoint.host,
+                                    profile.endpoint.port
+                                ))
+                                .on_key_down(move |event: &KeyDownEvent, window, cx| {
+                                    if matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                                        cx.stop_propagation();
+                                        edit_key_view.update(cx, |this, cx| {
+                                            this.show_edit_connection(
+                                                profile_for_edit_key.clone(),
+                                                window,
+                                                cx,
+                                            );
+                                        });
+                                    }
+                                })
                                 .on_click(move |_, window, cx| {
                                     view.update(cx, |this, cx| {
                                         cx.stop_propagation();
@@ -155,7 +177,9 @@ impl AppView {
         let connection_for_connect = connection.clone();
         let connection_for_rename = connection.clone();
         let connection_for_delete = connection.clone();
+        let connection_for_rename_key = connection.clone();
         let view = cx.entity();
+        let rename_key_view = view.clone();
         let theme = cx.theme();
         let border = theme.input;
         let card_bg = theme.secondary;
@@ -208,11 +232,11 @@ impl AppView {
                             .gap(px(2.))
                             .child(
                                 ui_text(TextRole::Label, TextColor::Primary, name, cx)
-                                    .whitespace_nowrap(),
+                                    .text_ellipsis(),
                             )
                             .child(
                                 ui_text(TextRole::Caption, TextColor::Secondary, distribution, cx)
-                                    .whitespace_nowrap(),
+                                    .text_ellipsis(),
                             ),
                     )
                     .child(
@@ -226,7 +250,24 @@ impl AppView {
                                     ButtonVariant::Tertiary,
                                     ButtonSize::Icon,
                                 )
-                                .tooltip(self.text(MessageId::Rename))
+                                .tooltip(format!(
+                                    "{}\n{}\n{}",
+                                    self.text(MessageId::Rename),
+                                    connection.name,
+                                    connection.distribution
+                                ))
+                                .on_key_down(move |event: &KeyDownEvent, window, cx| {
+                                    if matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                                        cx.stop_propagation();
+                                        rename_key_view.update(cx, |this, cx| {
+                                            this.start_local_rename(
+                                                connection_for_rename_key.clone(),
+                                                window,
+                                                cx,
+                                            );
+                                        });
+                                    }
+                                })
                                 .on_click(move |_, window, cx| {
                                     view.update(cx, |this, cx| {
                                         cx.stop_propagation();
@@ -484,6 +525,12 @@ impl AppView {
                             ButtonSize::SmallIcon,
                         )
                         .tooltip(manage_label)
+                        .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                            if matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                                cx.stop_propagation();
+                                this.open_tag_manager(window, cx);
+                            }
+                        }))
                         .on_click(
                             cx.listener(|this, _, window, cx| this.open_tag_manager(window, cx)),
                         ),
@@ -582,13 +629,7 @@ impl AppView {
                     .into_any_element(),
                 None => div().size(px(8.)).flex_none().into_any_element(),
             })
-            .child(
-                div()
-                    .flex_1()
-                    .overflow_hidden()
-                    .whitespace_nowrap()
-                    .child(label),
-            )
+            .child(div().flex_1().truncate().child(label))
             .when(selected, |row| {
                 row.child(Icon::new(IconName::Check).size(px(14.)).flex_none())
                     .child(self.text(MessageId::Selected))
@@ -727,6 +768,124 @@ mod tests {
             view.update(app, |_, cx| cx.notify());
         });
         activate_clear(cx, "enter", WorkspaceEmptyState::SearchAndTagFilter);
+    }
+
+    #[gpui::test]
+    async fn complete_connection_and_tag_values_are_keyboard_recoverable(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        cx.update(gpui_component::init);
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().to_path_buf();
+        let store = oxide_ssh_core::storage::AppStore::open(root.clone()).unwrap();
+        store
+            .update_settings(|settings| settings.locale = LocaleSetting::EnUs)
+            .unwrap();
+        let profile_name = "production-shared-prefix-东亚-development";
+        let username = "deploy-user";
+        let host = "production-shared-prefix.internal.example";
+        let local_name = "Ubuntu shared prefix 开发环境";
+        let distribution = "Ubuntu-24.04-shared-prefix-development";
+        let tag_name = "Production shared prefix 生产环境";
+        let profile = ConnectionProfile {
+            id: ProfileId::new(),
+            name: profile_name.into(),
+            endpoint: Endpoint {
+                host: host.into(),
+                port: 2222,
+            },
+            username: username.into(),
+            auth: AuthConfig::Agent,
+            tag_ids: Vec::new(),
+            startup_command: None,
+            ssh_keepalive_interval_seconds: None,
+            ssh_keepalive_max_count: None,
+            terminal_font_size: None,
+            ansi_palette: None,
+            environment_variables: Vec::new(),
+        };
+        let mut config = store.load_config().unwrap();
+        config.profiles = vec![profile];
+        config.local_connections = vec![LocalConnection::new(local_name, distribution)];
+        config.tags = vec![Tag::new(tag_name)];
+        store.save_config(&config).unwrap();
+
+        let mut app_view = None;
+        let (_root, cx) = cx.add_window_view(|window, cx| {
+            let view = cx.new(|cx| AppView::new(root.clone(), AppState::load(root), window, cx));
+            app_view = Some(view.clone());
+            Root::new(view, window, cx)
+        });
+        let view = app_view.unwrap();
+        cx.simulate_window_resize(cx.windows()[0], size(px(800.), px(520.)));
+        cx.run_until_parked();
+
+        cx.update(|window, app| {
+            view.read(app).focus_handle.clone().focus(window);
+            window.focus_next();
+            window.focus_next();
+            window.dispatch_keystroke(gpui::Keystroke::parse("enter").unwrap(), app);
+            assert_eq!(
+                view.read(app)
+                    .tag_manager
+                    .as_ref()
+                    .map(|manager| manager.entries[0].name.read(app).value().to_string())
+                    .as_deref(),
+                Some(tag_name)
+            );
+            view.update(app, |app, _| app.tag_manager = None);
+        });
+
+        cx.update(|window, app| {
+            view.read(app).focus_handle.clone().focus(window);
+            for _ in 0..5 {
+                window.focus_next();
+            }
+            window.dispatch_keystroke(gpui::Keystroke::parse("enter").unwrap(), app);
+            assert_eq!(
+                {
+                    let app_view = view.read(app);
+                    let editor = app_view.editor.as_ref().unwrap();
+                    (
+                        editor.name.read(app).value().to_string(),
+                        editor.username.read(app).value().to_string(),
+                        editor.host.read(app).value().to_string(),
+                        editor.port.read(app).value().to_string(),
+                    )
+                },
+                (
+                    profile_name.into(),
+                    username.into(),
+                    host.into(),
+                    "2222".into()
+                )
+            );
+            view.update(app, |app, _| app.editor = None);
+        });
+
+        cx.update(|window, app| {
+            view.read(app).focus_handle.clone().focus(window);
+            for _ in 0..7 {
+                window.focus_next();
+            }
+            window.dispatch_keystroke(gpui::Keystroke::parse("space").unwrap(), app);
+            assert_eq!(
+                {
+                    let app_view = view.read(app);
+                    let dialog = app_view.local_rename.as_ref().unwrap();
+                    (
+                        dialog.name.read(app).value().to_string(),
+                        dialog.distribution.clone(),
+                    )
+                },
+                (local_name.into(), distribution.into())
+            );
+            assert!({
+                let app = view.read(app);
+                app.tabs.tabs().is_empty() && app.main_view == MainView::Workspace
+            });
+            view.update(app, |app, _| app.local_rename = None);
+        });
     }
 
     #[gpui::test]

@@ -76,6 +76,7 @@ enum DialogIdentityKind {
     LocalRename {
         id: LocalConnectionId,
     },
+    SessionTitle,
 }
 
 /// Stable logical identity used to decide whether a deferred focus pass is
@@ -92,6 +93,7 @@ enum DialogFocusIdentity {
     AnsiPalette,
     Discovery,
     LocalRename(LocalConnectionId),
+    SessionTitle,
 }
 
 impl DialogIdentityKind {
@@ -113,6 +115,7 @@ impl DialogIdentityKind {
             Self::AnsiPalette => DialogFocusIdentity::AnsiPalette,
             Self::Discovery => DialogFocusIdentity::Discovery,
             Self::LocalRename { id } => DialogFocusIdentity::LocalRename(*id),
+            Self::SessionTitle => DialogFocusIdentity::SessionTitle,
         }
     }
 }
@@ -136,6 +139,7 @@ enum DialogSnapshot {
     },
     Discovery(DiscoveryDialog),
     LocalRename(LocalRenameDialog),
+    SessionTitle(String),
     Modal {
         request: ModalRequest,
         /// The shared one-time credential input; rendered by the presenter for
@@ -372,6 +376,14 @@ impl DialogPresenter {
                     .update(cx, |app, cx| app.commit_local_rename(window, cx))
                     .ok();
             }
+            DialogSnapshot::SessionTitle(_) => {
+                self.owner
+                    .update(cx, |app, cx| {
+                        app.session_title_details = None;
+                        cx.notify();
+                    })
+                    .ok();
+            }
             DialogSnapshot::Modal { request, .. } => match request {
                 ModalRequest::Secret { tab_id } => {
                     let tab_id = *tab_id;
@@ -443,6 +455,14 @@ impl DialogPresenter {
             DialogSnapshot::LocalRename(_) => {
                 self.owner
                     .update(cx, |app, cx| app.cancel_local_rename(cx))
+                    .ok();
+            }
+            DialogSnapshot::SessionTitle(_) => {
+                self.owner
+                    .update(cx, |app, cx| {
+                        app.session_title_details = None;
+                        cx.notify();
+                    })
                     .ok();
             }
             DialogSnapshot::Modal { request, .. } => match request {
@@ -1667,6 +1687,44 @@ impl DialogPresenter {
             .into_any_element()
     }
 
+    fn render_session_title(&self, title: &str, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let close_listener = cx.listener(|this, _, _, cx| {
+            this.owner
+                .update(cx, |app, cx| {
+                    app.session_title_details = None;
+                    cx.notify();
+                })
+                .ok();
+        });
+        v_form()
+            .w_full()
+            .child(field().child(ui_text(
+                TextRole::DialogTitle,
+                TextColor::Primary,
+                self.text(MessageId::SessionTitle),
+                cx,
+            )))
+            .child(field().child(ui_text(
+                TextRole::Body,
+                TextColor::Primary,
+                title.to_owned(),
+                cx,
+            )))
+            .child(
+                field().child(
+                    div().flex().justify_end().child(
+                        button(
+                            "close-session-title",
+                            self.text(MessageId::Close),
+                            ButtonVariant::Secondary,
+                        )
+                        .on_click(close_listener),
+                    ),
+                ),
+            )
+            .into_any_element()
+    }
+
     fn render_local_rename(
         &self,
         dialog: &LocalRenameDialog,
@@ -1988,6 +2046,7 @@ impl Render for DialogPresenter {
             }
             DialogSnapshot::Discovery(dialog) => vec![self.render_discovery(dialog, cx)],
             DialogSnapshot::LocalRename(dialog) => vec![self.render_local_rename(dialog, cx)],
+            DialogSnapshot::SessionTitle(title) => vec![self.render_session_title(title, cx)],
             DialogSnapshot::Modal {
                 request,
                 secret_input,
@@ -2116,6 +2175,15 @@ impl AppView {
                     kind: DialogIdentityKind::LocalRename { id: dialog.id },
                 },
                 snapshot: DialogSnapshot::LocalRename(dialog.clone()),
+            });
+        }
+        if let Some(title) = &self.session_title_details {
+            return Some(DialogPayload {
+                identity: DialogIdentity {
+                    locale,
+                    kind: DialogIdentityKind::SessionTitle,
+                },
+                snapshot: DialogSnapshot::SessionTitle(title.clone()),
             });
         }
         if let Some(action) = &self.confirm {

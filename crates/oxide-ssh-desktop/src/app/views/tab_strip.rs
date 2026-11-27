@@ -105,6 +105,23 @@ impl AppView {
         for (id, name, state) in &tab_data {
             let tab_id = *id;
             let selected = self.main_view == MainView::Sessions && active == Some(tab_id);
+            let title_truncated = {
+                let text_style = window.text_style();
+                let text = SharedString::from(name.clone());
+                let run = TextRun {
+                    len: text.len(),
+                    font: text_style.font(),
+                    color: text_style.color,
+                    background_color: None,
+                    underline: None,
+                    strikethrough: None,
+                };
+                window
+                    .text_system()
+                    .shape_line(text, cx.theme().font_size * 0.875, &[run], None)
+                    .width
+                    > px(180.)
+            };
             sessions = sessions.child(
                 Self::tab_pill(SharedString::from(format!("tab-{tab_id:?}")), selected, cx)
                     .debug_selector(|| "session-tab".into())
@@ -116,8 +133,7 @@ impl AppView {
                     )
                     .child(
                         div()
-                            .overflow_hidden()
-                            .whitespace_nowrap()
+                            .truncate()
                             .max_w(px(180.))
                             .child(SharedString::from(name.clone())),
                     )
@@ -136,6 +152,38 @@ impl AppView {
                         )
                         .whitespace_nowrap(),
                     )
+                    .when(title_truncated, |tab| {
+                        let title_for_key = name.clone();
+                        let title_for_click = name.clone();
+                        let key_view = cx.entity();
+                        tab.child(
+                            icon_button(
+                                SharedString::from(format!("details-tab-{tab_id:?}")),
+                                IconName::Info,
+                                ButtonVariant::Tertiary,
+                                ButtonSize::SmallIcon,
+                            )
+                            .flex_none()
+                            .debug_selector(|| "tab-details-button".into())
+                            .tooltip(format!("{}\n{}", self.text(MessageId::SessionTitle), name))
+                            .on_key_down(move |event: &KeyDownEvent, _window, cx| {
+                                if matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                                    cx.stop_propagation();
+                                    key_view.update(cx, |this, cx| {
+                                        this.session_title_details = Some(title_for_key.clone());
+                                        cx.notify();
+                                    });
+                                }
+                            })
+                            .on_click(cx.listener(
+                                move |this, _, _, cx| {
+                                    cx.stop_propagation();
+                                    this.session_title_details = Some(title_for_click.clone());
+                                    cx.notify();
+                                },
+                            )),
+                        )
+                    })
                     .child(
                         // Keep a 24px target without inflating the pill;
                         // the default medium icon button is 32px.
@@ -311,6 +359,26 @@ mod tests {
     use gpui_component::IconNamed as _;
     use oxide_ssh_terminal::TerminalColors;
 
+    fn profile(name: &str) -> ConnectionProfile {
+        ConnectionProfile {
+            id: ProfileId::new(),
+            name: name.into(),
+            endpoint: Endpoint {
+                host: "production.internal.example".into(),
+                port: 22,
+            },
+            username: "deploy".into(),
+            auth: AuthConfig::Agent,
+            tag_ids: Vec::new(),
+            startup_command: None,
+            ssh_keepalive_interval_seconds: None,
+            ssh_keepalive_max_count: None,
+            terminal_font_size: None,
+            ansi_palette: None,
+            environment_variables: Vec::new(),
+        }
+    }
+
     #[test]
     fn every_tab_state_has_a_distinct_icon_and_localized_text() {
         let states = [
@@ -390,6 +458,91 @@ mod tests {
                 && app.tabs.active() == Some(tab_id)
                 && app.tabs.tab(tab_id).unwrap().state() == &TabState::Connecting
         }));
+    }
+
+    #[gpui::test]
+    async fn complete_session_title_is_keyboard_recoverable(cx: &mut gpui::TestAppContext) {
+        cx.update(gpui_component::init);
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().to_path_buf();
+        let title = "production-shared-prefix-东亚-development";
+        let profile = profile(title);
+        let mut app_view = None;
+        let (_root, cx) = cx.add_window_view(|window, cx| {
+            let view = cx.new(|cx| AppView::new(root.clone(), AppState::load(root), window, cx));
+            app_view = Some(view.clone());
+            Root::new(view, window, cx)
+        });
+        let view = app_view.unwrap();
+        let tab_id = view.update(cx, |app, cx| {
+            let tab_id = app.tabs.open(
+                profile,
+                TerminalSize {
+                    columns: 80,
+                    rows: 24,
+                    pixel_width: 640,
+                    pixel_height: 384,
+                },
+                TerminalColors::default(),
+                false,
+            );
+            app.main_view = MainView::Workspace;
+            cx.notify();
+            tab_id
+        });
+        cx.run_until_parked();
+
+        cx.update(|window, app| {
+            view.read(app).focus_handle.clone().focus(window);
+            window.focus_next();
+            window.dispatch_keystroke(gpui::Keystroke::parse("enter").unwrap(), app);
+
+            assert_eq!(view.read(app).session_title_details.as_deref(), Some(title));
+            assert!(view.read(app).editor.is_none());
+            assert!({
+                let app_view = view.read(app);
+                app_view.tabs.tabs().len() == 1
+                    && app_view.tabs.tab(tab_id).is_some()
+                    && app_view.main_view == MainView::Workspace
+            });
+            view.update(app, |app, _| app.session_title_details = None);
+        });
+    }
+
+    #[gpui::test]
+    async fn short_session_title_adds_no_recovery_chrome(cx: &mut gpui::TestAppContext) {
+        cx.update(gpui_component::init);
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().to_path_buf();
+        let profile = profile("Prod");
+        let store = oxide_ssh_core::storage::AppStore::open(root.clone()).unwrap();
+        let mut config = store.load_config().unwrap();
+        config.profiles = vec![profile.clone()];
+        store.save_config(&config).unwrap();
+        let mut app_view = None;
+        let (_root, cx) = cx.add_window_view(|window, cx| {
+            let view = cx.new(|cx| AppView::new(root.clone(), AppState::load(root), window, cx));
+            app_view = Some(view.clone());
+            Root::new(view, window, cx)
+        });
+        let view = app_view.unwrap();
+        view.update(cx, |app, cx| {
+            app.tabs.open(
+                profile,
+                TerminalSize {
+                    columns: 80,
+                    rows: 24,
+                    pixel_width: 640,
+                    pixel_height: 384,
+                },
+                TerminalColors::default(),
+                false,
+            );
+            cx.notify();
+        });
+        cx.run_until_parked();
+
+        assert!(cx.debug_bounds("tab-details-button").is_none());
     }
 
     #[gpui::test]

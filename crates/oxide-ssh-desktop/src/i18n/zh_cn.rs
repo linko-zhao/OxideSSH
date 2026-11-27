@@ -303,5 +303,6 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::Distribution => "WSL 发行版",
         MessageId::ConfirmDeleteLocalConnection => "删除此本地连接？",
         MessageId::InvalidLocalConnectionName => "本地连接名称须为 1-64 个字符。",
+        MessageId::SessionTitle => "会话标题",
     }
 }

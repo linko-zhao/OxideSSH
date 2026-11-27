@@ -337,5 +337,6 @@ pub(super) fn text(id: MessageId) -> &'static str {
         MessageId::Distribution => "WSL distribution",
         MessageId::ConfirmDeleteLocalConnection => "Delete this local connection?",
         MessageId::InvalidLocalConnectionName => "Local connection names must be 1-64 characters.",
+        MessageId::SessionTitle => "Session title",
     }
 }

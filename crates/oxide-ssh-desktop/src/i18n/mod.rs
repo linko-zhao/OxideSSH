@@ -282,6 +282,7 @@ pub enum MessageId {
     Distribution,
     ConfirmDeleteLocalConnection,
     InvalidLocalConnectionName,
+    SessionTitle,
 }
 
 impl MessageId {
@@ -561,6 +562,7 @@ impl MessageId {
         Self::Distribution,
         Self::ConfirmDeleteLocalConnection,
         Self::InvalidLocalConnectionName,
+        Self::SessionTitle,
     ];
 }
 
