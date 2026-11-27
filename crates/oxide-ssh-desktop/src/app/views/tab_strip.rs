@@ -1,6 +1,16 @@
 use super::*;
 use gpui_component::scroll::ScrollableElement;
 
+pub(in crate::app) fn tab_state_icon(state: &TabState) -> IconName {
+    match state {
+        TabState::Connecting => IconName::LoaderCircle,
+        TabState::AwaitingHostKey => IconName::TriangleAlert,
+        TabState::AwaitingSecret => IconName::CircleUser,
+        TabState::Connected => IconName::CircleCheck,
+        TabState::Disconnected { .. } => IconName::CircleX,
+    }
+}
+
 impl AppView {
     /// Pill-shaped tab base: the selected pill lifts one step above the
     /// strip; hovering an unselected pill shows a fainter step of the same
@@ -55,7 +65,7 @@ impl AppView {
             .collect();
         let theme = cx.theme();
         let semantic = SemanticColors::global(cx);
-        let dot = |state: &TabState| match state {
+        let state_color = |state: &TabState| match state {
             TabState::Connected => semantic.primary,
             TabState::Disconnected { .. } => semantic.danger,
             TabState::AwaitingHostKey | TabState::AwaitingSecret | TabState::Connecting => {
@@ -97,7 +107,13 @@ impl AppView {
             let selected = self.main_view == MainView::Sessions && active == Some(tab_id);
             sessions = sessions.child(
                 Self::tab_pill(SharedString::from(format!("tab-{tab_id:?}")), selected, cx)
-                    .child(div().size(px(8.)).rounded_full().flex_none().bg(dot(state)))
+                    .debug_selector(|| "session-tab".into())
+                    .child(
+                        Icon::new(tab_state_icon(state))
+                            .size(px(12.))
+                            .flex_none()
+                            .text_color(state_color(state)),
+                    )
                     .child(
                         div()
                             .overflow_hidden()
@@ -292,7 +308,89 @@ impl AppView {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gpui_component::IconNamed as _;
     use oxide_ssh_terminal::TerminalColors;
+
+    #[test]
+    fn every_tab_state_has_a_distinct_icon_and_localized_text() {
+        let states = [
+            (
+                TabState::Connecting,
+                "icons/loader-circle.svg",
+                MessageId::Connecting,
+            ),
+            (
+                TabState::AwaitingHostKey,
+                "icons/triangle-alert.svg",
+                MessageId::AwaitingHostKey,
+            ),
+            (
+                TabState::AwaitingSecret,
+                "icons/circle-user.svg",
+                MessageId::AwaitingSecret,
+            ),
+            (
+                TabState::Connected,
+                "icons/circle-check.svg",
+                MessageId::Connected,
+            ),
+            (
+                TabState::Disconnected {
+                    reason: DisconnectReason::Closed,
+                },
+                "icons/circle-x.svg",
+                MessageId::Disconnected,
+            ),
+        ];
+
+        for (state, icon_path, expected_message) in states {
+            assert_eq!(tab_state_icon(&state).path(), icon_path);
+            let message = tab_state_message_id(&state);
+            assert_eq!(message, expected_message);
+            for locale in [ResolvedLocale::EnUs, ResolvedLocale::ZhCn] {
+                assert!(!Catalog::text(locale, message).is_empty());
+            }
+        }
+    }
+
+    #[gpui::test]
+    async fn selecting_a_session_tab_preserves_its_connection_state(cx: &mut gpui::TestAppContext) {
+        cx.update(gpui_component::init);
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().to_path_buf();
+        let mut app_view = None;
+        let (_root, cx) = cx.add_window_view(|window, cx| {
+            let view = cx.new(|cx| AppView::new(root.clone(), AppState::load(root), window, cx));
+            app_view = Some(view.clone());
+            Root::new(view, window, cx)
+        });
+        let view = app_view.unwrap();
+        let tab_id = view.update(cx, |app, cx| {
+            let tab_id = app.tabs.open_local(
+                TerminalSize {
+                    columns: 80,
+                    rows: 24,
+                    pixel_width: 640,
+                    pixel_height: 384,
+                },
+                TerminalColors::default(),
+            );
+            app.main_view = MainView::Workspace;
+            cx.notify();
+            tab_id
+        });
+        cx.run_until_parked();
+
+        let tab = cx.debug_bounds("session-tab").unwrap();
+        cx.simulate_click(tab.center(), gpui::Modifiers::default());
+
+        assert!(cx.read(|app| {
+            let app = view.read(app);
+            app.main_view == MainView::Sessions
+                && app.tabs.active() == Some(tab_id)
+                && app.tabs.tab(tab_id).unwrap().state() == &TabState::Connecting
+        }));
+    }
 
     #[gpui::test]
     async fn tab_icon_targets_are_24px_and_non_overlapping(cx: &mut gpui::TestAppContext) {
@@ -380,15 +478,28 @@ mod tests {
             }
             cx.notify();
         });
-        cx.simulate_window_resize(cx.windows()[0], size(px(800.), px(520.)));
-        cx.run_until_parked();
+        for window_size in [size(px(1080.), px(720.)), size(px(800.), px(520.))] {
+            cx.simulate_window_resize(cx.windows()[0], window_size);
+            cx.run_until_parked();
 
-        let new_tab = cx.debug_bounds("new-tab-button").unwrap();
-        assert!(new_tab.right() <= px(800.), "new tab clipped: {new_tab:?}");
-        #[cfg(target_os = "windows")]
-        for selector in ["win-min", "win-max", "win-close"] {
-            let bounds = cx.debug_bounds(selector).unwrap();
-            assert!(bounds.right() <= px(800.), "{selector} clipped: {bounds:?}");
+            let new_tab = cx.debug_bounds("new-tab-button").unwrap();
+            assert!(
+                new_tab.right() <= window_size.width,
+                "new tab clipped: {new_tab:?}"
+            );
+            let close = cx.debug_bounds("tab-close-button").unwrap();
+            assert!(
+                !close.intersects(&new_tab),
+                "tab close overlaps new tab: {close:?} vs {new_tab:?}"
+            );
+            #[cfg(target_os = "windows")]
+            for selector in ["win-min", "win-max", "win-close"] {
+                let bounds = cx.debug_bounds(selector).unwrap();
+                assert!(
+                    bounds.right() <= window_size.width,
+                    "{selector} clipped: {bounds:?}"
+                );
+            }
         }
     }
 }
